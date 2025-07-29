@@ -60,6 +60,14 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
 fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
     let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
     boot::set_boot_order(&new_order).map_err(|e| e.to_string())
+        .and_then(|_| {
+            // Optionally, you can also set the first entry as boot next
+            if let Some(&first_entry) = new_order.first() {
+                boot::set_boot_next(first_entry).map_err(|e| e.to_string())
+            } else {
+                Ok(())
+            }
+        })
 }
 
 #[tauri::command]

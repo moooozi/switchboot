@@ -76,7 +76,7 @@
   onMount(fetchBootEntries);
 </script>
 
-<main class="bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5  min-h-svh font-sans">
+<main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5  min-h-svh font-sans">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
     <h1 class="text-3xl font-bold tracking-tight">Boot Manager</h1>
     <div style="display: flex; gap: 0.75rem;">
@@ -107,7 +107,7 @@
     >
       {#each bootEntries as entry, idx (entry.id)}
         <div
-          class="bg-white dark:bg-neutral-800 transition-colors"
+          class="bg-neutral-200 dark:bg-neutral-800 transition-colors"
           style="
             display: flex;
             align-items: center;
