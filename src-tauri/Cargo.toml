@@ -27,5 +27,5 @@ firmware_variables = { path = "../firmware_variables" }
 # Optimization profile for release builds
 [profile.release]
 lto = "fat"
-opt-level = 3
+opt-level = "z"
 codegen-units = 1

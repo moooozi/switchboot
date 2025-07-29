@@ -76,9 +76,9 @@
   onMount(fetchBootEntries);
 </script>
 
-<main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5  min-h-svh font-sans">
+<main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-    <h1 class="text-3xl font-bold tracking-tight">Boot Manager</h1>
+    <h1 class="text-3xl font-bold tracking-tight">Switchboot</h1>
     <div style="display: flex; gap: 0.75rem;">
       <button
         class="bg-sky-600 text-white font-semibold hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition"
@@ -100,10 +100,10 @@
     <p class="text-red-600 dark:text-red-400">{error}</p>
   {:else}
     <div
+      class="flex-1 overflow-y-auto flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
       use:dndzone={{ items: bootEntries, flipDurationMs: 150, dragDisabled: false }}
       on:consider={handleDnd}
       on:finalize={handleDnd}
-      style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2.5rem;"
     >
       {#each bootEntries as entry, idx (entry.id)}
         <div
@@ -143,7 +143,7 @@
             aria-label="Move down"
           >↓</button>
           {#if entry.is_default}
-            <span class="bg-sky-500 text-white text-xs" style="border-radius: 9999px; padding: 0.25rem 0.75rem;">Default</span>
+            <button disabled={true} class="bg-sky-700 text-white text-xs dark:bg-sky-600 transition" style="border-radius: 9999px; padding: 0.25rem 0.75rem;">Default</button>
           {:else if entry.is_bootnext}
             <button
               class="bg-emerald-500 text-white text-xs hover:bg-emerald-600 transition"
@@ -173,9 +173,19 @@
   button:disabled,
   button:disabled:hover {
     opacity: 0.5;
-    /* Remove background and color changes on hover */
     color: inherit !important;
     box-shadow: none !important;
     filter: none !important;
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 6px;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #222;
   }
 </style>
