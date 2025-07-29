@@ -85,11 +85,13 @@
         class="bg-sky-600 text-white font-semibold hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition rounded-full px-6 py-2"
         on:click={saveOrder}
         disabled={!changed}
+        title="Save the current boot order"
       >Save</button>
       <button
         class="bg-neutral-200 text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600 transition rounded-full px-6 py-2"
         on:click={discardChanges}
         disabled={!changed}
+        title="Discard boot order changes"
       >Discard</button>
     </div>
   </div>
@@ -149,14 +151,14 @@
             >BootNext</button>
           {/if}
           <button
-            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
+            class="bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:brightness-95 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
             on:click={() => moveEntry(idx, 'up')}
             disabled={idx === 0}
             aria-label="Move up"
             title="Move entry up"
           >↑</button>
           <button
-            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
+            class="bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:brightness-95 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
             on:click={() => moveEntry(idx, 'down')}
             disabled={idx === bootEntries.length - 1}
             aria-label="Move down"
