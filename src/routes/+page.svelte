@@ -8,6 +8,7 @@
     description: string;
     is_default: boolean;
     is_bootnext: boolean;
+    is_current: boolean;
   };
 
   let bootEntries: BootEntry[] = [];
@@ -76,19 +77,17 @@
   onMount(fetchBootEntries);
 </script>
 
-<main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans">
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-    <h1 class="text-3xl font-bold tracking-tight">Switchboot</h1>
-    <div style="display: flex; gap: 0.75rem;">
+<main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans" on:contextmenu|preventDefault>
+  <div class="flex items-center justify-between mb-8">
+    <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
+    <div class="flex gap-3">
       <button
-        class="bg-sky-600 text-white font-semibold hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition"
-        style="border-radius: 9999px; padding: 0.5rem 1.5rem;"
+        class="bg-sky-600 text-white font-semibold hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition rounded-full px-6 py-2"
         on:click={saveOrder}
         disabled={!changed}
       >Save</button>
       <button
-        class="bg-neutral-200 text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600 transition"
-        style="border-radius: 9999px; padding: 0.5rem 1.5rem;"
+        class="bg-neutral-200 text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600 transition rounded-full px-6 py-2"
         on:click={discardChanges}
         disabled={!changed}
       >Discard</button>
@@ -107,68 +106,68 @@
     >
       {#each bootEntries as entry, idx (entry.id)}
         <div
-          class="bg-neutral-200 dark:bg-neutral-800 transition-colors"
-          style="
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 1rem;
-            border-radius: 0.75rem;
-            border-width: 1px;
-            border-style: solid;
-            border-color: 
-              {entry.is_default 
-                ? 'var(--tw-prose-sky-500, #0ea5e9)' 
-                : entry.is_bootnext 
-                  ? 'var(--tw-prose-emerald-500, #10b981)' 
-                  : 'var(--tw-prose-neutral-200, #e5e7eb)'
-              };
-            cursor: grab;
-          "
+          class={`flex items-center gap-3 p-4 rounded-xl border transition-colors cursor-grab
+            ${entry.is_default
+              ? "border-sky-500"
+              : entry.is_bootnext
+                ? "border-emerald-500"
+                : "border-neutral-200 dark:border-neutral-700"}
+            bg-neutral-200 dark:bg-neutral-800`}
           data-id={entry.id}
         >
-          <span style="flex: 1;" class="text-base">{entry.description}</span>
-          <button
-            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition"
-            style="border-radius: 9999px; padding: 0.25rem 0.75rem;"
-            on:click={() => moveEntry(idx, 'up')}
-            disabled={idx === 0}
-            aria-label="Move up"
-          >↑</button>
-          <button
-            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition"
-            style="border-radius: 9999px; padding: 0.25rem 0.75rem;"
-            on:click={() => moveEntry(idx, 'down')}
-            disabled={idx === bootEntries.length - 1}
-            aria-label="Move down"
-          >↓</button>
+          <span class="flex-1 text-base">{entry.description}</span>
+          {#if entry.is_current}
+            <span
+              class="bg-purple-300 text-purple-800 dark:bg-purple-600 dark:text-white text-xs font-semibold px-2 py-1 rounded-full mr-2 select-none "
+              title="This entry was used to boot the current OS"
+            >
+              Current
+            </span>
+          {/if}
           {#if entry.is_default}
-            <button disabled={true} class="bg-sky-700 text-white text-xs dark:bg-sky-600 transition" style="border-radius: 9999px; padding: 0.25rem 0.75rem;">Default</button>
+            <button
+              disabled={true}
+              class="bg-sky-700 text-white text-xs dark:bg-sky-600 transition rounded-full px-3 py-1"
+              title="This is the default firmware boot entry"
+            >Default</button>
           {:else if entry.is_bootnext}
             <button
-              class="bg-emerald-500 text-white text-xs hover:bg-emerald-600 transition"
-              style="border-radius: 9999px; padding: 0.25rem 0.75rem;"
+              class="bg-emerald-500 text-white text-xs hover:bg-emerald-600 transition rounded-full px-3 py-1"
               on:click={unsetBootNext}
+              title="Unset BootNext (cancel one-time boot override)"
             >Undo</button>
             <button
-              class="bg-amber-500 text-white text-xs hover:bg-amber-600 transition"
-              style="border-radius: 9999px; padding: 0.25rem 0.75rem;"
+              class="bg-amber-500 text-white text-xs hover:bg-amber-600 transition rounded-full px-3 py-1"
               on:click={restartNow}
+              title="Restart now to boot this entry next"
             >Restart</button>
           {:else}
             <button
-              class="bg-neutral-300 dark:bg-neutral-600 text-neutral-800 dark:text-neutral-200 text-xs hover:bg-sky-500 hover:text-white dark:hover:bg-sky-600 transition"
-              style="border-radius: 9999px; padding: 0.25rem 0.75rem;"
+              class="bg-neutral-300 dark:bg-neutral-600 text-neutral-800 dark:text-neutral-200 text-xs hover:bg-sky-500 hover:text-white dark:hover:bg-sky-600 transition rounded-full px-3 py-1"
               on:click={() => setBootNext(entry)}
+              title="Set this entry as BootNext (one-time boot override)"
             >BootNext</button>
           {/if}
+          <button
+            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
+            on:click={() => moveEntry(idx, 'up')}
+            disabled={idx === 0}
+            aria-label="Move up"
+            title="Move entry up"
+          >↑</button>
+          <button
+            class="bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
+            on:click={() => moveEntry(idx, 'down')}
+            disabled={idx === bootEntries.length - 1}
+            aria-label="Move down"
+            title="Move entry down"
+          >↓</button>
         </div>
       {/each}
     </div>
   {/if}
 </main>
 
-<!-- Add this to your button class or as a global style -->
 <style>
   button:disabled,
   button:disabled:hover {

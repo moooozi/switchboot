@@ -7,6 +7,7 @@ pub struct BootEntry {
     pub description: String,
     pub is_default: bool,
     pub is_bootnext: bool,
+    pub is_current: bool,
 }
 
 #[tauri::command]
@@ -43,6 +44,7 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
     let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
     let boot_order = boot::get_boot_order().map_err(|e| e.to_string())?;
     let boot_next = boot::get_boot_next().map_err(|e| e.to_string())?;
+    let boot_current = boot::get_boot_current().map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     for (idx, &entry_id) in boot_order.iter().enumerate() {
         let parsed = boot::get_parsed_boot_entry(entry_id).map_err(|e| e.to_string())?;
@@ -51,6 +53,7 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
             description: parsed.description,
             is_default: idx == 0,
             is_bootnext: boot_next == Some(entry_id) && idx != 0,
+            is_current: boot_current == Some(entry_id),
         });
     }
     Ok(entries)
@@ -76,7 +79,11 @@ fn unset_boot_next(default_entry: u16) -> Result<(), String> {
     boot::set_boot_next(default_entry).map_err(|e| e.to_string())
 }
 
-// Add more commands as needed for your frontend
+#[tauri::command]
+fn get_boot_current() -> Result<Option<u16>, String> {
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    boot::get_boot_current().map_err(|e| e.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -91,6 +98,7 @@ pub fn run() {
             get_boot_entries,
             save_boot_order,
             unset_boot_next,
+            get_boot_current,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

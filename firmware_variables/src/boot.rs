@@ -8,7 +8,6 @@ pub fn get_boot_order() -> Result<Vec<u16>, Box<dyn std::error::Error>> {
     let (raw, _) = get_variable("BootOrder", GLOBAL_NAMESPACE)?;
     // Each entry is a little-endian u16
     let ids: Vec<u16> = iter_unpack::<u16>(&raw).collect();
-    println!("[boot] BootOrder: {:?}", ids);
     Ok(ids)
 }
 
@@ -70,4 +69,16 @@ pub fn set_boot_next(entry_id: u16) -> Result<(), Box<dyn std::error::Error>> {
     let raw = entry_id.to_le_bytes();
     set_variable("BootNext", &raw, GLOBAL_NAMESPACE, DEFAULT_ATTRIBUTES)?;
     Ok(())
+}
+
+/// Returns the Boot#### entry ID used to boot the current session, if available.
+pub fn get_boot_current() -> Result<Option<u16>, Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+    match get_variable("BootCurrent", GLOBAL_NAMESPACE) {
+        Ok((raw, _)) if raw.len() >= 2 => {
+            let val = u16::from_le_bytes([raw[0], raw[1]]);
+            Ok(Some(val))
+        }
+        _ => Ok(None),
+    }
 }
