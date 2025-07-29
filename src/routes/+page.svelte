@@ -78,7 +78,7 @@
 </script>
 
 <main class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans" on:contextmenu|preventDefault>
-  <div class="flex items-center justify-between mb-8">
+  <div class="container max-w-2xl mx-auto flex items-center justify-between mb-8 px-3">
     <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
     <div class="flex gap-3">
       <button
