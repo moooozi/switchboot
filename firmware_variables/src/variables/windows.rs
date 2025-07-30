@@ -1,9 +1,10 @@
-use bitflags::bitflags;
 use windows::core::Error as WinError;
 use windows::core::PCWSTR;
 use windows::Win32::System::WindowsProgramming::{
     GetFirmwareEnvironmentVariableExW, SetFirmwareEnvironmentVariableExW,
 };
+use crate::utils::{gle, verify_uefi_firmware};
+use super::Attributes;
 
 pub fn set_variable(
     name: &str,
@@ -63,23 +64,3 @@ pub fn get_variable(name: &str, namespace: &str) -> Result<(Vec<u8>, Attributes)
         }
     }
 }
-use crate::utils::{gle, verify_uefi_firmware};
-
-pub const GLOBAL_NAMESPACE: &str = "{8BE4DF61-93CA-11d2-AA0D-00E098032B8C}";
-pub const ERROR_BUFFER_TOO_SMALL_U32: u32 = 122;
-
-bitflags! {
-    pub struct Attributes: u32 {
-        const NON_VOLATILE = 0x00000001;
-        const BOOT_SERVICE_ACCESS = 0x00000002;
-        const RUNTIME_ACCESS = 0x00000004;
-        const HARDWARE_ERROR_RECORD = 0x00000008;
-        const AUTHENTICATED_WRITE_ACCESS = 0x00000010;
-        const TIME_BASED_AUTHENTICATED_WRITE_ACCESS = 0x00000020;
-        const APPEND_WRITE = 0x00000040;
-    }
-}
-
-pub const DEFAULT_ATTRIBUTES: Attributes = Attributes::NON_VOLATILE
-    .union(Attributes::BOOT_SERVICE_ACCESS)
-    .union(Attributes::RUNTIME_ACCESS);

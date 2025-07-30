@@ -29,6 +29,7 @@ pub fn set_boot_order(entry_ids: &[u16]) -> Result<(), Box<dyn std::error::Error
 
 pub fn get_boot_entry(entry_id: u16) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     verify_uefi_firmware()?;
+    println!("[boot] get_boot_entry({}) called in v3", entry_id);
     let name = format!("Boot{:04X}", entry_id);
     let (raw, _) = get_variable(&name, GLOBAL_NAMESPACE)?;
     Ok(raw)
