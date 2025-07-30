@@ -22,6 +22,20 @@
     }
   },
   "bundle": {
+    "linux": {
+      "deb": {
+        "depends": ["policykit-1"],
+        "files": {
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "polkit/com.switchboot.cli.policy"
+        }
+      },
+      "rpm": {
+        "depends": ["polkit"],
+        "files": {
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "polkit/com.switchboot.cli.policy"
+        }
+      }
+    },
     "active": true,
     "targets": "all",
     "icon": [

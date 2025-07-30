@@ -3437,6 +3437,7 @@ name = "switchboot"
 version = "0.1.0"
 dependencies = [
  "firmware_variables",
+ "libc",
  "serde",
  "serde_json",
  "tauri",

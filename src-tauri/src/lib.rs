@@ -1,4 +1,4 @@
-use firmware_variables::{boot, privileges};
+use std::process::Command;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -10,151 +10,92 @@ pub struct BootEntry {
     pub is_current: bool,
 }
 
-/// with_privileges currently only needed for Windows. Adjusts privileges and runs the provided closure, mapping errors to String.
-fn with_privileges<T, F>(f: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, Box<dyn std::error::Error>>,
-{
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    f().map_err(|e| e.to_string())
-}
+fn call_cli(args: &[&str]) -> Result<String, String> {
+    let cli_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(|p| p.join("switchboot-cli"))
+        .ok_or("Failed to find CLI binary")?;
 
-/// Sets the boot order internally.
-pub fn set_boot_order_internal(order: Vec<u16>) -> Result<(), String> {
-    with_privileges(|| boot::set_boot_order(&order))
-}
+    // List of commands that require privilege
+    let needs_privilege = matches!(
+        args.get(0).map(|s| *s),
+        Some("set-boot-order")
+            | Some("set-boot-next")
+            | Some("save-boot-order")
+            | Some("unset-boot-next")
+    );
 
-/// Sets the BootNext variable internally.
-pub fn set_boot_next_internal(entry_id: u16) -> Result<(), String> {
-    eprintln!("[DEBUG] set_boot_next_internal called with entry_id: {}", entry_id);
-    with_privileges(|| boot::set_boot_next(entry_id))
-}
+    let mut cmd = if needs_privilege {
+        let mut c = Command::new("pkexec");
+        c.arg(&cli_path);
+        c
+    } else {
+        Command::new(&cli_path)
+    };
 
-/// Saves the boot order and sets BootNext to the first entry.
-pub fn save_boot_order_internal(new_order: Vec<u16>) -> Result<(), String> {
-    with_privileges(|| {
-        boot::set_boot_order(&new_order)?;
-        if let Some(&first_entry) = new_order.first() {
-            boot::set_boot_next(first_entry)?;
-        }
-        Ok(())
-    })
-}
+    cmd.args(args);
 
-/// Unsets the BootNext variable internally.
-pub fn unset_boot_next_internal() -> Result<(), String> {
-    with_privileges(boot::unset_boot_next)
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
 }
 
 #[tauri::command]
 fn get_boot_order() -> Result<Vec<u16>, String> {
-    with_privileges(boot::get_boot_order)
-}
-
-#[cfg(target_os = "linux")]
-fn run_with_pkexec(args: &[String]) -> Result<(), String> {
-    use std::process::Command;
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut cmd_args = vec![String::from("--cli")];
-    cmd_args.extend_from_slice(args);
-    let status = Command::new("pkexec")
-        .arg(exe)
-        .args(&cmd_args)
-        .status()
-        .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("pkexec command failed".into())
-    }
+    let out = call_cli(&["get-boot-order"])?;
+    serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let mut args = vec![String::from("set-boot-order")];
-        args.extend(order.iter().map(u16::to_string));
-        run_with_pkexec(&args)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        set_boot_order_internal(order)
-    }
+    let args: Vec<String> = std::iter::once("set-boot-order".to_string())
+        .chain(order.iter().map(u16::to_string))
+        .collect();
+    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+    Ok(())
 }
 
 #[tauri::command]
 fn get_boot_next() -> Result<Option<u16>, String> {
-    with_privileges(boot::get_boot_next)
-}
-
-#[tauri::command]
-fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
-    with_privileges(|| {
-        let boot_order = boot::get_boot_order()?;
-        let boot_next = boot::get_boot_next()?;
-        let boot_current = boot::get_boot_current()?;
-        let mut entries = Vec::new();
-        for (idx, &entry_id) in boot_order.iter().enumerate() {
-            let parsed = boot::get_parsed_boot_entry(entry_id)?;
-            entries.push(BootEntry {
-                id: entry_id,
-                description: parsed.description,
-                is_default: idx == 0,
-                is_bootnext: boot_next == Some(entry_id) && idx != 0,
-                is_current: boot_current == Some(entry_id),
-            });
-        }
-        Ok(entries)
-    })
+    let out = call_cli(&["get-boot-next"])?;
+    serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_boot_next(entry_id: u16) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let args = vec![
-            String::from("set-boot-next"),
-            entry_id.to_string(),
-        ];
-        run_with_pkexec(&args)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        set_boot_next_internal(entry_id)
-    }
+    call_cli(&["set-boot-next", &entry_id.to_string()])?;
+    Ok(())
 }
 
 #[tauri::command]
 fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let mut args = vec![String::from("save-boot-order")];
-        args.extend(new_order.iter().map(u16::to_string));
-        run_with_pkexec(&args)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        save_boot_order_internal(new_order)
-    }
+    let args: Vec<String> = std::iter::once("save-boot-order".to_string())
+        .chain(new_order.iter().map(u16::to_string))
+        .collect();
+    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+    Ok(())
 }
 
 #[tauri::command]
 fn unset_boot_next() -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let args = vec![String::from("unset-boot-next")];
-        run_with_pkexec(&args)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        unset_boot_next_internal()
-    }
+    call_cli(&["unset-boot-next"])?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
+    let out = call_cli(&["get-boot-entries"])?;
+    serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_boot_current() -> Result<Option<u16>, String> {
-    with_privileges(boot::get_boot_current)
+    let out = call_cli(&["get-boot-current"])?;
+    serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
