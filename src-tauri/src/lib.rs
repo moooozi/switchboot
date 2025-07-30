@@ -10,7 +10,7 @@ pub struct BootEntry {
     pub is_current: bool,
 }
 
-fn call_cli(args: &[&str], needs_privilege: bool) -> Result<String, String> {
+fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String> {
     let cli_path = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .parent()
@@ -95,6 +95,37 @@ fn get_boot_current() -> Result<Option<u16>, String> {
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn restart_now() -> Result<(), String> {
+    // /r = restart, /t 0 = no delay
+    Command::new("shutdown")
+        .args(&["/r", "/t", "0"])
+        .spawn()
+        .map_err(|e| format!("Failed to execute shutdown: {e}"))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tauri::command]
+fn restart_now() -> Result<(), String> {
+    let shutdown_result = Command::new("shutdown")
+        .args(&["-r", "now"])
+        .spawn();
+    if shutdown_result.is_err() {
+        Command::new("reboot")
+            .spawn()
+            .map_err(|e| format!("Failed to execute reboot: {e}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+#[tauri::command]
+fn restart_now() -> Result<(), String> {
+    Err("Unsupported platform".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -108,6 +139,7 @@ pub fn run() {
             save_boot_order,
             unset_boot_next,
             get_boot_current,
+            restart_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
