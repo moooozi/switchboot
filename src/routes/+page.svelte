@@ -47,7 +47,7 @@
 
   // Undo BootNext
   async function unsetBootNext() {
-    await invoke("unset_boot_next", { defaultEntry: bootEntries[0].id });
+    await invoke("unset_boot_next");
     await fetchBootEntries();
   }
 

@@ -21,7 +21,7 @@ pub fn set_variable(
     let mut data = attributes.bits().to_le_bytes().to_vec();
     data.extend_from_slice(value);
     let path = efivar_path(name, namespace);
-    let mut file = OpenOptions::new().write(true).open(&path)?;
+    let mut file = OpenOptions::new().write(true).create(true).open(&path)?;
     file.write_all(&data)?;
     Ok(())
 }

@@ -10,6 +10,37 @@ pub struct BootEntry {
     pub is_current: bool,
 }
 
+
+/// Internal logic for setting boot order, used by both Tauri and CLI.
+pub fn set_boot_order_internal(order: Vec<u16>) -> Result<(), String> {
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    boot::set_boot_order(&order).map_err(|e| e.to_string())
+}
+
+pub fn set_boot_next_internal(entry_id: u16) -> Result<(), String> {
+    eprintln!("[DEBUG] set_boot_next_internal called with entry_id: {}", entry_id);
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    let result = boot::set_boot_next(entry_id);
+    eprintln!("[DEBUG] boot::set_boot_next returned: {:?}", result);
+    result.map_err(|e| e.to_string())
+}
+
+pub fn save_boot_order_internal(new_order: Vec<u16>) -> Result<(), String> {
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    boot::set_boot_order(&new_order).map_err(|e| e.to_string())
+        .and_then(|_| {
+            if let Some(&first_entry) = new_order.first() {
+                boot::set_boot_next(first_entry).map_err(|e| e.to_string())
+            } else {
+                Ok(())
+            }
+        })
+}
+pub fn unset_boot_next_internal() -> Result<(), String> {
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    boot::unset_boot_next().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -23,8 +54,27 @@ fn get_boot_order() -> Result<Vec<u16>, String> {
 
 #[tauri::command]
 fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    boot::set_boot_order(&order).map_err(|e| e.to_string())
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let args: Vec<String> = order.iter().map(|id| id.to_string()).collect();
+        let status = Command::new("pkexec")
+            .arg(std::env::current_exe().unwrap())
+            .arg("--cli")
+            .arg("set-boot-order")
+            .args(&args)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Failed to set boot order".into())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        set_boot_order_internal(order)
+    }
 }
 
 #[tauri::command]
@@ -33,11 +83,6 @@ fn get_boot_next() -> Result<Option<u16>, String> {
     boot::get_boot_next().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn set_boot_next(entry_id: u16) -> Result<(), String> {
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    boot::set_boot_next(entry_id).map_err(|e| e.to_string())
-}
 
 #[tauri::command]
 fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
@@ -60,23 +105,81 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
 }
 
 #[tauri::command]
-fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    boot::set_boot_order(&new_order).map_err(|e| e.to_string())
-        .and_then(|_| {
-            // Optionally, you can also set the first entry as boot next
-            if let Some(&first_entry) = new_order.first() {
-                boot::set_boot_next(first_entry).map_err(|e| e.to_string())
-            } else {
-                Ok(())
-            }
-        })
+fn set_boot_next(entry_id: u16) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        eprintln!("[DEBUG] set_boot_next: invoking pkexec with entry_id: {}", entry_id);
+        let exe = std::env::current_exe().unwrap();
+        eprintln!("[DEBUG] Executable path: {:?}", exe);
+        let status = Command::new("pkexec")
+            .arg(&exe)
+            .arg("--cli")
+            .arg("set-boot-next")
+            .arg(entry_id.to_string())
+            .status()
+            .map_err(|e| e.to_string())?;
+        eprintln!("[DEBUG] pkexec status: {:?}", status);
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Failed to set boot next".into())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        set_boot_next_internal(entry_id)
+    }
 }
 
 #[tauri::command]
-fn unset_boot_next(default_entry: u16) -> Result<(), String> {
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    boot::set_boot_next(default_entry).map_err(|e| e.to_string())
+fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let args: Vec<String> = new_order.iter().map(|id| id.to_string()).collect();
+        let status = Command::new("pkexec")
+            .arg(std::env::current_exe().unwrap())
+            .arg("--cli")
+            .arg("save-boot-order")
+            .args(&args)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Failed to save boot order".into())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        save_boot_order_internal(new_order)
+    }
+}
+
+
+
+#[tauri::command]
+fn unset_boot_next() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let status = Command::new("pkexec")
+            .arg(std::env::current_exe().unwrap())
+            .arg("--cli")
+            .arg("unset-boot-next")
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Failed to unset boot next".into())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        unset_boot_next_internal()
+    }
 }
 
 #[tauri::command]
