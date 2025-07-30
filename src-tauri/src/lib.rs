@@ -10,29 +10,26 @@ pub struct BootEntry {
     pub is_current: bool,
 }
 
-fn call_cli(args: &[&str]) -> Result<String, String> {
+fn call_cli(args: &[&str], needs_privilege: bool) -> Result<String, String> {
     let cli_path = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .parent()
         .map(|p| p.join("switchboot-cli"))
         .ok_or("Failed to find CLI binary")?;
 
-    // List of commands that require privilege
-    let needs_privilege = matches!(
-        args.get(0).map(|s| *s),
-        Some("set-boot-order")
-            | Some("set-boot-next")
-            | Some("save-boot-order")
-            | Some("unset-boot-next")
-    );
-
-    let mut cmd = if needs_privilege {
-        let mut c = Command::new("pkexec");
-        c.arg(&cli_path);
-        c
-    } else {
-        Command::new(&cli_path)
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        if needs_privilege {
+            let mut c = Command::new("pkexec");
+            c.arg(&cli_path);
+            c
+        } else {
+            Command::new(&cli_path)
+        }
     };
+
+    #[cfg(not(target_os = "linux"))]
+    let mut cmd = Command::new(&cli_path);
 
     cmd.args(args);
 
@@ -46,7 +43,7 @@ fn call_cli(args: &[&str]) -> Result<String, String> {
 
 #[tauri::command]
 fn get_boot_order() -> Result<Vec<u16>, String> {
-    let out = call_cli(&["get-boot-order"])?;
+    let out = call_cli(&["get-boot-order"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -55,19 +52,19 @@ fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
     let args: Vec<String> = std::iter::once("set-boot-order".to_string())
         .chain(order.iter().map(u16::to_string))
         .collect();
-    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>(), true)?;
     Ok(())
 }
 
 #[tauri::command]
 fn get_boot_next() -> Result<Option<u16>, String> {
-    let out = call_cli(&["get-boot-next"])?;
+    let out = call_cli(&["get-boot-next"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_boot_next(entry_id: u16) -> Result<(), String> {
-    call_cli(&["set-boot-next", &entry_id.to_string()])?;
+    call_cli(&["set-boot-next", &entry_id.to_string()], true)?;
     Ok(())
 }
 
@@ -76,25 +73,25 @@ fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
     let args: Vec<String> = std::iter::once("save-boot-order".to_string())
         .chain(new_order.iter().map(u16::to_string))
         .collect();
-    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+    call_cli(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>(), true)?;
     Ok(())
 }
 
 #[tauri::command]
 fn unset_boot_next() -> Result<(), String> {
-    call_cli(&["unset-boot-next"])?;
+    call_cli(&["unset-boot-next"], true)?;
     Ok(())
 }
 
 #[tauri::command]
 fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
-    let out = call_cli(&["get-boot-entries"])?;
+    let out = call_cli(&["get-boot-entries"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_boot_current() -> Result<Option<u16>, String> {
-    let out = call_cli(&["get-boot-current"])?;
+    let out = call_cli(&["get-boot-current"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 

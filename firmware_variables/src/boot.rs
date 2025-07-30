@@ -73,6 +73,7 @@ pub fn unset_boot_next() -> Result<(), Box<dyn std::error::Error>> {
     verify_uefi_firmware()?;
     match crate::variables::delete_variable("BootNext", GLOBAL_NAMESPACE, DEFAULT_ATTRIBUTES) {
         Ok(_) => Ok(()),
+        #[cfg(unix)]
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()), // Already unset
         Err(e) => Err(Box::new(e)),
     }
