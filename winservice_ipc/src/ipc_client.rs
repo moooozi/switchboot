@@ -4,10 +4,13 @@ use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE, PWSTR};
-use windows::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING};
-use windows::Win32::System::Pipes::{PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, SetNamedPipeHandleState};
+// use windows::core::PCWSTR; // Not available in this version, use *const u16 instead
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, ReadFile, WriteFile, FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING,
+};
+use windows::Win32::System::Pipes::{SetNamedPipeHandleState, PIPE_READMODE_MESSAGE};
 
-use crate::ipc_messaging::{ ServerResponse};
+use crate::ipc_messaging::ServerResponse;
 
 pub struct IPCClient {
     handle: Arc<Mutex<HANDLE>>,
@@ -15,7 +18,6 @@ pub struct IPCClient {
 
 unsafe impl Send for IPCClient {}
 unsafe impl Sync for IPCClient {}
-
 
 impl IPCClient {
     pub fn connect(pipe_name: &str) -> io::Result<Self> {
@@ -41,7 +43,7 @@ impl IPCClient {
         }
 
         // Set pipe to message mode
-        let mut mode = PIPE_READMODE_MESSAGE | PIPE_TYPE_MESSAGE;
+        let mut mode = PIPE_READMODE_MESSAGE;
         unsafe {
             SetNamedPipeHandleState(handle, &mut mode, null_mut(), null_mut()).ok()?;
         }
@@ -84,8 +86,8 @@ impl IPCClient {
             return Err(io::Error::last_os_error());
         }
         buf.truncate(bytes_read as usize);
-        let resp: ServerResponse = bincode::deserialize(&buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let resp: ServerResponse =
+            bincode::deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Ok(resp)
     }
 }

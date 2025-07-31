@@ -3,6 +3,10 @@ name = "winservice_ipc"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "winservice_ipc_demo"
+path = "src/main.rs"
+
 [dependencies]
 signal-hook = "*"
 windows = { version = "0.30", features = [

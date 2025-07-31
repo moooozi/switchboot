@@ -1,9 +1,6 @@
 use firmware_variables::{boot, privileges};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
-// use winservice_ipc::IPCClient;
-use bincode;
-use rand::Rng;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommandResponse {
