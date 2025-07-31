@@ -22,11 +22,23 @@ fn main() {
                     windows::launch_windows_service();
                     return;
                 }
-                "/installservice" => {
+                "/pipe_server" => {
+                    windows::run_pipe_server();
+                    return;
+                }
+                "/pipe_client" => {
+                    windows::run_pipe_client();
+                    return;
+                }
+                "/service_client" => {
+                    windows::run_service_client();
+                    return;
+                }
+                "/install_service" => {
                     windows::install_service();
                     return;
                 }
-                "/uninstallservice" => {
+                "/uninstall_service" => {
                     windows::uninstall_service();
                     return;
                 }

@@ -10,7 +10,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Foundation::{BOOL, ERROR_CALL_NOT_IMPLEMENTED, NO_ERROR, PSID, PWSTR};
 use windows::Win32::Security::{
     self, AddAccessAllowedAce, AllocateAndInitializeSid, FreeSid, InitializeSecurityDescriptor,
@@ -18,10 +17,6 @@ use windows::Win32::Security::{
     SID,
 };
 
-
-
-use windows::Win32::System::SystemServices::{SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID,
-};
 use windows::Win32::System::Services::{
     CloseServiceHandle, CreateServiceW, OpenSCManagerW, RegisterServiceCtrlHandlerExW,
     SetServiceObjectSecurity, SetServiceStatus, SC_MANAGER_CREATE_SERVICE, SERVICE_ACCEPT_STOP,
@@ -30,6 +25,7 @@ use windows::Win32::System::Services::{
     SERVICE_WIN32_OWN_PROCESS,
 };
 use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABLE_ENTRYW};
+use windows::Win32::System::SystemServices::{SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID};
 pub struct ServiceContext {
     pub stop_flag: Arc<AtomicBool>,
 }
@@ -163,7 +159,7 @@ pub fn run_windows_service(service_name: &str, service_main: fn(Vec<OsString>)) 
 
 /// Installs a Windows service with the given parameters.
 /// Returns Ok(()) on success, or an error if installation fails.
-pub fn _install_service(
+pub fn install_service(
     service_name: &str,
     display_name: &str,
     executable_path: &str,
@@ -200,51 +196,95 @@ pub fn _install_service(
         return Err(windows::core::Error::from_win32());
     }
 
-    // --- Grant SERVICE_START to Everyone ---
+    // --- Grant SERVICE_START to Everyone, preserving existing DACL (SDDL injection, like Python) ---
     unsafe {
-        // Create SID for Everyone
-        let mut everyone_sid: PSID = PSID::default();
-        let mut world_auth = windows::Win32::Security::SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
-        let result = AllocateAndInitializeSid(
-            &world_auth as *const _,
-            1,
-            SECURITY_WORLD_RID.try_into().unwrap(),
+        use std::ptr::null_mut;
+        use windows::Win32::Security::{
+            DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+            SACL_SECURITY_INFORMATION,
+        };
+        use windows::Win32::System::Services::QueryServiceObjectSecurity;
+
+        // Query the current SDDL string
+        let mut needed = 0u32;
+        let _ = QueryServiceObjectSecurity(
+            service_handle,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
             0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &mut everyone_sid,
+            &mut needed,
         );
-        if result.as_bool() {
-            // Create a new ACL with SERVICE_START access for Everyone
-            let acl_size = std::mem::size_of::<ACL>() as u32
-                + std::mem::size_of::<windows::Win32::Security::ACCESS_ALLOWED_ACE>() as u32
-                + Security::GetLengthSid(everyone_sid) as u32
-                - std::mem::size_of::<u32>() as u32;
-            let mut acl = vec![0u8; acl_size as usize];
-            let acl_ptr = acl.as_mut_ptr() as *mut ACL;
-            Security::InitializeAcl(acl_ptr, acl_size, ACL_REVISION);
+        let mut buf = vec![0u8; needed as usize];
+        let ok = QueryServiceObjectSecurity(
+            service_handle,
+            DACL_SECURITY_INFORMATION,
+            buf.as_mut_ptr() as *mut _,
+            needed,
+            &mut needed,
+        );
+        if ok.as_bool() {
+            // Convert security descriptor to SDDL string
+            use windows::Win32::Security::Authorization::{
+                ConvertSecurityDescriptorToStringSecurityDescriptorW, SDDL_REVISION_1,
+            };
+            let mut sddl_ptr: windows::Win32::Foundation::PWSTR = PWSTR(null_mut());
+            let mut sddl_len = 0u32;
+            if ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                buf.as_ptr() as *const _,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &mut sddl_ptr,
+                &mut sddl_len,
+            )
+            .as_bool()
+            {
+                let sddl = {
+                    // Find the length of the null-terminated UTF-16 string
+                    let mut len = 0;
+                    let mut ptr = sddl_ptr.0;
+                    while unsafe { *ptr } != 0 {
+                        len += 1;
+                        ptr = unsafe { ptr.add(1) };
+                    }
+                    let slice = unsafe { std::slice::from_raw_parts(sddl_ptr.0, len) };
+                    String::from_utf16_lossy(slice)
+                };
+                // Inject (A;;RPWPCR;;;WD) for Everyone (WD = World)
+                let inject = "(A;;RPWPCR;;;WD)";
+                let new_sddl = if let Some(idx) = sddl.find(")S:(") {
+                    let insert_at = idx + 1;
+                    let mut s = sddl.clone();
+                    s.insert_str(insert_at, inject);
+                    s
+                } else {
+                    // If no S:(, just append
+                    format!("{}{}", sddl, inject)
+                };
+                use windows::Win32::Security::Authorization::{
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+                };
 
-            AddAccessAllowedAce(
-                acl_ptr,
-                ACL_REVISION,
-                windows::Win32::System::Services::SERVICE_START,
-                everyone_sid,
-            );
-
-            // Create and initialize a security descriptor
-            let mut sd = SECURITY_DESCRIPTOR::default();
-            InitializeSecurityDescriptor(&mut sd, SECURITY_DESCRIPTOR_REVISION);
-
-            SetSecurityDescriptorDacl(&mut sd, BOOL(1), acl_ptr, BOOL(0));
-
-            // Set the security descriptor on the service
-            SetServiceObjectSecurity(service_handle, DACL_SECURITY_INFORMATION, &sd);
-
-            FreeSid(everyone_sid);
+                let mut new_sd: *mut std::ffi::c_void = null_mut();
+                let mut new_sd_len = 0u32;
+                let new_sddl_w: Vec<u16> = new_sddl.encode_utf16().chain(Some(0)).collect();
+                PWSTR(new_sddl_w.as_ptr() as *mut _);
+                if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    PWSTR(new_sddl_w.as_ptr() as *mut _),
+                    SDDL_REVISION_1,
+                    &mut new_sd as *mut _
+                        as *mut *mut windows::Win32::Security::SECURITY_DESCRIPTOR,
+                    &mut new_sd_len,
+                )
+                .as_bool()
+                {
+                    // Set the new security descriptor
+                    SetServiceObjectSecurity(
+                        service_handle,
+                        DACL_SECURITY_INFORMATION,
+                        new_sd as *const _,
+                    );
+                }
+            }
         }
     }
 
@@ -253,97 +293,95 @@ pub fn _install_service(
     Ok(())
 }
 
-
-/// Installs a Windows service using `sc.exe` and makes it startable by normal users.
-/// Returns Ok(()) on success, or an error if installation fails.
-pub fn install_service(
-    service_name: &str,
-    display_name: &str,
-    executable_path: &str,
-) -> windows::core::Result<()> {
-    // 1. Create the service
-    let output = Command::new("sc.exe")
-        .args([
-            "create",
-            service_name,
-            &format!("binPath={}", format!("\"{}\"", executable_path)),
-            &format!("DisplayName={}", display_name),
-            "start=", "demand",
-        ])
-        .output()
-        .map_err(|e| windows::core::Error::new(windows::core::HRESULT(1), format!("Failed to run sc.exe: {e}").into()))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(windows::core::Error::new(
-            windows::core::HRESULT(1),
-            format!("sc.exe failed: {}\n{}", stdout, stderr).into(),
-        ));
-    }
-
-    // 2. Get the current security descriptor
-    let output = Command::new("sc.exe")
-        .args(["sdshow", service_name])
-        .output()
-        .map_err(|e| windows::core::Error::new(windows::core::HRESULT(1), format!("Failed to run sc.exe sdshow: {e}").into()))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(windows::core::Error::new(
-            windows::core::HRESULT(1),
-            format!("sc.exe sdshow failed: {}", stderr).into(),
-        ));
-    }
-
-    let mut sddl = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // 3. Inject Users group SERVICE_START permission
-    // SDDL for: (A;;RPWPCR;;;S-1-5-32-545)
-    // Insert before the last ')S:(' if present, else append
-    let inject_str = "(A;;RPWPCR;;;S-1-5-32-545)";
-    if let Some(idx) = sddl.find(")S:(") {
-        sddl.insert_str(idx + 1, inject_str);
-    } else {
-        sddl.push_str(inject_str);
-    }
-
-    // 4. Set the new security descriptor
-    let output = Command::new("sc.exe")
-        .args(["sdset", service_name, &sddl])
-        .output()
-        .map_err(|e| windows::core::Error::new(windows::core::HRESULT(1), format!("Failed to run sc.exe sdset: {e}").into()))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(windows::core::Error::new(
-            windows::core::HRESULT(1),
-            format!("sc.exe sdset failed: {}", stderr).into(),
-        ));
-    }
-
-    Ok(())
-}
-
-
-/// Uninstalls a Windows service using `sc.exe`.
+/// Uninstalls a Windows service using the Windows API.
 /// Returns Ok(()) on success, or an error if uninstallation fails.
 pub fn uninstall_service(service_name: &str) -> windows::core::Result<()> {
-    let output = std::process::Command::new("sc.exe")
-        .args(["delete", service_name])
-        .output()
-        .map_err(|e| windows::core::Error::new(
-            windows::core::HRESULT(1),
-            format!("Failed to run sc.exe delete: {e}").into(),
-        ))?;
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Foundation::PWSTR;
+    use windows::Win32::System::Services::{
+        CloseServiceHandle, DeleteService, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT,
+        SERVICE_ALL_ACCESS,
+    };
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(windows::core::Error::new(
-            windows::core::HRESULT(1),
-            format!("sc.exe delete failed: {}", stderr).into(),
-        ));
+    // Convert service name to wide string
+    let service_name_wide: Vec<u16> = OsStr::new(service_name)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    unsafe {
+        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
+        if scm.is_invalid() {
+            return Err(windows::core::Error::from_win32());
+        }
+        let service = OpenServiceW(
+            scm,
+            PWSTR(service_name_wide.as_ptr() as *mut _),
+            SERVICE_ALL_ACCESS,
+        );
+        if service.is_invalid() {
+            CloseServiceHandle(scm);
+            return Err(windows::core::Error::from_win32());
+        }
+        let result = DeleteService(service);
+        CloseServiceHandle(service);
+        CloseServiceHandle(scm);
+        if result.as_bool() {
+            Ok(())
+        } else {
+            Err(windows::core::Error::from_win32())
+        }
     }
+}
 
-    Ok(())
+#[cfg(windows)]
+pub fn start_service(service_name: &str) -> std::io::Result<()> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use windows::Win32::Foundation::{ERROR_SERVICE_ALREADY_RUNNING, PWSTR};
+    use windows::Win32::System::Services::{
+        CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatus, StartServiceW,
+        SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_START, SERVICE_STATUS,
+    };
+
+    // Convert service name to wide string
+    let service_name_wide: Vec<u16> = OsStr::new(service_name)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    unsafe {
+        let scm = OpenSCManagerW(PWSTR(null_mut()), PWSTR(null_mut()), SC_MANAGER_CONNECT);
+        if scm.is_invalid() {
+            return Err(std::io::Error::last_os_error());
+        }
+        let service = OpenServiceW(
+            scm,
+            PWSTR(service_name_wide.as_ptr() as *mut _),
+            SERVICE_START | SERVICE_QUERY_STATUS,
+        );
+        if service.is_invalid() {
+            CloseServiceHandle(scm);
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut status = SERVICE_STATUS::default();
+        if QueryServiceStatus(service, &mut status).as_bool() {
+            if status.dwCurrentState == SERVICE_RUNNING {
+                CloseServiceHandle(service);
+                CloseServiceHandle(scm);
+                return Ok(());
+            }
+        }
+        let result = StartServiceW(service, 0, null_mut());
+        let err = std::io::Error::last_os_error();
+        CloseServiceHandle(service);
+        CloseServiceHandle(scm);
+        if result.as_bool() || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32) {
+            Ok(())
+        } else {
+            Err(err)
+        }
+    }
 }

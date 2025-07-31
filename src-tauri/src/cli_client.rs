@@ -28,11 +28,10 @@ impl CliProcess {
             c
         };
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "windows")]
         let mut cmd = {
             let mut c = Command::new(&cli_path);
-            c.arg("--daemon");
-            #[cfg(target_os = "windows")]
+            c.arg("/service_client");
             {
                 use std::os::windows::process::CommandExt;
                 const CREATE_NO_WINDOW: u32 = 0x08000000;

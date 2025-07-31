@@ -1,10 +1,10 @@
 const SERVICE_NAME: &str = "swboot-cli";
-const SERVICE_DISPLAY_NAME: &str = "Switchboot Background service";
+const SERVICE_DISPLAY_NAME: &str = "Switchboot System Service";
 const PIPE_NAME: &str = r"\\.\pipe\ca9ba1f9-4aaa-486f-8ce4-f69453af0c6c";
 
 use crate::logic::{dispatch_command, CliCommand, CommandResponse};
 use std::sync::Arc;
-use winservice_ipc::{pipe_server, run_service, IPC};
+use winservice_ipc::{pipe_server, run_service, start_service, IPC};
 use winservice_ipc::{ClientRequest, ServerResponse};
 
 #[cfg(windows)]
@@ -59,31 +59,121 @@ fn handle_client_request(ipc: &IPC, request: &[u8]) {
 /// Try to send the command to the Windows service via IPC.
 /// Returns Some(CommandResponse) if successful, None if IPC fails.
 #[cfg(windows)]
-fn try_ipc_command(command: &CliCommand) -> Option<CommandResponse> {
-    use rand::Rng;
-    use winservice_ipc::{ClientRequest, IPCClient, ServerResponse};
-    let client = IPCClient::connect(PIPE_NAME).ok()?;
-    let payload = bincode::serialize(command).ok()?;
+pub fn run_pipe_client() {
+    use std::io::{BufRead, BufReader, Write};
+    use winservice_ipc::IPCClient;
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    let reader = BufReader::new(stdin);
 
-    let req = ClientRequest {
-        // This is the new rand syntax since rand 0.9
-        id: rand::rng().random::<u128>().to_string(),
-        payload,
-    };
-    let req_bytes = bincode::serialize(&req).ok()?;
-    let resp: ServerResponse = client.send_request(req_bytes).ok()?;
-    if resp.status == "ok" {
-        if let Some(result_bytes) = resp.result {
-            bincode::deserialize(&result_bytes).ok()
-        } else {
-            None
+    // Connect to the pipe once and keep the connection open
+    let client = match IPCClient::connect(PIPE_NAME) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to connect to pipe: {}", e);
+            std::process::exit(1);
         }
-    } else {
-        Some(CommandResponse {
-            code: 1,
-            message: resp.error.unwrap_or_else(|| "Unknown error".to_string()),
-        })
+    };
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let args: Vec<String> = match serde_json::from_str(&line) {
+            Ok(a) => a,
+            Err(e) => {
+                let resp = CommandResponse {
+                    code: 1,
+                    message: format!("Invalid input: {}", e),
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
+
+        let command = CliCommand::from_args(&args);
+        // Use the same client for all requests
+        let payload = match bincode::serialize(&command) {
+            Ok(p) => p,
+            Err(e) => {
+                let resp = CommandResponse {
+                    code: 1,
+                    message: format!("Serialization error: {}", e),
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
+        use rand::Rng;
+        let req = ClientRequest {
+            id: rand::rng().random::<u128>().to_string(),
+            payload,
+        };
+        let req_bytes = match bincode::serialize(&req) {
+            Ok(b) => b,
+            Err(e) => {
+                let resp = CommandResponse {
+                    code: 1,
+                    message: format!("Serialization error: {}", e),
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
+        let response = match client.send_request(req_bytes) {
+            Ok(resp) => {
+                if resp.status == "ok" {
+                    if let Some(result_bytes) = resp.result {
+                        bincode::deserialize(&result_bytes).unwrap_or(CommandResponse {
+                            code: 1,
+                            message: "Failed to decode response".to_string(),
+                        })
+                    } else {
+                        CommandResponse {
+                            code: 1,
+                            message: "No result in response".to_string(),
+                        }
+                    }
+                } else {
+                    CommandResponse {
+                        code: 1,
+                        message: resp.error.unwrap_or_else(|| "Unknown error".to_string()),
+                    }
+                }
+            }
+            Err(e) => CommandResponse {
+                code: 1,
+                message: format!("IPC communication failed: {}", e),
+            },
+        };
+        let _ = writeln!(stdout, "{}", serde_json::to_string(&response).unwrap());
+        let _ = stdout.flush();
     }
+}
+
+#[cfg(windows)]
+pub fn run_pipe_server() {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use winservice_ipc::{pipe_server, IPC};
+    println!("[INFO] Starting pipe server (not as a Windows service)...");
+    let should_stop = Arc::new(AtomicBool::new(false));
+    let ipc = Arc::new(IPC::new(PIPE_NAME));
+    ipc.set_non_blocking();
+    pipe_server(should_stop, ipc, handle_client_request);
+}
+
+#[cfg(windows)]
+pub fn run_service_client() {
+    if let Err(e) = start_service(SERVICE_NAME) {
+        eprintln!("[ERROR] Failed to start service: {}", e);
+        std::process::exit(1);
+    }
+    run_pipe_client();
 }
 
 #[cfg(windows)]
@@ -94,10 +184,22 @@ pub fn install_service() {
         .to_str()
         .expect("Executable path is not valid UTF-8");
     let bin_path = format!("\"{}\" /service", executable_path_str);
-    winservice_ipc::install_service(SERVICE_NAME, SERVICE_DISPLAY_NAME, &bin_path).unwrap();
+    match winservice_ipc::install_service(SERVICE_NAME, SERVICE_DISPLAY_NAME, &bin_path) {
+        Ok(_) => println!("Service installed successfully."),
+        Err(e) => {
+            eprintln!("[ERROR] Failed to install service: {}", e.message());
+            std::process::exit(1);
+        }
+    }
 }
 
 #[cfg(windows)]
 pub fn uninstall_service() {
-    winservice_ipc::uninstall_service(SERVICE_NAME).unwrap();
+    match winservice_ipc::uninstall_service(SERVICE_NAME) {
+        Ok(_) => println!("Service uninstalled successfully."),
+        Err(e) => {
+            eprintln!("[ERROR] Failed to uninstall service: {}", e.message());
+            std::process::exit(1);
+        }
+    }
 }
