@@ -1,5 +1,8 @@
-use std::process::Command;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
+mod cli_client;
+use cli_client::{call_cli, get_cli};
+mod cli;
 
 #[derive(Serialize, Deserialize)]
 pub struct BootEntry {
@@ -10,43 +13,20 @@ pub struct BootEntry {
     pub is_current: bool,
 }
 
-fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String> {
-    let cli_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .parent()
-        .map(|p| p.join("switchboot-cli"))
-        .ok_or("Failed to find CLI binary")?;
-
-    #[cfg(target_os = "linux")]
-    let mut cmd = {
-        if needs_privilege {
-            let mut c = Command::new("pkexec");
-            c.arg(&cli_path);
-            c
-        } else {
-            Command::new(&cli_path)
-        }
-    };
-
-    #[cfg(not(target_os = "linux"))]
-    let mut cmd = Command::new(&cli_path);
-
-    cmd.args(args);
-
-    let output = cmd.output().map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
-    }
-}
-
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_order() -> Result<Vec<u16>, String> {
     let out = call_cli(&["get-boot-order"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_boot_order() -> Result<Vec<u16>, String> {
+    get_cli()?.send_command(&["get-boot-order"])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
     let args: Vec<String> = std::iter::once("set-boot-order".to_string())
@@ -56,18 +36,42 @@ fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
+    let args: Vec<String> = std::iter::once("set-boot-order".to_string())
+        .chain(order.iter().map(u16::to_string))
+        .collect();
+    get_cli()?.send_command_unit(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_next() -> Result<Option<u16>, String> {
     let out = call_cli(&["get-boot-next"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_boot_next() -> Result<Option<u16>, String> {
+    get_cli()?.send_command(&["get-boot-next"])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn set_boot_next(entry_id: u16) -> Result<(), String> {
     call_cli(&["set-boot-next", &entry_id.to_string()], true)?;
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn set_boot_next(entry_id: u16) -> Result<(), String> {
+    get_cli()?.send_command_unit(&["set-boot-next", &entry_id.to_string()])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
     let args: Vec<String> = std::iter::once("save-boot-order".to_string())
@@ -77,18 +81,42 @@ fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
+    let args: Vec<String> = std::iter::once("save-boot-order".to_string())
+        .chain(new_order.iter().map(u16::to_string))
+        .collect();
+    get_cli()?.send_command_unit(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn unset_boot_next() -> Result<(), String> {
     call_cli(&["unset-boot-next"], true)?;
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn unset_boot_next() -> Result<(), String> {
+    get_cli()?.send_command_unit(&["unset-boot-next"])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
     let out = call_cli(&["get-boot-entries"], false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
+    get_cli()?.send_command(&["get-boot-entries"])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_current() -> Result<Option<u16>, String> {
     let out = call_cli(&["get-boot-current"], false)?;
@@ -97,8 +125,13 @@ fn get_boot_current() -> Result<Option<u16>, String> {
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
+fn get_boot_current() -> Result<Option<u16>, String> {
+    get_cli()?.send_command(&["get-boot-current"])
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
 fn restart_now() -> Result<(), String> {
-    // /r = restart, /t 0 = no delay
     Command::new("shutdown")
         .args(&["/r", "/t", "0"])
         .spawn()
@@ -109,9 +142,7 @@ fn restart_now() -> Result<(), String> {
 #[cfg(unix)]
 #[tauri::command]
 fn restart_now() -> Result<(), String> {
-    let shutdown_result = Command::new("shutdown")
-        .args(&["-r", "now"])
-        .spawn();
+    let shutdown_result = Command::new("shutdown").args(&["-r", "now"]).spawn();
     if shutdown_result.is_err() {
         Command::new("reboot")
             .spawn()
