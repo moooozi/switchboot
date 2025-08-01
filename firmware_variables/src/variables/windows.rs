@@ -1,10 +1,10 @@
+use super::Attributes;
+use crate::utils::{gle, verify_uefi_firmware};
 use windows::core::Error as WinError;
 use windows::core::PCWSTR;
 use windows::Win32::System::WindowsProgramming::{
     GetFirmwareEnvironmentVariableExW, SetFirmwareEnvironmentVariableExW,
 };
-use crate::utils::{gle, verify_uefi_firmware};
-use super::Attributes;
 
 pub fn set_variable(
     name: &str,

@@ -1,5 +1,5 @@
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, GetLastError};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
@@ -55,7 +55,9 @@ pub fn patch_current_process_privileges() -> windows::core::Result<Patch> {
             }],
         };
 
-        AdjustTokenPrivileges(token, false, Some(&privilege_enable), 0, None, None).ok().unwrap();
+        AdjustTokenPrivileges(token, false, Some(&privilege_enable), 0, None, None)
+            .ok()
+            .unwrap();
         let last_error = GetLastError();
         if last_error.0 != 0 {
             return Err(windows::core::Error::from_win32());

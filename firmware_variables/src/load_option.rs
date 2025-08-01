@@ -39,7 +39,9 @@ impl LoadOption {
                 let mut i = 0;
                 while i + 1 < raw[desc_start..].len() {
                     let u = u16::from_le_bytes([raw[desc_start + i], raw[desc_start + i + 1]]);
-                    if u == 0 { break; }
+                    if u == 0 {
+                        break;
+                    }
                     lossy.push(std::char::from_u32(u as u32).unwrap_or('?'));
                     i += 2;
                 }
