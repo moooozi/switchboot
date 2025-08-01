@@ -1,10 +1,10 @@
 use std::process::Command;
-mod cli_client;
+mod cli_user;
 mod types;
 #[cfg(target_os = "linux")]
-use cli_client::call_cli;
+use cli_user::call_cli;
 #[cfg(target_os = "windows")]
-use cli_client::get_cli;
+use cli_user::get_cli;
 
 pub use types::{BootEntry, CommandResponse};
 
