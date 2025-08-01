@@ -10,8 +10,6 @@ use windows::Win32::Storage::FileSystem::{
 };
 use windows::Win32::System::Pipes::{SetNamedPipeHandleState, PIPE_READMODE_MESSAGE};
 
-use crate::ipc_messaging::ServerResponse;
-
 pub struct IPCClient {
     handle: Arc<Mutex<HANDLE>>,
 }

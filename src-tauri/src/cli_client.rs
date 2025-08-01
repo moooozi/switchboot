@@ -1,4 +1,4 @@
-use crate::cli::CommandResponse;
+use crate::types::CommandResponse;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -93,6 +93,7 @@ impl CliProcess {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn get_cli() -> Result<std::sync::MutexGuard<'static, CliProcess>, String> {
     CLI_PROCESS
         .get_or_init(|| {
@@ -104,6 +105,7 @@ pub fn get_cli() -> Result<std::sync::MutexGuard<'static, CliProcess>, String> {
         .map_err(|_| "Failed to lock CLI process".to_string())
 }
 
+#[cfg(target_os = "linux")]
 pub fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String> {
     let cli_path = std::env::current_exe()
         .map_err(|e| e.to_string())?

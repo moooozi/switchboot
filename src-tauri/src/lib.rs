@@ -1,17 +1,12 @@
-use serde::{Deserialize, Serialize};
 use std::process::Command;
 mod cli_client;
-use cli_client::{call_cli, get_cli};
-mod cli;
+mod types;
+#[cfg(target_os = "linux")]
+use cli_client::call_cli;
+#[cfg(target_os = "windows")]
+use cli_client::get_cli;
 
-#[derive(Serialize, Deserialize)]
-pub struct BootEntry {
-    pub id: u16,
-    pub description: String,
-    pub is_default: bool,
-    pub is_bootnext: bool,
-    pub is_current: bool,
-}
+pub use types::{BootEntry, CommandResponse};
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]

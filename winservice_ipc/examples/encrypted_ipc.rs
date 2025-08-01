@@ -1,17 +1,16 @@
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use chacha20poly1305::aead::rand_core::RngCore;
+use chacha20poly1305::aead::{Aead, OsRng};
+use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::Duration;
-use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
-use chacha20poly1305::aead::{Aead, OsRng};
-use chacha20poly1305::aead::rand_core::RngCore;
 
-mod ipc_client;
-mod ipc_messaging;
-mod ipc_server;
-
-use crate::ipc_client::IPCClient;
-use crate::ipc_messaging::{pipe_server, ClientRequest, ServerResponse};
-use crate::ipc_server::IPC;
+use winservice_ipc::IPCClient;
+use winservice_ipc::IPC;
+use winservice_ipc::{pipe_server, ClientRequest, ServerResponse};
 
 const PSK: &[u8; 32] = b"0123456789abcdef0123456789abcdef";
 
@@ -48,22 +47,23 @@ fn main() {
     let server_ipc = ipc.clone();
     thread::spawn(move || {
         pipe_server(server_stop, server_ipc, |ipc, buf| {
-            // Decrypt incoming message
+            println!("[SERVER] Received encrypted message, decrypting...");
             let decrypted = decrypt_message(buf);
             let req: ClientRequest = bincode::deserialize(&decrypted).unwrap();
-            println!("Server received: {:?}", req);
+            println!(
+                "[SERVER] Message: {}",
+                String::from_utf8_lossy(&req.payload)
+            );
 
-            // Respond
+            // Respond with a simple encrypted message
             let resp = ServerResponse {
                 id: req.id,
                 status: "ok".to_string(),
-                result: Some(b"pong".to_vec()),
+                result: Some(b"This response is also encrypted".to_vec()),
                 error: None,
             };
             let resp_bytes = bincode::serialize(&resp).unwrap();
             let encrypted = encrypt_message(&resp_bytes);
-            println!("[SERVER] Sending encrypted response ({} bytes): {:02x?}", encrypted.len(), encrypted);
-            // Send only the encrypted response (the protocol already sends the length)
             ipc.send_message(&encrypted);
         });
     });
@@ -75,11 +75,11 @@ fn main() {
     let client = IPCClient::connect(pipe_name).expect("Client failed to connect");
     let request = ClientRequest {
         id: "1".to_string(),
-        payload: b"ping".to_vec(),
+        payload: b"Hello world, this message is encrypted".to_vec(),
     };
     let req_bytes = bincode::serialize(&request).unwrap();
+    println!("[CLIENT] Encrypting and sending: Hello world, this message is encrypted");
     let encrypted = encrypt_message(&req_bytes);
-    // Send encrypted request
     let handle_arc = client.get_handle();
     let handle = handle_arc.lock().unwrap();
     let len = (encrypted.len() as u32).to_le_bytes();
@@ -128,11 +128,16 @@ fn main() {
         );
     }
     resp_buf.truncate(bytes_read as usize);
-    println!("[CLIENT] Received encrypted response ({} bytes): {:02x?}", resp_buf.len(), resp_buf);
     let decrypted = decrypt_message(&resp_buf);
-    println!("[CLIENT] Decrypted response ({} bytes): {:02x?}", decrypted.len(), decrypted);
     let resp: ServerResponse = bincode::deserialize(&decrypted).unwrap();
-    println!("Client got response: {:?}", resp);
+    if let Some(result) = resp.result {
+        println!(
+            "[CLIENT] Received response: {}",
+            String::from_utf8_lossy(&result)
+        );
+    } else {
+        println!("[CLIENT] No response received");
+    }
 
     should_stop.store(true, Ordering::SeqCst);
 }

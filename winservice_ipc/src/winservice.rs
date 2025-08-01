@@ -3,19 +3,13 @@ use simplelog::*;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
-use std::process::Command;
 use std::ptr;
 use std::sync::Once;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use windows::Win32::Foundation::{BOOL, ERROR_CALL_NOT_IMPLEMENTED, NO_ERROR, PSID, PWSTR};
-use windows::Win32::Security::{
-    self, AddAccessAllowedAce, AllocateAndInitializeSid, FreeSid, InitializeSecurityDescriptor,
-    SetSecurityDescriptorDacl, ACL, ACL_REVISION, DACL_SECURITY_INFORMATION, SECURITY_DESCRIPTOR,
-    SID,
-};
+use windows::Win32::Foundation::{BOOL, ERROR_CALL_NOT_IMPLEMENTED, NO_ERROR, PWSTR};
 
 use windows::Win32::System::Services::{
     CloseServiceHandle, CreateServiceW, OpenSCManagerW, RegisterServiceCtrlHandlerExW,
@@ -25,7 +19,6 @@ use windows::Win32::System::Services::{
     SERVICE_WIN32_OWN_PROCESS,
 };
 use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABLE_ENTRYW};
-use windows::Win32::System::SystemServices::{SECURITY_DESCRIPTOR_REVISION, SECURITY_WORLD_RID};
 pub struct ServiceContext {
     pub stop_flag: Arc<AtomicBool>,
 }
@@ -199,10 +192,7 @@ pub fn install_service(
     // --- Grant SERVICE_START to Everyone, preserving existing DACL (SDDL injection, like Python) ---
     unsafe {
         use std::ptr::null_mut;
-        use windows::Win32::Security::{
-            DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
-            SACL_SECURITY_INFORMATION,
-        };
+        use windows::Win32::Security::DACL_SECURITY_INFORMATION;
         use windows::Win32::System::Services::QueryServiceObjectSecurity;
 
         // Query the current SDDL string
@@ -242,11 +232,11 @@ pub fn install_service(
                     // Find the length of the null-terminated UTF-16 string
                     let mut len = 0;
                     let mut ptr = sddl_ptr.0;
-                    while unsafe { *ptr } != 0 {
+                    while *ptr != 0 {
                         len += 1;
-                        ptr = unsafe { ptr.add(1) };
+                        ptr = ptr.add(1);
                     }
-                    let slice = unsafe { std::slice::from_raw_parts(sddl_ptr.0, len) };
+                    let slice = std::slice::from_raw_parts(sddl_ptr.0, len);
                     String::from_utf16_lossy(slice)
                 };
                 // Inject (A;;RPWPCR;;;WD) for Everyone (WD = World)

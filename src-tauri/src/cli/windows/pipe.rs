@@ -12,6 +12,7 @@ use super::crypto::NoCrypto as SelectedCrypto;
 /// Returns Some(CommandResponse) if successful, None if IPC fails.
 #[cfg(windows)]
 pub fn run_pipe_client() {
+    use super::{CliCommand, CommandResponse};
     use std::io::{BufRead, BufReader, Write};
     use winservice_ipc::IPCClient;
     let stdin = std::io::stdin();
@@ -35,7 +36,7 @@ pub fn run_pipe_client() {
         let args: Vec<String> = match serde_json::from_str(&line) {
             Ok(a) => a,
             Err(e) => {
-                let resp = crate::logic::CommandResponse {
+                let resp = CommandResponse {
                     code: 1,
                     message: format!("Invalid input: {}", e),
                 };
@@ -45,12 +46,12 @@ pub fn run_pipe_client() {
             }
         };
 
-        let command = crate::logic::CliCommand::from_args(&args);
+        let command = CliCommand::from_args(&args);
         // Use the same client for all requests
         let payload = match bincode::serialize(&command) {
             Ok(p) => p,
             Err(e) => {
-                let resp = crate::logic::CommandResponse {
+                let resp = CommandResponse {
                     code: 1,
                     message: format!("Serialization error: {}", e),
                 };
@@ -70,7 +71,7 @@ pub fn run_pipe_client() {
         let req_bytes = match bincode::serialize(&req) {
             Ok(b) => b,
             Err(e) => {
-                let resp = crate::logic::CommandResponse {
+                let resp = CommandResponse {
                     code: 1,
                     message: format!("Serialization error: {}", e),
                 };
@@ -93,31 +94,31 @@ pub fn run_pipe_client() {
                             if let Some(result_bytes) = resp.result {
                                 match bincode::deserialize(&result_bytes) {
                                     Ok(decrypted) => decrypted,
-                                    Err(e) => crate::logic::CommandResponse {
+                                    Err(e) => CommandResponse {
                                         code: 1,
                                         message: format!("Failed to decode response: {}", e),
                                     },
                                 }
                             } else {
-                                crate::logic::CommandResponse {
+                                CommandResponse {
                                     code: 1,
                                     message: "No result in response".to_string(),
                                 }
                             }
                         } else {
-                            crate::logic::CommandResponse {
+                            CommandResponse {
                                 code: 1,
                                 message: resp.error.unwrap_or_else(|| "Unknown error".to_string()),
                             }
                         }
                     }
-                    Err(e) => crate::logic::CommandResponse {
+                    Err(e) => CommandResponse {
                         code: 1,
                         message: format!("Failed to decode ServerResponse: {}", e),
                     },
                 }
             }
-            Err(e) => crate::logic::CommandResponse {
+            Err(e) => CommandResponse {
                 code: 1,
                 message: format!("IPC communication failed: {}", e),
             },
@@ -142,7 +143,7 @@ pub fn run_pipe_server() {
 
 #[cfg(windows)]
 pub fn handle_client_request(ipc: &IPC, request: &[u8]) {
-    use crate::logic::{dispatch_command, CliCommand};
+    use super::{dispatch_command, CliCommand};
     use crate::windows::crypto::MessageCrypto;
     use winservice_ipc::ClientRequest;
     use winservice_ipc::ServerResponse;

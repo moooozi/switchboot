@@ -1,12 +1,7 @@
+use super::{BootEntry, CommandResponse};
 use firmware_variables::{boot, privileges};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CommandResponse {
-    pub code: i32,       // 0 for success, 1 for error
-    pub message: String, // stdout or error message
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CliCommand {
@@ -52,15 +47,6 @@ pub fn dispatch_command(command: CliCommand) -> CommandResponse {
             message: "Unknown or missing CLI action".to_string(),
         },
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct BootEntry {
-    pub id: u16,
-    pub description: String,
-    pub is_default: bool,
-    pub is_bootnext: bool,
-    pub is_current: bool,
 }
 
 fn with_privileges<T, F>(f: F) -> Result<T, String>
