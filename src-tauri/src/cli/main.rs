@@ -19,27 +19,27 @@ fn main() {
         if rest.len() == 1 && rest[0].starts_with('/') {
             match rest[0].as_str() {
                 "/service" => {
-                    windows::launch_windows_service();
+                    windows::service::launch_windows_service();
                     return;
                 }
                 "/pipe_server" => {
-                    windows::run_pipe_server();
+                    windows::pipe::run_pipe_server();
                     return;
                 }
                 "/pipe_client" => {
-                    windows::run_pipe_client();
+                    windows::pipe::run_pipe_client();
                     return;
                 }
                 "/service_client" => {
-                    windows::run_service_client();
+                    windows::service::run_service_client();
                     return;
                 }
                 "/install_service" => {
-                    windows::install_service();
+                    windows::service::install_service();
                     return;
                 }
                 "/uninstall_service" => {
-                    windows::uninstall_service();
+                    windows::service::uninstall_service();
                     return;
                 }
                 _ => {}

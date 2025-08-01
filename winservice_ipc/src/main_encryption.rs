@@ -1,12 +1,9 @@
-use chacha20poly1305::aead::rand_core::RngCore;
-use chacha20poly1305::aead::{Aead, OsRng};
-use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::thread;
 use std::time::Duration;
+use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
+use chacha20poly1305::aead::{Aead, OsRng};
+use chacha20poly1305::aead::rand_core::RngCore;
 
 mod ipc_client;
 mod ipc_messaging;
@@ -65,11 +62,7 @@ fn main() {
             };
             let resp_bytes = bincode::serialize(&resp).unwrap();
             let encrypted = encrypt_message(&resp_bytes);
-            println!(
-                "[SERVER] Sending encrypted response ({} bytes): {:02x?}",
-                encrypted.len(),
-                encrypted
-            );
+            println!("[SERVER] Sending encrypted response ({} bytes): {:02x?}", encrypted.len(), encrypted);
             // Send only the encrypted response (the protocol already sends the length)
             ipc.send_message(&encrypted);
         });
@@ -135,17 +128,9 @@ fn main() {
         );
     }
     resp_buf.truncate(bytes_read as usize);
-    println!(
-        "[CLIENT] Received encrypted response ({} bytes): {:02x?}",
-        resp_buf.len(),
-        resp_buf
-    );
+    println!("[CLIENT] Received encrypted response ({} bytes): {:02x?}", resp_buf.len(), resp_buf);
     let decrypted = decrypt_message(&resp_buf);
-    println!(
-        "[CLIENT] Decrypted response ({} bytes): {:02x?}",
-        decrypted.len(),
-        decrypted
-    );
+    println!("[CLIENT] Decrypted response ({} bytes): {:02x?}", decrypted.len(), decrypted);
     let resp: ServerResponse = bincode::deserialize(&decrypted).unwrap();
     println!("Client got response: {:?}", resp);
 

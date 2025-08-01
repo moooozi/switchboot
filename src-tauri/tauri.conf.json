@@ -22,6 +22,14 @@
     }
   },
   "bundle": {
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine"
+      },
+      "wix": {
+      }
+    },
     "linux": {
       "deb": {
         "depends": ["policykit-1"],

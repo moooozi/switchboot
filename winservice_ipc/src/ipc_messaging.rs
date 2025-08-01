@@ -36,7 +36,7 @@ where
         // Reset the timer as a client has connected
         last_client_connect_attempt = Instant::now();
 
-        let mut buffer = vec![0u8; 1024];
+        let mut buffer = Vec::new();
         if ipc.receive_message(&mut buffer) {
             handle_client_request(&ipc, &buffer);
         }
@@ -57,4 +57,3 @@ pub struct ServerResponse {
     pub result: Option<Vec<u8>>, // or Option<serde_json::Value>
     pub error: Option<String>,
 }
-

@@ -123,7 +123,19 @@ impl IPC {
     pub fn send_message(&self, message: &[u8]) -> bool {
         let handle = self.handle.lock().unwrap();
         unsafe {
+            let len = (message.len() as u32).to_le_bytes();
             let mut bytes_written = 0;
+            let result = WriteFile(
+                *handle,
+                len.as_ptr() as *const _,
+                len.len() as u32,
+                &mut bytes_written,
+                null_mut(),
+            )
+            .as_bool();
+            if !result {
+                return false;
+            }
             let result = WriteFile(
                 *handle,
                 message.as_ptr() as *const _,
@@ -133,50 +145,42 @@ impl IPC {
             )
             .as_bool();
             if !result {
-                let err = io::Error::last_os_error();
-                if err.raw_os_error() == Some(windows::Win32::Foundation::ERROR_BROKEN_PIPE as i32)
-                {
-                    println!("Client disconnected.");
-                    *self.is_client_connected.lock().unwrap() = false;
-                    return false;
-                } else {
-                    eprintln!("Failed to read from pipe: {}", err);
-                    return false;
-                }
+                return false;
             }
             true
         }
     }
 
     /// Receives a message from the named pipe.
-    pub fn receive_message(&self, buffer: &mut [u8]) -> bool {
+    pub fn receive_message(&self, buffer: &mut Vec<u8>) -> bool {
         let handle = self.handle.lock().unwrap();
         unsafe {
+            let mut len_buf = [0u8; 4];
             let mut bytes_read = 0;
             let result = ReadFile(
                 *handle,
-                buffer.as_mut_ptr() as *mut _,
-                buffer.len() as u32,
+                len_buf.as_mut_ptr() as *mut _,
+                4,
                 &mut bytes_read,
                 null_mut(),
             )
             .as_bool();
-            if !result {
-                let err = io::Error::last_os_error();
-                if err.raw_os_error() == Some(windows::Win32::Foundation::ERROR_BROKEN_PIPE as i32)
-                {
-                    println!("Client disconnected.");
-                    *self.is_client_connected.lock().unwrap() = false;
-                    return false;
-                } else if err.raw_os_error()
-                    == Some(windows::Win32::Foundation::ERROR_NO_DATA as i32)
-                {
-                    // No data available, non-blocking mode
-                    return false;
-                } else {
-                    eprintln!("Failed to read from pipe: {}", err);
-                    return false;
-                }
+            if !result || bytes_read != 4 {
+                return false;
+            }
+            let msg_len = u32::from_le_bytes(len_buf) as usize;
+            buffer.resize(msg_len, 0);
+            let mut bytes_read = 0;
+            let result = ReadFile(
+                *handle,
+                buffer.as_mut_ptr() as *mut _,
+                msg_len as u32,
+                &mut bytes_read,
+                null_mut(),
+            )
+            .as_bool();
+            if !result || bytes_read != msg_len as u32 {
+                return false;
             }
             true
         }
