@@ -33,21 +33,43 @@ impl LoadOption {
         let desc_start = 6;
         let desc = match utf16_string_from_bytes(&raw[desc_start..]) {
             Ok(s) => s,
-            Err(_) => return None,
+            Err(_) => {
+                // Fallback: try to decode as UTF-16LE lossy, or use placeholder
+                let mut lossy = String::new();
+                let mut i = 0;
+                while i + 1 < raw[desc_start..].len() {
+                    let u = u16::from_le_bytes([raw[desc_start + i], raw[desc_start + i + 1]]);
+                    if u == 0 { break; }
+                    lossy.push(std::char::from_u32(u as u32).unwrap_or('?'));
+                    i += 2;
+                }
+                if lossy.is_empty() {
+                    "<invalid description>".to_string()
+                } else {
+                    lossy
+                }
+            }
         };
 
         // Calculate offset for file_path_list
         let str_size = (desc.len() + 1) * 2;
         let file_path_list_offset = desc_start + str_size;
-        if file_path_list_offset + file_path_list_length > raw.len() {
-            return None;
-        }
-        let file_path_list_bytes =
-            &raw[file_path_list_offset..file_path_list_offset + file_path_list_length];
+        // If the file path list is truncated or malformed, just use what is available
+        let file_path_list_bytes = if file_path_list_offset >= raw.len() {
+            &[]
+        } else if file_path_list_offset + file_path_list_length > raw.len() {
+            &raw[file_path_list_offset..]
+        } else {
+            &raw[file_path_list_offset..file_path_list_offset + file_path_list_length]
+        };
         let file_path_list = DevicePathList::from_bytes(file_path_list_bytes);
 
         // Optional data
-        let optional_data = raw[file_path_list_offset + file_path_list_length..].to_vec();
+        let optional_data = if file_path_list_offset + file_path_list_length > raw.len() {
+            Vec::new()
+        } else {
+            raw[file_path_list_offset + file_path_list_length..].to_vec()
+        };
 
         Some(Self {
             attributes: LoadOptionAttributes::from_bits_truncate(attributes),
