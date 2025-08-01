@@ -115,7 +115,7 @@ pub fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String>
 
     #[cfg(target_os = "linux")]
     let mut cmd = {
-        if needs_privilege {
+        if _needs_privilege {
             let mut c = Command::new("pkexec");
             c.arg(&cli_path);
             c
