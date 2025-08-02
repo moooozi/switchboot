@@ -16,7 +16,7 @@ use windows::Win32::System::Services::{
     SetServiceObjectSecurity, SetServiceStatus, SC_MANAGER_CREATE_SERVICE, SERVICE_ACCEPT_STOP,
     SERVICE_ALL_ACCESS, SERVICE_CONTROL_INTERROGATE, SERVICE_CONTROL_STOP, SERVICE_DEMAND_START,
     SERVICE_ERROR_NORMAL, SERVICE_RUNNING, SERVICE_STATUS, SERVICE_STATUS_HANDLE, SERVICE_STOPPED,
-    SERVICE_WIN32_OWN_PROCESS,
+    SERVICE_STOP_PENDING, SERVICE_WIN32_OWN_PROCESS,
 };
 use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABLE_ENTRYW};
 pub struct ServiceContext {
@@ -34,7 +34,12 @@ where
     F: FnOnce(ServiceContext) + Send + 'static,
 {
     let stop_service = Arc::new(AtomicBool::new(false));
-    let stop_service_clone = Arc::clone(&stop_service);
+
+    // Add a struct to hold both the stop flag and the status handle
+    struct HandlerContext {
+        stop_flag: Arc<AtomicBool>,
+        status_handle: SERVICE_STATUS_HANDLE,
+    }
 
     unsafe extern "system" fn service_handler(
         control: u32,
@@ -42,58 +47,79 @@ where
         _event_data: *mut std::ffi::c_void,
         context: *mut std::ffi::c_void,
     ) -> u32 {
-        let stop_service = &*(context as *const Arc<AtomicBool>);
+        let ctx = &*(context as *const HandlerContext);
         match control {
-            SERVICE_CONTROL_STOP | SERVICE_CONTROL_INTERROGATE => {
-                stop_service.store(true, Ordering::SeqCst);
+            SERVICE_CONTROL_STOP => {
+                // Set status to STOP_PENDING
+                let status = SERVICE_STATUS {
+                    dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+                    dwCurrentState: SERVICE_STOP_PENDING,
+                    dwControlsAccepted: 0,
+                    dwWin32ExitCode: NO_ERROR,
+                    dwServiceSpecificExitCode: 0,
+                    dwCheckPoint: 0,
+                    dwWaitHint: 10000, // 10 seconds
+                };
+                unsafe {
+                    SetServiceStatus(ctx.status_handle, &status);
+                }
+                ctx.stop_flag.store(true, Ordering::SeqCst);
                 NO_ERROR
             }
+            SERVICE_CONTROL_INTERROGATE => NO_ERROR,
             _ => ERROR_CALL_NOT_IMPLEMENTED,
         }
     }
 
     let service_name_wide = to_wide_string(service_name);
 
-    let service_status_handle: SERVICE_STATUS_HANDLE = unsafe {
+    // Use Box instead of Arc for handler context
+    let handler_ctx = Box::new(HandlerContext {
+        stop_flag: Arc::clone(&stop_service),
+        status_handle: SERVICE_STATUS_HANDLE::default(),
+    });
+
+    unsafe {
+        // Register handler, passing pointer to Box
+        let ctx_ptr = Box::into_raw(handler_ctx);
         let handle = RegisterServiceCtrlHandlerExW(
             PWSTR(service_name_wide.as_ptr() as *mut _),
             Some(service_handler),
-            Arc::into_raw(stop_service_clone) as *mut _,
+            ctx_ptr as *mut _,
         );
         if handle.is_invalid() {
+            // Clean up if registration failed
+            let _ = Box::from_raw(ctx_ptr);
             return Err(windows::core::Error::from_win32());
         }
-        handle
-    };
+        // Update the status_handle in the original Box
+        (*ctx_ptr).status_handle = handle;
 
-    let mut service_status = SERVICE_STATUS {
-        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-        dwCurrentState: SERVICE_RUNNING,
-        dwControlsAccepted: SERVICE_ACCEPT_STOP,
-        dwWin32ExitCode: NO_ERROR,
-        dwServiceSpecificExitCode: 0,
-        dwCheckPoint: 0,
-        dwWaitHint: 0,
-    };
+        let mut service_status = SERVICE_STATUS {
+            dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+            dwCurrentState: SERVICE_RUNNING,
+            dwControlsAccepted: SERVICE_ACCEPT_STOP,
+            dwWin32ExitCode: NO_ERROR,
+            dwServiceSpecificExitCode: 0,
+            dwCheckPoint: 0,
+            dwWaitHint: 0,
+        };
 
-    // Set service status to running
-    unsafe {
-        if SetServiceStatus(service_status_handle, &service_status) == BOOL(0) {
+        // Set service status to running
+        if SetServiceStatus(handle, &service_status) == BOOL(0) {
             return Err(windows::core::Error::from_win32());
         }
-    }
 
-    // Run the user-provided service logic
-    let ctx = ServiceContext {
-        stop_flag: stop_service,
-    };
-    let handle = std::thread::spawn(move || service_main(ctx));
-    handle.join().unwrap();
+        // Run the user-provided service logic
+        let ctx = ServiceContext {
+            stop_flag: stop_service,
+        };
+        let handle_thread = std::thread::spawn(move || service_main(ctx));
+        handle_thread.join().unwrap();
 
-    // Set service status to stopped
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    unsafe {
-        if SetServiceStatus(service_status_handle, &service_status) == BOOL(0) {
+        // Set service status to stopped
+        service_status.dwCurrentState = SERVICE_STOPPED;
+        if SetServiceStatus(handle, &service_status) == BOOL(0) {
             return Err(windows::core::Error::from_win32());
         }
     }
