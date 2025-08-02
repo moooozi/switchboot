@@ -58,7 +58,7 @@ pub fn install_service() {
 
 #[cfg(windows)]
 pub fn uninstall_service() {
-    match winservice_ipc::uninstall_service(SERVICE_NAME) {
+    match winservice_ipc::uninstall_service(SERVICE_NAME, true) {
         Ok(_) => println!("Service uninstalled successfully."),
         Err(e) => {
             eprintln!("[ERROR] Failed to uninstall service: {}", e.message());

@@ -309,18 +309,19 @@ pub fn install_service(
     Ok(())
 }
 
-/// Uninstalls a Windows service using the Windows API.
-/// Returns Ok(()) on success, or an error if uninstallation fails.
-pub fn uninstall_service(service_name: &str) -> windows::core::Result<()> {
+/// Stops a Windows service by name. Waits up to 10 seconds for it to stop.
+pub fn stop_service(service_name: &str) -> windows::core::Result<()> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
     use windows::Win32::Foundation::PWSTR;
     use windows::Win32::System::Services::{
-        CloseServiceHandle, DeleteService, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT,
-        SERVICE_ALL_ACCESS,
+        CloseServiceHandle, ControlService, OpenSCManagerW, OpenServiceW, QueryServiceStatus,
+        SC_MANAGER_CONNECT, SERVICE_ALL_ACCESS, SERVICE_CONTROL_STOP, SERVICE_STATUS,
+        SERVICE_STOPPED,
     };
 
-    // Convert service name to wide string
     let service_name_wide: Vec<u16> = OsStr::new(service_name)
         .encode_wide()
         .chain(Some(0))
@@ -340,14 +341,113 @@ pub fn uninstall_service(service_name: &str) -> windows::core::Result<()> {
             CloseServiceHandle(scm);
             return Err(windows::core::Error::from_win32());
         }
+
+        let mut status = SERVICE_STATUS::default();
+        if QueryServiceStatus(service, &mut status).as_bool() {
+            if status.dwCurrentState != SERVICE_STOPPED {
+                ControlService(service, SERVICE_CONTROL_STOP, &mut status);
+                // Wait for the service to stop (max 10 seconds)
+                let start = Instant::now();
+                while status.dwCurrentState != SERVICE_STOPPED
+                    && start.elapsed() < Duration::from_secs(10)
+                {
+                    sleep(Duration::from_millis(200));
+                    if !QueryServiceStatus(service, &mut status).as_bool() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        CloseServiceHandle(service);
+        CloseServiceHandle(scm);
+        Ok(())
+    }
+}
+
+/// Uninstalls a Windows service using the Windows API.
+/// If `dont_stop_service` is false, the service will be stopped before deletion.
+/// Returns Ok(()) on success, or an error if uninstallation fails.
+pub fn uninstall_service(
+    service_name: &str,
+    should_stop_service: bool,
+) -> windows::core::Result<()> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
+    use windows::Win32::Foundation::{ERROR_SERVICE_MARKED_FOR_DELETE, PWSTR};
+    use windows::Win32::System::Services::{
+        CloseServiceHandle, DeleteService, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT,
+        SERVICE_ALL_ACCESS,
+    };
+
+    // Convert service name to wide string
+    let service_name_wide: Vec<u16> = OsStr::new(service_name)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    // Stop the service first if should_stop_service is true
+    if should_stop_service {
+        stop_service(service_name)?;
+    }
+
+    unsafe {
+        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
+        if scm.is_invalid() {
+            return Err(windows::core::Error::from_win32());
+        }
+        let service = OpenServiceW(
+            scm,
+            PWSTR(service_name_wide.as_ptr() as *mut _),
+            SERVICE_ALL_ACCESS,
+        );
+        if service.is_invalid() {
+            CloseServiceHandle(scm);
+            return Err(windows::core::Error::from_win32());
+        }
+
         let result = DeleteService(service);
         CloseServiceHandle(service);
         CloseServiceHandle(scm);
-        if result.as_bool() {
-            Ok(())
-        } else {
-            Err(windows::core::Error::from_win32())
+
+        if !result.as_bool() {
+            let err = windows::core::Error::from_win32();
+            // If already marked for delete, treat as success
+            if let Some(code) = err.code().0.checked_abs() {
+                if code == ERROR_SERVICE_MARKED_FOR_DELETE as i32 {
+                    return Ok(());
+                }
+            }
+            return Err(err);
         }
+
+        // Optionally: Wait for the service to be removed from SCM (max 10 seconds)
+        let start = Instant::now();
+        loop {
+            let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
+            if scm.is_invalid() {
+                break;
+            }
+            let svc = OpenServiceW(
+                scm,
+                PWSTR(service_name_wide.as_ptr() as *mut _),
+                SERVICE_ALL_ACCESS,
+            );
+            CloseServiceHandle(scm);
+            if svc.is_invalid() {
+                // Service no longer exists
+                break;
+            }
+            CloseServiceHandle(svc);
+            if start.elapsed() > Duration::from_secs(10) {
+                break;
+            }
+            sleep(Duration::from_millis(200));
+        }
+
+        Ok(())
     }
 }
 
