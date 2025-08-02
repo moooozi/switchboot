@@ -1,5 +1,5 @@
 mod logic;
-pub use switchboot_lib::{BootEntry, CommandResponse};
+pub use switchboot_lib::types;
 
 #[cfg(windows)]
 mod windows;

@@ -1,60 +1,22 @@
-use super::{BootEntry, CommandResponse};
+use crate::types::{BootEntry, CliCommand, CommandResponse};
 use firmware_variables::{boot, privileges};
-use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum CliCommand {
-    SetBootOrder(Vec<String>),
-    SetBootNext(Option<String>),
-    SaveBootOrder(Vec<String>),
-    UnsetBootNext,
-    GetBootOrder,
-    GetBootNext,
-    GetBootEntries,
-    GetBootCurrent,
-    Unknown,
-}
-
-impl CliCommand {
-    pub fn from_args(args: &[String]) -> Self {
-        match args.get(0).map(String::as_str) {
-            Some("set-boot-order") => CliCommand::SetBootOrder(args[1..].to_vec()),
-            Some("set-boot-next") => CliCommand::SetBootNext(args.get(1).cloned()),
-            Some("save-boot-order") => CliCommand::SaveBootOrder(args[1..].to_vec()),
-            Some("unset-boot-next") => CliCommand::UnsetBootNext,
-            Some("get-boot-order") => CliCommand::GetBootOrder,
-            Some("get-boot-next") => CliCommand::GetBootNext,
-            Some("get-boot-entries") => CliCommand::GetBootEntries,
-            Some("get-boot-current") => CliCommand::GetBootCurrent,
-            _ => CliCommand::Unknown,
-        }
-    }
-}
 
 pub fn dispatch_command(command: CliCommand) -> CommandResponse {
     match command {
         CliCommand::SetBootOrder(ids) => set_boot_order_response(&ids),
-        CliCommand::SetBootNext(id) => set_boot_next_response(id.as_ref()),
+        CliCommand::SetBootNext(id) => set_boot_next_response(Some(id)),
         CliCommand::SaveBootOrder(ids) => save_boot_order_response(&ids),
         CliCommand::UnsetBootNext => unset_boot_next_response(),
         CliCommand::GetBootOrder => get_boot_order_response(),
         CliCommand::GetBootNext => get_boot_next_response(),
         CliCommand::GetBootEntries => get_boot_entries_response(),
         CliCommand::GetBootCurrent => get_boot_current_response(),
-        CliCommand::Unknown => CommandResponse {
+        CliCommand::RestartNow => CommandResponse {
             code: 1,
-            message: "Unknown or missing CLI action".to_string(),
+            message: "Restart not supported in CLI".to_string(),
         },
     }
-}
-
-fn with_privileges<T, F>(f: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, Box<dyn std::error::Error>>,
-{
-    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
-    f().map_err(|e| e.to_string())
 }
 
 pub fn run_daemon() {
@@ -80,7 +42,18 @@ pub fn run_daemon() {
             }
         };
 
-        let command = CliCommand::from_args(&args);
+        let command = match CliCommand::from_args(&args) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                let resp = CommandResponse {
+                    code: 1,
+                    message: e,
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
         let response = dispatch_command(command);
         let _ = writeln!(stdout, "{}", serde_json::to_string(&response).unwrap());
         let _ = stdout.flush();
@@ -92,7 +65,13 @@ pub fn run_daemon() {
 pub fn run(args: Vec<String>) -> i32 {
     eprintln!("[DEBUG] cli::run called with args: {:?}", args);
 
-    let command = CliCommand::from_args(&args);
+    let command = match CliCommand::from_args(&args) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("{}", e);
+            return 1;
+        }
+    };
     let response = dispatch_command(command);
     if response.code == 0 {
         println!("{}", response.message);
@@ -102,9 +81,8 @@ pub fn run(args: Vec<String>) -> i32 {
     response.code
 }
 
-fn set_boot_order_response(ids: &[String]) -> CommandResponse {
-    let parsed_ids: Vec<u16> = ids.iter().filter_map(|s| s.parse().ok()).collect();
-    match with_privileges(|| boot::set_boot_order(&parsed_ids)) {
+fn set_boot_order_response(ids: &Vec<u16>) -> CommandResponse {
+    match with_privileges(|| boot::set_boot_order(ids)) {
         Ok(_) => CommandResponse {
             code: 0,
             message: "Boot order set successfully".to_string(),
@@ -116,8 +94,8 @@ fn set_boot_order_response(ids: &[String]) -> CommandResponse {
     }
 }
 
-fn set_boot_next_response(id_arg: Option<&String>) -> CommandResponse {
-    match id_arg.and_then(|s| s.parse().ok()) {
+fn set_boot_next_response(id: Option<u16>) -> CommandResponse {
+    match id {
         Some(id) => match with_privileges(|| boot::set_boot_next(id)) {
             Ok(_) => CommandResponse {
                 code: 0,
@@ -135,11 +113,10 @@ fn set_boot_next_response(id_arg: Option<&String>) -> CommandResponse {
     }
 }
 
-fn save_boot_order_response(ids: &[String]) -> CommandResponse {
-    let parsed_ids: Vec<u16> = ids.iter().filter_map(|s| s.parse().ok()).collect();
+fn save_boot_order_response(ids: &Vec<u16>) -> CommandResponse {
     match with_privileges(|| {
-        boot::set_boot_order(&parsed_ids)?;
-        if let Some(&first_entry) = parsed_ids.first() {
+        boot::set_boot_order(ids)?;
+        if let Some(&first_entry) = ids.first() {
             boot::set_boot_next(first_entry)?;
         }
         Ok(())
@@ -234,4 +211,12 @@ fn get_boot_current_response() -> CommandResponse {
             message: format!("Error getting boot current: {}", e),
         },
     }
+}
+
+fn with_privileges<T, F>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+{
+    let _guard = privileges::adjust_privileges().map_err(|e| e.to_string())?;
+    f().map_err(|e| e.to_string())
 }

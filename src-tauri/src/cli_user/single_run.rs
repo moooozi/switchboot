@@ -1,7 +1,9 @@
+use crate::types::CliCommand;
 use std::process::Command;
 
+pub fn call_cli(cmd: &CliCommand, needs_privilege: bool) -> Result<String, String> {
+    let args = cmd.to_args();
 
-pub fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String> {
     let cli_path = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .parent()
@@ -10,8 +12,7 @@ pub fn call_cli(args: &[&str], _needs_privilege: bool) -> Result<String, String>
 
     #[cfg(target_os = "linux")]
     let mut cmd = {
-        if _needs_privilege {
-
+        if needs_privilege {
             let mut c = Command::new("pkexec");
             c.arg(&cli_path);
             c

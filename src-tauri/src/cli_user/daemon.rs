@@ -1,13 +1,12 @@
-use crate::types::CommandResponse;
+use crate::types::{CliCommand, CommandResponse};
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 
 static CLI_PROCESS: OnceLock<Mutex<CliProcess>> = OnceLock::new();
 
 pub struct CliProcess {
-    child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
 }
@@ -50,15 +49,18 @@ impl CliProcess {
         let stdin = child.stdin.take().ok_or("Failed to open CLI stdin")?;
         let stdout = child.stdout.take().ok_or("Failed to open CLI stdout")?;
         Ok(Self {
-            child,
             stdin,
             stdout: BufReader::new(stdout),
         })
     }
 
-    pub fn send_command<T: for<'a> Deserialize<'a>>(&mut self, args: &[&str]) -> Result<T, String> {
-        let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        let cmd_json = serde_json::to_string(&args_vec).map_err(|e| e.to_string())?;
+    pub fn send_command<T: for<'a> Deserialize<'a>>(
+        &mut self,
+        cmd: &CliCommand,
+    ) -> Result<T, String> {
+        let args_vec = cmd.to_args();
+        let args_ref: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
+        let cmd_json = serde_json::to_string(&args_ref).map_err(|e| e.to_string())?;
         writeln!(self.stdin, "{cmd_json}").map_err(|e| e.to_string())?;
         self.stdin.flush().map_err(|e| e.to_string())?;
 
@@ -74,9 +76,10 @@ impl CliProcess {
         }
     }
 
-    pub fn send_command_unit(&mut self, args: &[&str]) -> Result<(), String> {
-        let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        let cmd_json = serde_json::to_string(&args_vec).map_err(|e| e.to_string())?;
+    pub fn send_command_unit(&mut self, cmd: &CliCommand) -> Result<(), String> {
+        let args_vec = cmd.to_args();
+        let args_ref: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
+        let cmd_json = serde_json::to_string(&args_ref).map_err(|e| e.to_string())?;
         writeln!(self.stdin, "{cmd_json}").map_err(|e| e.to_string())?;
         self.stdin.flush().map_err(|e| e.to_string())?;
 

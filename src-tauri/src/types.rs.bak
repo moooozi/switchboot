@@ -14,3 +14,16 @@ pub struct BootEntry {
     pub is_bootnext: bool,
     pub is_current: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CliCommand {
+    GetBootOrder,
+    SetBootOrder(Vec<u16>),
+    GetBootNext,
+    SetBootNext(u16),
+    GetBootEntries,
+    SaveBootOrder(Vec<u16>),
+    UnsetBootNext,
+    GetBootCurrent,
+    RestartNow,
+}
