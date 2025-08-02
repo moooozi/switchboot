@@ -11,7 +11,7 @@ pub enum CliCommand {
     SaveBootOrder(Vec<u16>),
     UnsetBootNext,
     GetBootCurrent,
-    RestartNow,
+    Unknown,
 }
 #[derive(Serialize, Deserialize)]
 pub struct BootEntry {

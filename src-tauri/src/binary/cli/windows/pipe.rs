@@ -46,7 +46,18 @@ pub fn run_pipe_client() {
             }
         };
 
-        let command = CliCommand::from_args(&args);
+        let command = match CliCommand::from_args(&args) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                let resp = CommandResponse {
+                    code: 1,
+                    message: e,
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
         // Use the same client for all requests
         let payload = match bincode::serialize(&command) {
             Ok(p) => p,

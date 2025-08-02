@@ -12,9 +12,9 @@ pub fn dispatch_command(command: CliCommand) -> CommandResponse {
         CliCommand::GetBootNext => get_boot_next_response(),
         CliCommand::GetBootEntries => get_boot_entries_response(),
         CliCommand::GetBootCurrent => get_boot_current_response(),
-        CliCommand::RestartNow => CommandResponse {
+        CliCommand::Unknown => CommandResponse {
             code: 1,
-            message: "Restart not supported in CLI".to_string(),
+            message: "Unknown command".to_string(),
         },
     }
 }

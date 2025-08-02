@@ -9,7 +9,6 @@ impl CliCommand {
     pub const SAVE_BOOT_ORDER: &'static str = "save-boot-order";
     pub const UNSET_BOOT_NEXT: &'static str = "unset-boot-next";
     pub const GET_BOOT_CURRENT: &'static str = "get-boot-current";
-    pub const RESTART_NOW: &'static str = "restart-now";
 
     pub fn to_args(&self) -> Vec<String> {
         match self {
@@ -29,13 +28,13 @@ impl CliCommand {
             }
             CliCommand::UnsetBootNext => vec![Self::UNSET_BOOT_NEXT.into()],
             CliCommand::GetBootCurrent => vec![Self::GET_BOOT_CURRENT.into()],
-            CliCommand::RestartNow => vec![Self::RESTART_NOW.into()],
+            CliCommand::Unknown => vec![],
         }
     }
 
     pub fn from_args(args: &[String]) -> Result<Self, String> {
         if args.is_empty() {
-            return Err("No command provided".to_string());
+            return Ok(CliCommand::Unknown);
         }
         match args[0].as_str() {
             Self::GET_BOOT_ORDER => Ok(CliCommand::GetBootOrder),
@@ -51,8 +50,7 @@ impl CliCommand {
             Self::SAVE_BOOT_ORDER => Ok(CliCommand::SaveBootOrder(parse_u16_vec(&args[1..])?)),
             Self::UNSET_BOOT_NEXT => Ok(CliCommand::UnsetBootNext),
             Self::GET_BOOT_CURRENT => Ok(CliCommand::GetBootCurrent),
-            Self::RESTART_NOW => Ok(CliCommand::RestartNow),
-            other => Err(format!("Unknown command: {other}")),
+            _ => Ok(CliCommand::Unknown),
         }
     }
 }
