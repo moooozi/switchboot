@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use winservice_ipc::IPC;
+use winservice_ipc::IPCServer;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\ca9ba1f9-4aaa-486f-8ce4-f69453af0c6c";
 
@@ -143,17 +143,17 @@ pub fn run_pipe_client() {
 pub fn run_pipe_server() {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    use winservice_ipc::{pipe_server, IPC};
+    use winservice_ipc::{pipe_server, IPCServer};
 
     println!("[INFO] Starting pipe server (not as a Windows service)...");
     let should_stop = Arc::new(AtomicBool::new(false));
-    let ipc = Arc::new(IPC::new(PIPE_NAME));
+    let ipc = Arc::new(IPCServer::new(PIPE_NAME));
     ipc.set_non_blocking();
-    pipe_server(should_stop, ipc, handle_client_request);
+    pipe_server(should_stop, ipc, handle_client_request, None);
 }
 
 #[cfg(windows)]
-pub fn handle_client_request(ipc: &IPC, request: &[u8]) {
+pub fn handle_client_request(ipc: &IPCServer, request: &[u8]) {
     use super::{dispatch_command, CliCommand};
     use crate::windows::crypto::MessageCrypto;
     use winservice_ipc::ClientRequest;

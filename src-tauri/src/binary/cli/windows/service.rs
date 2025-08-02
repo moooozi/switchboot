@@ -3,7 +3,7 @@ pub const SERVICE_DISPLAY_NAME: &str = "Switchboot System Service";
 use super::pipe::PIPE_NAME;
 use super::pipe::{handle_client_request, run_pipe_client};
 use std::sync::Arc;
-use winservice_ipc::{pipe_server, run_service, start_service, IPC};
+use winservice_ipc::{pipe_server, run_service, start_service, IPCServer};
 
 #[cfg(windows)]
 pub fn launch_windows_service() {
@@ -15,9 +15,16 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
     println!("Service main started with arguments: {:?}", arguments);
     let pipe_name_owned = PIPE_NAME.to_owned();
     if let Err(e) = run_service(SERVICE_NAME, move |ctx| {
-        let ipc = Arc::new(IPC::new(&pipe_name_owned));
+        use std::time::Duration;
+
+        let ipc = Arc::new(IPCServer::new(&pipe_name_owned));
         ipc.set_non_blocking();
-        pipe_server(ctx.stop_flag, ipc, handle_client_request);
+        pipe_server(
+            ctx.stop_flag,
+            ipc,
+            handle_client_request,
+            Some(Duration::from_secs(10)),
+        );
     }) {
         println!("Error running service: {:?}", e);
     }

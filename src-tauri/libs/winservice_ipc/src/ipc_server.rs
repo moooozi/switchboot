@@ -2,7 +2,10 @@ use std::ffi::OsStr;
 use std::io::{self};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{BOOL, HANDLE, INVALID_HANDLE_VALUE, PWSTR};
 use windows::Win32::Security::{
     InitializeSecurityDescriptor, SetSecurityDescriptorDacl, SECURITY_ATTRIBUTES,
@@ -14,17 +17,16 @@ use windows::Win32::System::Pipes::{
     PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
 };
 use windows::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
-
 /// IPC struct representing a named pipe server.
-pub struct IPC {
+pub struct IPCServer {
     handle: Arc<Mutex<HANDLE>>,
     is_client_connected: Arc<Mutex<bool>>,
 }
 
-unsafe impl Send for IPC {}
-unsafe impl Sync for IPC {}
+unsafe impl Send for IPCServer {}
+unsafe impl Sync for IPCServer {}
 
-impl IPC {
+impl IPCServer {
     /// Creates a new IPC server with the specified pipe name.
     pub fn new(pipe_name: &str) -> Self {
         let pipe_name_wide: Vec<u16> = OsStr::new(pipe_name)
@@ -74,7 +76,7 @@ impl IPC {
             );
         }
 
-        IPC {
+        IPCServer {
             handle: Arc::new(Mutex::new(handle)),
             is_client_connected: Arc::new(Mutex::new(false)),
         }
@@ -192,11 +194,56 @@ impl IPC {
     }
 }
 
-impl Drop for IPC {
+impl Drop for IPCServer {
     fn drop(&mut self) {
         let handle = self.handle.lock().unwrap();
         unsafe {
             DisconnectNamedPipe(*handle).unwrap();
         }
+    }
+}
+
+pub fn pipe_server<H>(
+    should_stop: Arc<AtomicBool>,
+    ipc: Arc<IPCServer>,
+    handle_client_request: H,
+    timeout: Option<Duration>,
+) where
+    H: Fn(&IPCServer, &[u8]),
+{
+    let mut last_client_connect_attempt = Instant::now();
+    println!("Pipe server started.");
+
+    loop {
+        if should_stop.load(Ordering::SeqCst) {
+            println!("Stopping server as should_stop is set to true.");
+            break;
+        }
+
+        // Only check timeout if set
+        if let Some(timeout_duration) = timeout {
+            if last_client_connect_attempt.elapsed() >= timeout_duration {
+                println!(
+                    "No client connected for {:?}. Stopping server.",
+                    timeout_duration
+                );
+                should_stop.store(true, Ordering::SeqCst);
+                break;
+            }
+        }
+
+        // Wait for a client is now non-blocking
+        if !ipc.wait_for_client() {
+            continue;
+        }
+
+        // Reset the timer as a client has connected
+        last_client_connect_attempt = Instant::now();
+
+        let mut buffer = Vec::new();
+        if ipc.receive_message(&mut buffer) {
+            handle_client_request(&ipc, &buffer);
+        }
+        sleep(Duration::from_millis(20));
     }
 }
