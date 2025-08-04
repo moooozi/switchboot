@@ -29,8 +29,13 @@ impl CliProcess {
 
         #[cfg(target_os = "windows")]
         let mut cmd = {
+            use crate::windows::is_portable_mode;
             let mut c = Command::new(&cli_path);
-            c.arg("/service_client");
+            if is_portable_mode() {
+                c.arg("/pipe_client");
+            } else {
+                c.arg("/service_client");
+            }
             {
                 use std::os::windows::process::CommandExt;
                 const CREATE_NO_WINDOW: u32 = 0x08000000;

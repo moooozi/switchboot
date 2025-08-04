@@ -15,6 +15,7 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
     println!("Service main started with arguments: {:?}", arguments);
     let pipe_name_owned = PIPE_NAME.to_owned();
     if let Err(e) = run_service(SERVICE_NAME, move |ctx| {
+        use crate::PIPE_SERVER_WAIT_TIMEOUT;
         use std::time::Duration;
 
         let ipc = Arc::new(IPCServer::new(&pipe_name_owned));
@@ -23,7 +24,8 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
             ctx.stop_flag,
             ipc,
             handle_client_request,
-            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(PIPE_SERVER_WAIT_TIMEOUT)),
+            false,
         );
     }) {
         println!("Error running service: {:?}", e);

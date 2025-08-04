@@ -105,11 +105,8 @@ impl IPCServer {
                 // Pipe is still waiting for a client to connect
                 return false;
             } else if err.raw_os_error() == Some(windows::Win32::Foundation::ERROR_NO_DATA as i32) {
-                println!("No data available, pipe is being closed. Waiting for a new client...");
                 *self.is_client_connected.lock().unwrap() = false;
-                unsafe {
-                    DisconnectNamedPipe(*handle).unwrap();
-                }
+                let _ = unsafe { DisconnectNamedPipe(*handle) }; // Ignore error if already disconnected
                 return false;
             } else {
                 *self.is_client_connected.lock().unwrap() = false;
@@ -197,9 +194,7 @@ impl IPCServer {
 impl Drop for IPCServer {
     fn drop(&mut self) {
         let handle = self.handle.lock().unwrap();
-        unsafe {
-            DisconnectNamedPipe(*handle).unwrap();
-        }
+        let _ = unsafe { DisconnectNamedPipe(*handle) }; // Ignore error if already disconnected
     }
 }
 
@@ -208,10 +203,12 @@ pub fn pipe_server<H>(
     ipc: Arc<IPCServer>,
     handle_client_request: H,
     timeout: Option<Duration>,
+    wait_for_new_client: bool,
 ) where
     H: Fn(&IPCServer, &[u8]),
 {
     let mut last_client_connect_attempt = Instant::now();
+    let mut first_client_connected = false;
     println!("Pipe server started.");
 
     loop {
@@ -234,15 +231,29 @@ pub fn pipe_server<H>(
 
         // Wait for a client is now non-blocking
         if !ipc.wait_for_client() {
+            // If we already had a client and now it's disconnected, exit if not waiting for new clients
+            if first_client_connected && !wait_for_new_client {
+                println!("Client disconnected. Exiting server.");
+                break;
+            }
             continue;
         }
 
         // Reset the timer as a client has connected
         last_client_connect_attempt = Instant::now();
 
+        // Mark that at least one client has connected
+        first_client_connected = true;
+
         let mut buffer = Vec::new();
         if ipc.receive_message(&mut buffer) {
             handle_client_request(&ipc, &buffer);
+        } else {
+            // Only exit if the client is actually disconnected
+            if !ipc.is_client_connected() && !wait_for_new_client {
+                println!("Client disconnected. Exiting server.");
+                break;
+            }
         }
         sleep(Duration::from_millis(20));
     }

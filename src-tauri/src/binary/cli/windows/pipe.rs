@@ -140,16 +140,26 @@ pub fn run_pipe_client() {
 }
 
 #[cfg(windows)]
-pub fn run_pipe_server() {
-    use std::sync::atomic::AtomicBool;
+pub fn run_pipe_server(timeout: Option<u64>, wait_for_new_client: bool) {
     use std::sync::Arc;
+    use std::{sync::atomic::AtomicBool, time::Duration};
     use winservice_ipc::{pipe_server, IPCServer};
 
     println!("[INFO] Starting pipe server (not as a Windows service)...");
+
     let should_stop = Arc::new(AtomicBool::new(false));
     let ipc = Arc::new(IPCServer::new(PIPE_NAME));
     ipc.set_non_blocking();
-    pipe_server(should_stop, ipc, handle_client_request, None);
+
+    let duration = timeout.map(Duration::from_secs);
+
+    pipe_server(
+        should_stop,
+        ipc,
+        handle_client_request,
+        duration,
+        wait_for_new_client,
+    );
 }
 
 #[cfg(windows)]

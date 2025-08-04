@@ -5,6 +5,8 @@ pub mod types;
 use cli_user::call_cli;
 #[cfg(target_os = "windows")]
 use cli_user::get_cli;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 pub use types::{BootEntry, CliCommand, CommandResponse};
 

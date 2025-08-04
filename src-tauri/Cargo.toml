@@ -51,5 +51,5 @@ path = "src/binary/cli/main.rs"
 # Optimization profile for release builds
 [profile.release]
 lto = "fat"
-opt-level = "z"
+opt-level = 3
 codegen-units = 1

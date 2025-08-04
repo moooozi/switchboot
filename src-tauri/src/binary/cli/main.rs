@@ -4,6 +4,8 @@ pub use switchboot_lib::types;
 #[cfg(windows)]
 mod windows;
 
+pub const PIPE_SERVER_WAIT_TIMEOUT: u64 = 5; // 5 seconds
+
 fn main() {
     let mut args = std::env::args();
     let _exe = args.next();
@@ -24,7 +26,11 @@ fn main() {
                     return;
                 }
                 "/pipe_server" => {
-                    windows::pipe::run_pipe_server();
+                    windows::pipe::run_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false);
+                    return;
+                }
+                "/pipe_server_test" => {
+                    windows::pipe::run_pipe_server(None, true);
                     return;
                 }
                 "/pipe_client" => {
