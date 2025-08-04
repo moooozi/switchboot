@@ -10,10 +10,13 @@ for /l %%i in (1,1,6) do (
 )
 
 echo Using suffix: %SUFFIX%
+:: NSIS has issues with relative paths to CWD, so we need to change CWD to the nsi directory
+pushd "%~dp0"
+echo Now in directory: %CD%
 "C:\Program Files (x86)\NSIS\makensis.exe" /DSUFFIX=%SUFFIX% nsis-portable.nsi
+popd
 if errorlevel 1 (
     echo Error occurred during the execution of makensis.exe
     pause
     exit /b 1
 )
-pause

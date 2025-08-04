@@ -26,7 +26,7 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",
-        "installerHooks": "windows/nsis-hooks.nsi"
+        "installerHooks": "platform/windows/nsis-hooks.nsi"
       },
       "wix": {}
     },
@@ -34,13 +34,13 @@
       "deb": {
         "depends": ["policykit-1"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "polkit/com.switchboot.cli.policy"
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy"
         }
       },
       "rpm": {
         "depends": ["polkit"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "polkit/com.switchboot.cli.policy"
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy"
         }
       }
     },
