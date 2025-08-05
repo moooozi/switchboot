@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 mod cli_args;
 
+pub const APP_IDENTIFIER: &str = "com.switchboot.app";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShortcutConfig {
+    pub name: String,
+    pub entry_id: u16,
+    pub reboot: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CliCommand {
     GetBootOrder,

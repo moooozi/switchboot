@@ -116,15 +116,16 @@
     showShortcutDialog = true;
   }
 
-  function handleShortcutCreate(config: {
+  async function handleShortcutCreate(config: {
     name: string;
-    setBootNext: boolean;
     reboot: boolean;
   }) {
-    // TODO: Implement actual shortcut creation
-    console.log("Creating shortcut:", {
-      entry: shortcutEntry,
-      config,
+    if (!shortcutEntry) return;
+
+    await apiService.createShortcut({
+      name: config.name,
+      entryId: shortcutEntry.id,
+      reboot: config.reboot,
     });
     showShortcutDialog = false;
     shortcutEntry = null;

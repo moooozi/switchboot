@@ -8,7 +8,7 @@ use cli_user::get_cli;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-pub use types::{BootEntry, CliCommand, CommandResponse};
+pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutConfig, APP_IDENTIFIER};
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
@@ -114,6 +114,79 @@ fn get_boot_current() -> Result<Option<u16>, String> {
     get_cli()?.send_command(&CliCommand::GetBootCurrent)
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
+    call_cli(&CliCommand::CreateShortcut(config), true)?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
+    crate::windows::create_shortcut_on_desktop(
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+        config.entry_id,
+        config.reboot,
+        &config.name,
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
+    use std::fs;
+
+    // Get the path to the current executable
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    // Build the command line for the shortcut
+    let mut exec_cmd = format!("\"{}\" --set-boot-next {}", exe.display(), config.entry_id);
+    if config.reboot {
+        exec_cmd.push_str(" --reboot");
+    }
+
+    // Build the .desktop file content
+    let desktop_entry = format!(
+        "[Desktop Entry]\n\
+        Type=Application\n\
+        Name={}\n\
+        Exec={}\n\
+        Icon=system-restart\n\
+        Terminal=false\n\
+        Categories=Utility;\n",
+        config.name, exec_cmd
+    );
+
+    // Write to ~/.local/share/applications/
+    let mut desktop_path = dirs::data_dir().ok_or("Could not determine data directory")?;
+    desktop_path.push("applications");
+    fs::create_dir_all(&desktop_path).map_err(|e| e.to_string())?;
+    desktop_path.push(format!("{}-{}.desktop", APP_IDENTIFIER, config.entry_id));
+    fs::write(&desktop_path, desktop_entry).map_err(|e| e.to_string())?;
+
+    // Make the .desktop file executable
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&desktop_path)
+        .map_err(|e| e.to_string())?
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&desktop_path, perms).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+pub fn handle_bootnext_shortcut_execution(
+    entry_id: u16,
+    should_reboot: bool,
+) -> Result<(), String> {
+    set_boot_next(entry_id)?;
+    if should_reboot {
+        restart_now()?;
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn restart_now() -> Result<(), String> {
@@ -169,6 +242,7 @@ pub fn run() {
             save_boot_order,
             unset_boot_next,
             get_boot_current,
+            create_shortcut,
             restart_now,
             is_portable,
         ])

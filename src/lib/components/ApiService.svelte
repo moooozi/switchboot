@@ -88,4 +88,27 @@
       busy = false;
     }
   }
+
+  // Create shortcut
+  export async function createShortcut(config: {
+    name: string;
+    entryId: number;
+    reboot: boolean;
+  }) {
+    busy = true;
+    try {
+      await invoke("create_shortcut", {
+        config: {
+          name: config.name,
+          entry_id: config.entryId,
+          reboot: config.reboot,
+        },
+      });
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
 </script>

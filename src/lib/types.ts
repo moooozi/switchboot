@@ -5,3 +5,9 @@ export type BootEntry = {
   is_bootnext: boolean;
   is_current: boolean;
 };
+
+export type ShortcutConfig = {
+  name: string;
+  entryId: number;
+  reboot: boolean;
+};

@@ -3626,9 +3626,11 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
+ "shlex",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "windows 0.61.3",
  "winservice_ipc",
 ]
 
