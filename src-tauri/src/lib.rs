@@ -117,8 +117,10 @@ fn get_boot_current() -> Result<Option<u16>, String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn restart_now() -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
     Command::new("shutdown")
         .args(&["/r", "/t", "0"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .spawn()
         .map_err(|e| format!("Failed to execute shutdown: {e}"))?;
     Ok(())
@@ -142,6 +144,18 @@ fn restart_now() -> Result<(), String> {
     Err("Unsupported platform".to_string())
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn is_portable() -> bool {
+    crate::windows::is_portable_mode()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn is_portable() -> bool {
+    false
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -156,6 +170,7 @@ pub fn run() {
             unset_boot_next,
             get_boot_current,
             restart_now,
+            is_portable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
