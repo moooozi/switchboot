@@ -1,40 +1,23 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { dndzone } from "svelte-dnd-action";
   import { mockBootEntries } from "./mockBootEntries";
-  import { flip } from "svelte/animate";
-
-  type BootEntry = {
-    id: number;
-    description: string;
-    is_default: boolean;
-    is_bootnext: boolean;
-    is_current: boolean;
-  };
-
-  const flipDuration = 150; // ms
+  import type { BootEntry } from "../lib/types";
+  import Header from "../lib/components/Header.svelte";
+  import BootEntriesList from "../lib/components/BootEntriesList.svelte";
+  import ApiService from "../lib/components/ApiService.svelte";
+  import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
 
   let bootEntries: BootEntry[] = [];
   let originalOrder: number[] = [];
   let error = "";
   let changed = false;
   let busy = false;
+  let isPortable = false;
+  let apiService: ApiService;
 
-  // Fetch boot entries from Rust backend
-  async function fetchBootEntries() {
-    busy = true;
-    error = "";
-    try {
-      bootEntries = await invoke("get_boot_entries");
-      originalOrder = bootEntries.map((e) => e.id);
-      changed = false;
-    } catch (e) {
-      error = String(e);
-    } finally {
-      busy = false;
-    }
-  }
+  // Shortcut dialog state
+  let showShortcutDialog = false;
+  let shortcutEntry: BootEntry | null = null;
 
   // Move entry up/down
   function moveEntry(idx: number, dir: "up" | "down") {
@@ -45,50 +28,19 @@
       bootEntries[newIdx],
       bootEntries[idx],
     ];
+    checkForChanges();
+  }
+
+  // Check if order has changed
+  function checkForChanges() {
     changed =
       JSON.stringify(bootEntries.map((e) => e.id)) !==
       JSON.stringify(originalOrder);
   }
 
-  // Set BootNext
-  async function setBootNext(entry: BootEntry) {
-    busy = true;
-    try {
-      await invoke("set_boot_next", { entryId: entry.id });
-      await fetchBootEntries();
-    } catch (e) {
-      error = String(e);
-    } finally {
-      busy = false;
-    }
-  }
-
-  // Undo BootNext
-  async function unsetBootNext() {
-    busy = true;
-    try {
-      await invoke("unset_boot_next");
-      await fetchBootEntries();
-    } catch (e) {
-      error = String(e);
-    } finally {
-      busy = false;
-    }
-  }
-
   // Save boot order
   async function saveOrder() {
-    busy = true;
-    try {
-      await invoke("save_boot_order", {
-        newOrder: bootEntries.map((e) => e.id),
-      });
-      await fetchBootEntries();
-    } catch (e) {
-      error = String(e);
-    } finally {
-      busy = false;
-    }
+    await apiService.saveBootOrder(bootEntries.map((e) => e.id));
   }
 
   // Discard changes
@@ -100,159 +52,152 @@
     changed = false;
   }
 
-  // Restart Now
-  async function restartNow() {
-    busy = true;
-    try {
-      await invoke("restart_now");
-    } catch (e) {
-      error = String(e);
-    } finally {
-      busy = false;
-    }
+  // Handle events from ApiService (now callback props)
+  function handleStatusFetched(portable: boolean) {
+    isPortable = portable;
   }
 
-  function handleDnd(event: CustomEvent<{ items: BootEntry[] }>) {
-    if (busy) return;
-    const { detail } = event;
-    bootEntries = detail.items;
-    changed =
-      JSON.stringify(bootEntries.map((e) => e.id)) !==
-      JSON.stringify(originalOrder);
+  function handleBootEntriesFetched(entries: BootEntry[]) {
+    bootEntries = entries;
+    originalOrder = bootEntries.map((e) => e.id);
+    changed = false;
+  }
+
+  function handleError(errorMessage: string) {
+    error = errorMessage;
+  }
+
+  // Handle events from BootEntriesList (now callback props)
+  function handleEntriesChanged(entries: BootEntry[]) {
+    bootEntries = entries;
+    checkForChanges();
+  }
+
+  function handleMoveUp(index: number) {
+    moveEntry(index, "up");
+  }
+
+  function handleMoveDown(index: number) {
+    moveEntry(index, "down");
+  }
+
+  async function handleSetBootNext(entry: BootEntry) {
+    await apiService.setBootNext(entry.id);
+  }
+
+  async function handleUnsetBootNext() {
+    await apiService.unsetBootNext();
+  }
+
+  async function handleRestartNow() {
+    await apiService.restartNow();
+  }
+
+  async function handleMakeDefault(entry: BootEntry) {
+    // Move the selected entry to the first position, keeping others in order
+    const entryIndex = bootEntries.findIndex((e) => e.id === entry.id);
+    if (entryIndex === -1) return;
+
+    // Create new order with selected entry first
+    const newBootEntries = [
+      bootEntries[entryIndex],
+      ...bootEntries.slice(0, entryIndex),
+      ...bootEntries.slice(entryIndex + 1),
+    ];
+
+    bootEntries = newBootEntries;
+
+    // Save the new boot order
+    await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+  }
+
+  async function handleAddShortcut(entry: BootEntry) {
+    shortcutEntry = entry;
+    showShortcutDialog = true;
+  }
+
+  function handleShortcutCreate(config: {
+    name: string;
+    setBootNext: boolean;
+    reboot: boolean;
+  }) {
+    // TODO: Implement actual shortcut creation
+    console.log("Creating shortcut:", {
+      entry: shortcutEntry,
+      config,
+    });
+    showShortcutDialog = false;
+    shortcutEntry = null;
+  }
+
+  function handleShortcutCancel() {
+    showShortcutDialog = false;
+    shortcutEntry = null;
   }
 
   if (import.meta.env.DEV) {
     bootEntries = mockBootEntries;
     originalOrder = bootEntries.map((e) => e.id);
   } else {
-    onMount(() => {
-      fetchBootEntries();
+    onMount(async () => {
+      await apiService.fetchPortableStatus();
+      await apiService.fetchBootEntries();
     });
   }
 </script>
+
+<ApiService
+  bind:this={apiService}
+  onstatusfetched={handleStatusFetched}
+  onbootentriesfetched={handleBootEntriesFetched}
+  onerror={handleError}
+/>
 
 <main
   class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
-  <div
-    class="container max-w-2xl mx-auto flex items-center justify-between mb-8 px-3"
-  >
-    <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
-    <div class="flex gap-3">
-      <button
-        class="bg-sky-600 text-white font-semibold hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition rounded-full px-6 py-2"
-        on:click={saveOrder}
-        disabled={!changed || busy}
-        title="Save the current boot order">Save</button
-      >
-      <button
-        class="bg-neutral-200 text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600 transition rounded-full px-6 py-2"
-        on:click={discardChanges}
-        disabled={!changed || busy}
-        title="Discard boot order changes">Discard</button
-      >
-    </div>
-  </div>
+  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} />
+
   {#if error}
-    <p class="text-red-600 dark:text-red-400">{error}</p>
+    <p class="text-red-600 dark:text-red-400 max-w-2xl mx-auto px-2 mb-4">
+      {error}
+    </p>
   {/if}
-  <div
-    class="flex-1 overflow-y-auto flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
-    use:dndzone={{
-      items: bootEntries,
-      flipDurationMs: flipDuration,
-      dragDisabled: busy,
-    }}
-    on:consider={handleDnd}
-    on:finalize={handleDnd}
-  >
-    {#each bootEntries as entry, idx (entry.id)}
-      <div
-        class={`flex items-center gap-3 p-4 rounded-xl border transition-colors cursor-grab
-          ${
-            entry.is_default
-              ? "border-sky-500"
-              : entry.is_bootnext
-                ? "border-emerald-500"
-                : "border-neutral-200 dark:border-neutral-700"
-          }
-          bg-neutral-200 dark:bg-neutral-800`}
-        data-id={entry.id}
-        animate:flip={{ duration: flipDuration }}
-      >
-        <span class="flex-1 text-base">{entry.description}</span>
-        {#if entry.is_current}
-          <span
-            class="bg-purple-300 text-purple-800 dark:bg-purple-600 dark:text-white text-xs font-semibold px-2 py-1 rounded-full mr-2 select-none"
-            title="This entry was used to boot the current OS"
-          >
-            Current
-          </span>
-        {/if}
-        {#if entry.is_default}
-          <button
-            disabled={true}
-            class="bg-sky-700 text-white text-xs dark:bg-sky-600 transition rounded-full px-3 py-1"
-            title="This is the default firmware boot entry">Default</button
-          >
-        {:else if entry.is_bootnext}
-          <button
-            class="bg-emerald-500 text-white text-xs hover:bg-emerald-600 transition rounded-full px-3 py-1"
-            on:click={unsetBootNext}
-            title="Unset BootNext (cancel one-time boot override)"
-            disabled={busy}>Undo</button
-          >
-          <button
-            class="bg-amber-500 text-white text-xs hover:bg-amber-600 transition rounded-full px-3 py-1"
-            on:click={restartNow}
-            title="Restart now to boot this entry next"
-            disabled={busy}>Restart</button
-          >
-        {:else}
-          <button
-            class="bg-neutral-300 dark:bg-neutral-600 text-neutral-800 dark:text-neutral-200 text-xs hover:bg-sky-500 hover:text-white dark:hover:bg-sky-600 transition rounded-full px-3 py-1"
-            on:click={() => setBootNext(entry)}
-            title="Set this entry as BootNext (one-time boot override)"
-            disabled={busy}>BootNext</button
-          >
-        {/if}
-        <button
-          class="bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:brightness-95 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
-          on:click={() => moveEntry(idx, "up")}
-          disabled={idx === 0 || busy}
-          aria-label="Move up"
-          title="Move entry up">↑</button
-        >
-        <button
-          class="bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:brightness-95 dark:hover:bg-neutral-600 transition rounded-full px-3 py-1"
-          on:click={() => moveEntry(idx, "down")}
-          disabled={idx === bootEntries.length - 1 || busy}
-          aria-label="Move down"
-          title="Move entry down">↓</button
-        >
-      </div>
-    {/each}
-  </div>
+
+  <BootEntriesList
+    {bootEntries}
+    {busy}
+    onentrieschanged={handleEntriesChanged}
+    onmoveup={handleMoveUp}
+    onmovedown={handleMoveDown}
+    onsetbootnext={handleSetBootNext}
+    onunsetbootnext={handleUnsetBootNext}
+    onrestartnow={handleRestartNow}
+    onmakedefault={handleMakeDefault}
+    onaddshortcut={handleAddShortcut}
+  />
 </main>
 
-<style>
-  button:disabled,
-  button:disabled:hover {
-    opacity: 0.5;
-    color: inherit !important;
-    box-shadow: none !important;
-    filter: none !important;
-  }
+<!-- Shortcut Dialog -->
+{#if shortcutEntry}
+  <ShortcutDialog
+    entry={shortcutEntry}
+    visible={showShortcutDialog}
+    oncreate={handleShortcutCreate}
+    oncancel={handleShortcutCancel}
+  />
+{/if}
 
-  ::-webkit-scrollbar {
+<style>
+  :global(::-webkit-scrollbar) {
     width: 12px;
   }
-  ::-webkit-scrollbar-thumb {
+  :global(::-webkit-scrollbar-thumb) {
     background: #444;
     border-radius: 6px;
   }
-  .dark ::-webkit-scrollbar-thumb {
+  :global(.dark ::-webkit-scrollbar-thumb) {
     background: #222;
   }
 </style>
