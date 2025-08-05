@@ -1,13 +1,8 @@
 use std::os::windows::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
-use std::sync::OnceLock;
-
-#[cfg(target_os = "windows")]
-static IS_PORTABLE: OnceLock<bool> = OnceLock::new();
 
 #[cfg(target_os = "windows")]
 pub fn is_portable_mode() -> bool {
-    *IS_PORTABLE.get_or_init(|| std::env::args().any(|arg| arg == "--portable"))
+    crate::config::is_portable_mode()
 }
 
 use windows::{
@@ -64,9 +59,9 @@ pub fn create_shortcut_on_desktop(
         let mut shortcut_path = PathBuf::from(desktop);
         shortcut_path.push(format!("{shortcut_name}.lnk"));
 
-        let mut args = format!("--set-boot-next {}", entry_id);
+        let mut args = format!("--exec set-boot-next {}", entry_id);
         if restart {
-            args.push_str(" --reboot");
+            args.push_str(" reboot");
         }
 
         // Use CoCreateInstance to create the ShellLink COM object

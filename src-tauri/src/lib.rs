@@ -1,6 +1,7 @@
 use std::process::Command;
 mod cli_user;
 pub mod types;
+pub mod config;
 #[cfg(target_os = "linux")]
 use cli_user::call_cli;
 #[cfg(target_os = "windows")]
@@ -114,13 +115,6 @@ fn get_boot_current() -> Result<Option<u16>, String> {
     get_cli()?.send_command(&CliCommand::GetBootCurrent)
 }
 
-#[cfg(not(target_os = "windows"))]
-#[tauri::command]
-fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
-    call_cli(&CliCommand::CreateShortcut(config), true)?;
-    Ok(())
-}
-
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
@@ -135,15 +129,16 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 #[tauri::command]
 fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
+    use std::env;
     use std::fs;
 
     // Get the path to the current executable
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = env::current_exe().map_err(|e| e.to_string())?;
 
     // Build the command line for the shortcut
-    let mut exec_cmd = format!("\"{}\" --set-boot-next {}", exe.display(), config.entry_id);
+    let mut exec_cmd = format!("\"{}\" --exec set-boot-next {}", exe.display(), config.entry_id);
     if config.reboot {
-        exec_cmd.push_str(" --reboot");
+        exec_cmd.push_str(" reboot");
     }
 
     // Build the .desktop file content
@@ -158,8 +153,22 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         config.name, exec_cmd
     );
 
-    // Write to ~/.local/share/applications/
-    let mut desktop_path = dirs::data_dir().ok_or("Could not determine data directory")?;
+    // Get XDG_DATA_HOME or default to ~/.local/share
+    let data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            println!("XDG_DATA_HOME not set, using default ~/.local/share");
+            std::env::var("HOME").ok().map(|home| {
+                let mut p = std::path::PathBuf::from(home);
+                p.push(".local/share");
+                p
+            })
+        })
+        .ok_or_else(|| "Could not determine data directory".to_string())?;
+
+    let mut desktop_path = data_home;
     desktop_path.push("applications");
     fs::create_dir_all(&desktop_path).map_err(|e| e.to_string())?;
     desktop_path.push(format!("{}-{}.desktop", APP_IDENTIFIER, config.entry_id));
@@ -220,7 +229,7 @@ fn restart_now() -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn is_portable() -> bool {
-    crate::windows::is_portable_mode()
+    config::is_portable_mode()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -230,7 +239,12 @@ fn is_portable() -> bool {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(app_config: Option<config::AppConfig>) {
+    // Initialize configuration if provided
+    if let Some(cfg) = app_config {
+        config::init_config(cfg);
+    }
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

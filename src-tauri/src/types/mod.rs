@@ -10,7 +10,7 @@ pub struct ShortcutConfig {
     pub reboot: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CliCommand {
     GetBootOrder,
     SetBootOrder(Vec<u16>),

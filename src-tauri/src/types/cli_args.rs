@@ -10,6 +10,15 @@ impl CliCommand {
     pub const UNSET_BOOT_NEXT: &'static str = "unset-boot-next";
     pub const GET_BOOT_CURRENT: &'static str = "get-boot-current";
 
+    /// Returns true if this command can be executed in non-interactive mode via --exec
+    pub fn allow_non_interactive_exec(&self) -> bool {
+        match self {
+            CliCommand::SetBootNext(_) => true,
+            // Add other commands here in the future as needed
+            _ => false,
+        }
+    }
+
     pub fn to_args(&self) -> Vec<String> {
         match self {
             CliCommand::GetBootOrder => vec![Self::GET_BOOT_ORDER.into()],

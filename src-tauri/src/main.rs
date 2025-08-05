@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod args_parser;
+
+
 /// Entry point for the application.
 /// Launches the Tauri GUI.
 fn main() {
@@ -12,39 +15,32 @@ fn main() {
         }
     }
 
-    // --- Handle shortcut execution ---
-    let mut args = std::env::args().skip(1).peekable();
-    if let Some(arg) = args.peek() {
-        if arg == "--set-boot-next" {
-            args.next(); // consume the flag
-            if let Some(entry_id_str) = args.next() {
-                match entry_id_str.parse::<u16>() {
-                    Ok(entry_id) => {
-                        let should_reboot = args.any(|a| a == "--reboot");
-                        #[cfg(target_os = "windows")]
-                        {
-                            if let Err(e) = switchboot_lib::handle_bootnext_shortcut_execution(
-                                entry_id,
-                                should_reboot,
-                            ) {
-                                eprintln!("Error: {e}");
-                                std::process::exit(1);
-                            }
-                            std::process::exit(0);
-                        }
-                    }
-                    Err(_) => {
-                        eprintln!("Error: Invalid entry ID: {entry_id_str}");
-                        std::process::exit(1);
-                    }
+    // Parse command line arguments
+    match args_parser::parse_args(std::env::args().skip(1)) {
+        Ok(config) => match config.mode {
+            args_parser::AppMode::Exec { command, should_reboot } => {
+                if let Err(e) = args_parser::handle_exec_mode(&command, should_reboot) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
-            } else {
-                eprintln!("Error: Missing entry ID after --set-boot-next");
-                std::process::exit(1);
+                std::process::exit(0);
             }
+            args_parser::AppMode::Gui => {
+                // Create config and launch Tauri GUI
+                #[cfg(target_os = "windows")]
+                let app_config = Some(switchboot_lib::config::AppConfig {
+                    portable_mode: config.portable_mode,
+                });
+                
+                #[cfg(not(target_os = "windows"))]
+                let app_config = None;
+                
+                switchboot_lib::run(app_config);
+            }
+        },
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
         }
     }
-
-    // Launch Tauri GUI
-    switchboot_lib::run();
 }
