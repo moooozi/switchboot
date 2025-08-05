@@ -12,7 +12,7 @@
   let error = "";
   let changed = false;
   let busy = false;
-  let isPortable = false;
+  let isPortable: boolean | null = null;
   let apiService: ApiService;
 
   // Shortcut dialog state
@@ -139,6 +139,11 @@
   if (import.meta.env.DEV) {
     bootEntries = mockBootEntries;
     originalOrder = bootEntries.map((e) => e.id);
+
+    // Mock portable status promise that resolves after 3 seconds
+    setTimeout(() => {
+      handleStatusFetched(false);
+    }, 3000);
   } else {
     onMount(async () => {
       await apiService.fetchPortableStatus();
@@ -169,6 +174,7 @@
   <BootEntriesList
     {bootEntries}
     {busy}
+    {isPortable}
     onentrieschanged={handleEntriesChanged}
     onmoveup={handleMoveUp}
     onmovedown={handleMoveDown}

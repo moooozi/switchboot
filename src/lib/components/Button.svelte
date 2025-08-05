@@ -5,6 +5,7 @@
     | "neutral"
     | "emerald"
     | "amber"
+    | "purple"
     | "small-neutral" = "primary";
   export let size: "small" | "medium" | "large" = "medium";
   export let disabled: boolean = false;
@@ -53,6 +54,8 @@
         return "bg-emerald-500 text-white hover:bg-emerald-600 dark:bg-emerald-700 dark:hover:bg-emerald-600 focus:ring-emerald-500";
       case "amber":
         return "bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-700 dark:hover:bg-amber-600 focus:ring-amber-500";
+      case "purple":
+        return "bg-purple-300 text-purple-800 hover:bg-purple-400 dark:bg-purple-600 dark:text-white dark:hover:bg-purple-700 focus:ring-purple-500 opacity-70";
       case "small-neutral":
         return "bg-neutral-300 dark:bg-neutral-600 text-neutral-800 dark:text-neutral-200 hover:bg-sky-500 hover:text-white dark:hover:bg-sky-600 focus:ring-sky-500";
     }

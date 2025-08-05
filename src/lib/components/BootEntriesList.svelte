@@ -7,6 +7,7 @@
 
   export let bootEntries: BootEntry[];
   export let busy: boolean;
+  export let isPortable: boolean | null;
 
   // Callback props instead of events
   export let onentrieschanged: ((entries: BootEntry[]) => void) | undefined =
@@ -133,6 +134,8 @@
   use:dndzone={{
     items: bootEntries,
     flipDurationMs: flipDuration,
+    dropTargetStyle: {},
+
     dragDisabled: busy,
   }}
   on:consider={handleDnd}
@@ -168,8 +171,23 @@
     >
       Make Default
     </ContextMenuItem>
-    <ContextMenuItem disabled={busy} onclick={handleAddShortcutFromMenu}>
+    <ContextMenuItem
+      disabled={busy || isPortable !== false}
+      title={isPortable === true
+        ? "Shortcuts are not available in portable mode"
+        : isPortable === null
+          ? "Loading portable mode status..."
+          : ""}
+      onclick={handleAddShortcutFromMenu}
+    >
       Add Shortcut
     </ContextMenuItem>
   </div>
 {/if}
+
+<style>
+  /* Remove white border/background from dragged element */
+  :global(#dnd-action-dragged-el) {
+    outline: none !important;
+  }
+</style>

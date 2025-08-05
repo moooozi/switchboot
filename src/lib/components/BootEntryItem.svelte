@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { BootEntry } from "../types";
   import Button from "./Button.svelte";
+  import Label from "./Label.svelte";
 
   export let entry: BootEntry;
   export let index: number;
@@ -40,23 +41,23 @@
   <span class="flex-1 text-base">{entry.description}</span>
 
   {#if entry.is_current}
-    <span
-      class="bg-purple-300 text-purple-800 dark:bg-purple-600 dark:text-white text-xs font-semibold px-2 py-1 rounded-full mr-2 select-none opacity-70"
+    <Label
+      variant="purple"
+      size="small"
       title="This entry was used to boot the current OS"
     >
       Current
-    </span>
+    </Label>
   {/if}
 
   {#if entry.is_default}
-    <Button
+    <Label
       variant="primary"
       size="small"
-      disabled={true}
       title="This is the default firmware boot entry"
     >
       Default
-    </Button>
+    </Label>
   {:else if entry.is_bootnext}
     <Button
       variant="emerald"
