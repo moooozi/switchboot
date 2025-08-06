@@ -19,6 +19,14 @@ impl CliCommand {
         }
     }
 
+    pub fn allow_non_auth_exec(&self) -> bool {
+        match self {
+            CliCommand::SetBootNext(_) => true,
+            CliCommand::UnsetBootNext => true,
+            _ => false,
+        }
+    }
+
     pub fn to_args(&self) -> Vec<String> {
         match self {
             CliCommand::GetBootOrder => vec![Self::GET_BOOT_ORDER.into()],

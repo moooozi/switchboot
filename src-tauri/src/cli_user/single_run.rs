@@ -14,6 +14,9 @@ pub fn call_cli(cmd: &CliCommand, needs_privilege: bool) -> Result<String, Strin
     let mut cmd = {
         if needs_privilege {
             let mut c = Command::new("pkexec");
+            if cmd.allow_non_auth_exec() {
+                c.arg("--action-id").arg("com.switchboot.cli.nopass");
+            }
             c.arg(&cli_path);
             c
         } else {
