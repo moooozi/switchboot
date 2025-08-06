@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fade, scale } from "svelte/transition";
   import type { BootEntry } from "../types";
   import Button from "./Button.svelte";
   import Checkbox from "./Checkbox.svelte";
@@ -80,70 +81,71 @@
   }
 </script>
 
-{#if visible}
+<div
+  class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
+  on:click={handleOverlayClick}
+  on:keydown={handleKeydown}
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="dialog-title"
+  tabindex="-1"
+  transition:fade={{ duration: 100 }}
+  style:display={visible ? undefined : "none"}
+>
   <div
-    class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
-    on:click={handleOverlayClick}
-    on:keydown={handleKeydown}
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="dialog-title"
-    tabindex="-1"
+    class="bg-white dark:bg-neutral-800 rounded-lg shadow-xl p-6 w-96 max-w-[90vw]"
+    transition:scale={{ duration: 200, start: 0.95 }}
   >
-    <div
-      class="bg-white dark:bg-neutral-800 rounded-lg shadow-xl p-6 w-96 max-w-[90vw]"
+    <h2
+      id="dialog-title"
+      class="text-lg font-semibold mb-4 text-neutral-900 dark:text-neutral-100"
     >
-      <h2
-        id="dialog-title"
-        class="text-lg font-semibold mb-4 text-neutral-900 dark:text-neutral-100"
-      >
+      Create Shortcut
+    </h2>
+
+    <div class="space-y-4">
+      <!-- Shortcut Name -->
+      <div>
+        <label
+          for="shortcut-name"
+          class="block text-sm font-medium mb-2 text-neutral-700 dark:text-neutral-300"
+        >
+          Shortcut Name
+        </label>
+        <input
+          id="shortcut-name"
+          type="text"
+          bind:value={shortcutName}
+          on:input={handleNameInput}
+          class="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
+        />
+      </div>
+
+      <!-- Set as BootNext (always checked and disabled) -->
+      <Checkbox
+        id="set-bootnext"
+        bind:checked={setBootNext}
+        disabled={true}
+        label="Set as BootNext"
+      />
+
+      <!-- Reboot -->
+      <Checkbox
+        id="reboot"
+        bind:checked={reboot}
+        onchange={handleRebootChange}
+        label="Reboot"
+      />
+    </div>
+
+    <!-- Buttons -->
+    <div class="flex justify-end space-x-3 mt-6">
+      <Button variant="secondary" size="medium" onclick={handleCancel}>
+        Cancel
+      </Button>
+      <Button variant="primary" size="medium" onclick={handleCreate}>
         Create Shortcut
-      </h2>
-
-      <div class="space-y-4">
-        <!-- Shortcut Name -->
-        <div>
-          <label
-            for="shortcut-name"
-            class="block text-sm font-medium mb-2 text-neutral-700 dark:text-neutral-300"
-          >
-            Shortcut Name
-          </label>
-          <input
-            id="shortcut-name"
-            type="text"
-            bind:value={shortcutName}
-            on:input={handleNameInput}
-            class="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
-        </div>
-
-        <!-- Set as BootNext (always checked and disabled) -->
-        <Checkbox
-          id="set-bootnext"
-          bind:checked={setBootNext}
-          disabled={true}
-          label="Set as BootNext"
-        />
-
-        <!-- Reboot -->
-        <Checkbox
-          id="reboot"
-          bind:checked={reboot}
-          onchange={handleRebootChange}
-          label="Reboot"
-        />
-      </div>
-
-      <!-- Buttons -->
-      <div class="flex justify-end space-x-3 mt-6">
-        <Button variant="secondary" size="medium" onclick={handleCancel}>
-          Cancel
-        </Button>
-        <Button variant="primary" size="medium" onclick={handleCreate}>
-          Create Shortcut
-        </Button>
-      </div>
+      </Button>
     </div>
   </div>
-{/if}
+</div>
