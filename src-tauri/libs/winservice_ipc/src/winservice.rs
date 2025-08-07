@@ -451,11 +451,18 @@ pub fn uninstall_service(
     }
 }
 
+/// Starts a Windows service by name.
+/// If `service_run_timeout` is `Some(timeout_secs)`, this will poll the service status and wait up to `timeout_secs` seconds
+/// for the service to reach the RUNNING state before returning. If the timeout is reached, returns a TimedOut error.
+/// If `service_run_timeout` is `None`, this will return immediately after starting the service (or if already running).
+/// Returns Ok(()) on success, or an error if starting or waiting fails.
 #[cfg(windows)]
-pub fn start_service(service_name: &str) -> std::io::Result<()> {
+pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> std::io::Result<()> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
     use windows::Win32::Foundation::{ERROR_SERVICE_ALREADY_RUNNING, PWSTR};
     use windows::Win32::System::Services::{
         CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatus, StartServiceW,
@@ -492,12 +499,36 @@ pub fn start_service(service_name: &str) -> std::io::Result<()> {
         }
         let result = StartServiceW(service, 0, null_mut());
         let err = std::io::Error::last_os_error();
-        CloseServiceHandle(service);
-        CloseServiceHandle(scm);
-        if result.as_bool() || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32) {
-            Ok(())
+
+        // Optionally wait for RUNNING state
+        let final_result = if result.as_bool() || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32) {
+            if let Some(timeout_secs) = service_run_timeout {
+                let start = Instant::now();
+                while start.elapsed() < Duration::from_secs(timeout_secs) {
+                    if QueryServiceStatus(service, &mut status).as_bool() {
+                        if status.dwCurrentState == SERVICE_RUNNING {
+                            break;
+                        }
+                    }
+                    sleep(Duration::from_millis(50));
+                }
+                if status.dwCurrentState != SERVICE_RUNNING {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Service did not reach RUNNING state within {} seconds", timeout_secs),
+                    ))
+                } else {
+                    Ok(())
+                }
+            } else {
+                Ok(())
+            }
         } else {
             Err(err)
-        }
+        };
+
+        CloseServiceHandle(service);
+        CloseServiceHandle(scm);
+        final_result
     }
 }

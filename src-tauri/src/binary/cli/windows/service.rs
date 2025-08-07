@@ -5,6 +5,8 @@ use super::pipe::{handle_client_request, run_pipe_client};
 use std::sync::Arc;
 use winservice_ipc::{pipe_server, run_service, start_service, IPCServer};
 
+const SERVICE_START_TIMEOUT: u64 = 5; // seconds 
+
 #[cfg(windows)]
 pub fn launch_windows_service() {
     winservice_ipc::run_windows_service(SERVICE_NAME, my_service_main);
@@ -34,7 +36,7 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
 
 #[cfg(windows)]
 pub fn run_service_client() {
-    if let Err(e) = start_service(SERVICE_NAME) {
+    if let Err(e) = start_service(SERVICE_NAME, Some(SERVICE_START_TIMEOUT)) {
         eprintln!("[ERROR] Failed to start service: {}", e);
         std::process::exit(1);
     }

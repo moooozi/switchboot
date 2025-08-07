@@ -255,6 +255,6 @@ pub fn pipe_server<H>(
                 break;
             }
         }
-        sleep(Duration::from_millis(20));
+        sleep(Duration::from_millis(100));
     }
 }
