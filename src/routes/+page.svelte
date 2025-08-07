@@ -28,16 +28,28 @@
       bootEntries[newIdx],
       bootEntries[idx],
     ];
-    checkForChanges();
+    validateBootOrderChanges();
   }
 
-  // Check if order has changed
-  function checkForChanges() {
-    changed =
-      JSON.stringify(bootEntries.map((e) => e.id)) !==
-      JSON.stringify(originalOrder);
-  }
+  function validateBootOrderChanges() {
+    // Helper: filter out any drag-and-drop placeholder IDs
+    const isRealId = (id: unknown) =>
+      typeof id === "number" && !String(id).startsWith("id:dnd-shadow-placeholder");
 
+    // Get current order, ignoring placeholders
+    const filteredIds = bootEntries
+      .map((e) => e.id)
+      .filter(isRealId);
+
+    // If the number of entries changed, do not mark as changed
+    if (filteredIds.length !== originalOrder.length) {
+      changed = false;
+      return;
+    }
+
+    // Compare current order to original order
+    changed = JSON.stringify(filteredIds) !== JSON.stringify(originalOrder);
+  }
   // Save boot order
   async function saveOrder() {
     await apiService.saveBootOrder(bootEntries.map((e) => e.id));
@@ -70,7 +82,7 @@
   // Handle events from BootEntriesList (now callback props)
   function handleEntriesChanged(entries: BootEntry[]) {
     bootEntries = entries;
-    checkForChanges();
+    validateBootOrderChanges();
   }
 
   function handleMoveUp(index: number) {
