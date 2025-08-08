@@ -64,6 +64,28 @@ where
                     SetServiceStatus(ctx.status_handle, &status);
                 }
                 ctx.stop_flag.store(true, Ordering::SeqCst);
+
+                // Watcher thread: terminate if not stopped after 7 seconds (3 seconds before wait hint)
+                let status_handle = ctx.status_handle;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(7));
+                    // If still not stopped, set status to STOPPED and terminate
+                    let stopped_status = SERVICE_STATUS {
+                        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+                        dwCurrentState: SERVICE_STOPPED,
+                        dwControlsAccepted: 0,
+                        dwWin32ExitCode: NO_ERROR,
+                        dwServiceSpecificExitCode: 0,
+                        dwCheckPoint: 0,
+                        dwWaitHint: 0,
+                    };
+                    unsafe {
+                        SetServiceStatus(status_handle, &stopped_status);
+                    }
+                    println!("Watcher: Service did not stop in time. Terminating process.");
+                    std::process::exit(1);
+                });
+
                 NO_ERROR
             }
             SERVICE_CONTROL_INTERROGATE => NO_ERROR,
@@ -501,7 +523,9 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
         let err = std::io::Error::last_os_error();
 
         // Optionally wait for RUNNING state
-        let final_result = if result.as_bool() || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32) {
+        let final_result = if result.as_bool()
+            || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32)
+        {
             if let Some(timeout_secs) = service_run_timeout {
                 let start = Instant::now();
                 while start.elapsed() < Duration::from_secs(timeout_secs) {
@@ -515,7 +539,10 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
                 if status.dwCurrentState != SERVICE_RUNNING {
                     Err(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        format!("Service did not reach RUNNING state within {} seconds", timeout_secs),
+                        format!(
+                            "Service did not reach RUNNING state within {} seconds",
+                            timeout_secs
+                        ),
                     ))
                 } else {
                     Ok(())

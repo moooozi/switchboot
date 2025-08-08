@@ -259,3 +259,92 @@ pub fn pipe_server<H>(
         sleep(Duration::from_millis(100));
     }
 }
+
+pub fn pipe_server_blocking<H>(
+    should_stop: Arc<AtomicBool>,
+    ipc: Arc<IPCServer>,
+    handle_client_request: H,
+    timeout: Option<Duration>,
+    wait_for_new_client: bool,
+) where
+    H: Fn(&IPCServer, &[u8]) + Send + Sync + 'static,
+{
+    // Watcher thread
+    if let Some(timeout_duration) = timeout {
+        let ipc_clone = Arc::clone(&ipc);
+        let should_stop_clone = Arc::clone(&should_stop);
+        std::thread::spawn(move || {
+            std::thread::sleep(timeout_duration);
+            if !ipc_clone.is_client_connected() && !should_stop_clone.load(Ordering::SeqCst) {
+                println!(
+                    "Watcher: No client connected after {:?}. Terminating process.",
+                    timeout_duration
+                );
+                std::process::exit(1);
+            }
+        });
+    }
+
+    let handle = *ipc.handle.lock().unwrap();
+    let mut last_client_connect_attempt = Instant::now();
+    let mut first_client_connected = false;
+    println!("Pipe server (blocking) started.");
+
+    loop {
+        if should_stop.load(Ordering::SeqCst) {
+            println!("Stopping server as should_stop is set to true.");
+            break;
+        }
+
+        if let Some(timeout_duration) = timeout {
+            if !ipc.is_client_connected()
+                && last_client_connect_attempt.elapsed() >= timeout_duration
+            {
+                println!(
+                    "No client connected for {:?}. Stopping server.",
+                    timeout_duration
+                );
+                should_stop.store(true, Ordering::SeqCst);
+                break;
+            }
+        }
+
+        // Blocking connect
+        let connected = unsafe { ConnectNamedPipe(handle, null_mut()).as_bool() };
+        let err = std::io::Error::last_os_error();
+
+        if !connected
+            && err.raw_os_error() == Some(windows::Win32::Foundation::ERROR_PIPE_CONNECTED as i32)
+        {
+            // Already connected
+            *ipc.is_client_connected.lock().unwrap() = true;
+            first_client_connected = true;
+            last_client_connect_attempt = Instant::now();
+
+            let mut buffer = Vec::new();
+            if ipc.receive_message(&mut buffer) {
+                handle_client_request(&ipc, &buffer);
+            }
+        } else if !connected {
+            // Handle other errors
+            *ipc.is_client_connected.lock().unwrap() = false;
+            let _ = unsafe { DisconnectNamedPipe(handle) };
+            if first_client_connected && !wait_for_new_client {
+                println!("Client disconnected. Exiting server.");
+                break;
+            }
+            continue;
+        } else {
+            // Synchronous connect
+            println!("Client connected (blocking)!");
+            *ipc.is_client_connected.lock().unwrap() = true;
+            first_client_connected = true;
+            last_client_connect_attempt = Instant::now();
+
+            let mut buffer = Vec::new();
+            if ipc.receive_message(&mut buffer) {
+                handle_client_request(&ipc, &buffer);
+            }
+        }
+    }
+}

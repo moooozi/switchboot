@@ -143,7 +143,7 @@ pub fn run_pipe_client() {
 pub fn run_pipe_server(timeout: Option<u64>, wait_for_new_client: bool) {
     use std::sync::Arc;
     use std::{sync::atomic::AtomicBool, time::Duration};
-    use winservice_ipc::ipc_server::pipe_server;
+    use winservice_ipc::ipc_server::pipe_server_blocking;
 
     println!("[INFO] Starting pipe server (not as a Windows service)...");
 
@@ -152,7 +152,7 @@ pub fn run_pipe_server(timeout: Option<u64>, wait_for_new_client: bool) {
 
     let duration = timeout.map(Duration::from_secs);
 
-    pipe_server(
+    pipe_server_blocking(
         should_stop,
         ipc,
         handle_client_request,

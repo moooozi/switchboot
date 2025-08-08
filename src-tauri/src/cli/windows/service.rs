@@ -17,14 +17,13 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
     println!("Service main started with arguments: {:?}", arguments);
     let pipe_name_owned = PIPE_NAME.to_owned();
     if let Err(e) = run_service(SERVICE_NAME, move |ctx| {
-        use winservice_ipc::ipc_server::{pipe_server, IPCServer};
+        use winservice_ipc::ipc_server::{pipe_server_blocking, IPCServer};
 
         use crate::PIPE_SERVER_WAIT_TIMEOUT;
         use std::time::Duration;
 
         let ipc = Arc::new(IPCServer::new(&pipe_name_owned));
-        ipc.set_non_blocking();
-        pipe_server(
+        pipe_server_blocking(
             ctx.stop_flag,
             ipc,
             handle_client_request,
