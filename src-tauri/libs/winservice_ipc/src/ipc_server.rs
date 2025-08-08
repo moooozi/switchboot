@@ -207,6 +207,7 @@ pub fn pipe_server<H>(
 ) where
     H: Fn(&IPCServer, &[u8]),
 {
+    ipc.set_non_blocking();
     let mut last_client_connect_attempt = Instant::now();
     let mut first_client_connected = false;
     println!("Pipe server started.");

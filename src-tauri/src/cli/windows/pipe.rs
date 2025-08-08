@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use winservice_ipc::IPCServer;
+use winservice_ipc::ipc_server::IPCServer;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\ca9ba1f9-4aaa-486f-8ce4-f69453af0c6c";
 
@@ -143,13 +143,12 @@ pub fn run_pipe_client() {
 pub fn run_pipe_server(timeout: Option<u64>, wait_for_new_client: bool) {
     use std::sync::Arc;
     use std::{sync::atomic::AtomicBool, time::Duration};
-    use winservice_ipc::{pipe_server, IPCServer};
+    use winservice_ipc::ipc_server::pipe_server;
 
     println!("[INFO] Starting pipe server (not as a Windows service)...");
 
     let should_stop = Arc::new(AtomicBool::new(false));
     let ipc = Arc::new(IPCServer::new(PIPE_NAME));
-    ipc.set_non_blocking();
 
     let duration = timeout.map(Duration::from_secs);
 

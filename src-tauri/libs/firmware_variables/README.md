@@ -9,15 +9,6 @@ This library provides an interface for interacting with UEFI firmware variables 
 - Handle device paths in UEFI.
 - Adjust process privileges for accessing UEFI variables.
 
-## Installation
-
-To use this library, add the following to your `Cargo.toml`:
-
-```toml
-[dependencies]
-windows = "0.36"  # Check for the latest version
-```
-
 ## Usage
 
 Here is a basic example of how to use the library:

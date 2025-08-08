@@ -1,8 +1,9 @@
-mod logic;
-pub use switchboot_lib::types;
+mod cli;
+pub use cli::logic;
+mod types;
 
 #[cfg(windows)]
-mod windows;
+pub use cli::windows;
 
 pub const PIPE_SERVER_WAIT_TIMEOUT: u64 = 5; // 5 seconds
 

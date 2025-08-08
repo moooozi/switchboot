@@ -510,7 +510,7 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
                             break;
                         }
                     }
-                    sleep(Duration::from_millis(50));
+                    sleep(Duration::from_millis(10));
                 }
                 if status.dwCurrentState != SERVICE_RUNNING {
                     Err(std::io::Error::new(
