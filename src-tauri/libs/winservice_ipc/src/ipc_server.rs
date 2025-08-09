@@ -198,6 +198,8 @@ impl Drop for IPCServer {
     }
 }
 
+// pipe_server non-blocking (polling)
+// unfortunately, we don't have non-blocking, event-driven without tokio
 pub fn pipe_server<H>(
     should_stop: Arc<AtomicBool>,
     ipc: Arc<IPCServer>,
