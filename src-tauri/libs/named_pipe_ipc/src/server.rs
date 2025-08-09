@@ -4,6 +4,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Key, Nonce,
 };
 use std::sync::Arc;
+use std::os::windows::prelude::AsRawHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tokio::sync::{broadcast, Mutex};
@@ -169,6 +170,44 @@ impl NamedPipeServerStruct {
         }
     }
 
+    /// Create server with proper security attributes to allow all users
+    fn create_server_with_security(pipe_name: &str) -> Result<NamedPipeServer> {
+        // Create server with proper permissions
+        let mut server_options = ServerOptions::new();
+        
+        // Enable write_dac to allow setting security information
+        server_options.write_dac(true);
+        
+        // Create the server
+        let server = server_options.create(pipe_name)
+            .map_err(|e| NamedPipeError::Io(e))?;
+
+        // Set security to allow all users to connect
+        #[cfg(windows)]
+        unsafe {
+            use windows::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
+            use windows::Win32::Security::DACL_SECURITY_INFORMATION;
+            use windows::Win32::Security::Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT};
+            
+            let result = SetSecurityInfo(
+                HANDLE(server.as_raw_handle() as *mut std::ffi::c_void),
+                SE_KERNEL_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,        // owner
+                None,        // group
+                None,        // NULL DACL allows everyone
+                None,        // sacl
+            );
+            
+            if result != ERROR_SUCCESS {
+                eprintln!("Warning: Failed to set security info: {:?}", result);
+                // Continue anyway, might work on some systems
+            }
+        }
+
+        Ok(server)
+    }
+
     /// Start the server and handle connections with a callback
     pub async fn start<F, Fut>(&mut self, handler: F) -> Result<()>
     where
@@ -182,7 +221,7 @@ impl NamedPipeServerStruct {
         *is_running = true;
         drop(is_running);
 
-        let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
+        let (shutdown_tx, mut shutdown_rx) = broadcast::channel(1);
         self.shutdown_tx = Some(shutdown_tx.clone());
 
         let pipe_name = self.pipe_name.clone();
@@ -191,51 +230,61 @@ impl NamedPipeServerStruct {
         let cipher_key = self.cipher_key;
 
         let handle = tokio::spawn(async move {
-            // Create the first server instance
-            let mut current_server = match ServerOptions::new().create(&pipe_name) {
+            // Create the first server instance with security attributes
+            let mut current_server = match Self::create_server_with_security(&pipe_name) {
                 Ok(server) => server,
-                Err(e) => return Err(NamedPipeError::Io(e)),
+                Err(e) => return Err(e),
             };
 
             loop {
-                // Wait for connection
-                match current_server.connect().await {
-                    Ok(_) => {
-                        // Get connection ID
-                        let mut counter = connection_counter.lock().await;
-                        *counter += 1;
-                        let connection_id = *counter;
-                        drop(counter);
+                tokio::select! {
+                    // Check for shutdown signal
+                    _ = shutdown_rx.recv() => {
+                        println!("Server received shutdown signal, stopping...");
+                        break;
+                    }
 
-                        // Create connection (encrypted if cipher_key is provided)
-                        let connection = if let Some(key) = cipher_key {
-                            NamedPipeConnection::new_encrypted(current_server, connection_id, &key)
-                        } else {
-                            NamedPipeConnection::new(current_server, connection_id)
-                        };
+                    // Wait for connection
+                    result = current_server.connect() => {
+                        match result {
+                            Ok(_) => {
+                                // Get connection ID
+                                let mut counter = connection_counter.lock().await;
+                                *counter += 1;
+                                let connection_id = *counter;
+                                drop(counter);
 
-                        // Spawn handler for this connection
-                        let handler_clone = Arc::clone(&handler);
-                        tokio::spawn(async move {
-                            if let Err(e) = handler_clone(connection).await {
-                                eprintln!("Connection handler error: {}", e);
-                            }
-                        });
+                                // Create connection (encrypted if cipher_key is provided)
+                                let connection = if let Some(key) = cipher_key {
+                                    NamedPipeConnection::new_encrypted(current_server, connection_id, &key)
+                                } else {
+                                    NamedPipeConnection::new(current_server, connection_id)
+                                };
 
-                        // Create a new server instance for the next connection
-                        match ServerOptions::new().create(&pipe_name) {
-                            Ok(server) => {
-                                current_server = server;
+                                // Spawn handler for this connection
+                                let handler_clone = Arc::clone(&handler);
+                                tokio::spawn(async move {
+                                    if let Err(e) = handler_clone(connection).await {
+                                        eprintln!("Connection handler error: {}", e);
+                                    }
+                                });
+
+                                // Create a new server instance for the next connection
+                                match Self::create_server_with_security(&pipe_name) {
+                                    Ok(server) => {
+                                        current_server = server;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to create new server instance: {}", e);
+                                        break;
+                                    }
+                                }
                             }
                             Err(e) => {
-                                eprintln!("Failed to create new server instance: {}", e);
-                                break;
+                                eprintln!("Failed to accept connection: {}", e);
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to accept connection: {}", e);
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     }
                 }
             }
@@ -243,8 +292,14 @@ impl NamedPipeServerStruct {
             Ok(())
         });
 
-        self.server_handle = Some(handle);
-        Ok(())
+        // Wait for the server task to complete (this will block until shutdown)
+        match handle.await {
+            Ok(result) => result,
+            Err(e) => Err(NamedPipeError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e,
+            ))),
+        }
     }
 
     /// Stop the server

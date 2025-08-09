@@ -2150,6 +2150,7 @@ dependencies = [
  "rand 0.8.5",
  "thiserror 1.0.69",
  "tokio",
+ "windows 0.61.3",
 ]
 
 [[package]]
