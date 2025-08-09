@@ -1,3 +1,4 @@
+use winservice_ipc::ipc_client::IPCClient;
 #[cfg(windows)]
 use winservice_ipc::ipc_server::IPCServer;
 
@@ -14,7 +15,6 @@ use super::crypto::NoCrypto as SelectedCrypto;
 pub fn run_pipe_client() {
     use super::{CliCommand, CommandResponse};
     use std::io::{BufRead, BufReader, Write};
-    use winservice_ipc::IPCClient;
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let reader = BufReader::new(stdin);

@@ -5,9 +5,10 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use winservice_ipc::ipc_server::pipe_server;
 use winservice_ipc::IPCClient;
 use winservice_ipc::IPC;
-use winservice_ipc::{pipe_server, ClientRequest, ServerResponse};
+use winservice_ipc::{ClientRequest, ServerResponse};
 
 fn main() {
     let pipe_name = r"\\.\pipe\test_pipe";
