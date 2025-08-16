@@ -4,8 +4,11 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
-use windows::Win32::Foundation::{BOOL, ERROR_CALL_NOT_IMPLEMENTED, NO_ERROR, PWSTR};
+use windows::core::PWSTR;
+use windows::Win32::Foundation::ERROR_CALL_NOT_IMPLEMENTED;
+const NO_ERROR: u32 = 0;
 
 use windows::Win32::System::Services::{
     CloseServiceHandle, CreateServiceW, OpenSCManagerW, RegisterServiceCtrlHandlerExW,
@@ -55,6 +58,7 @@ where
     struct HandlerContext {
         status_handle: SERVICE_STATUS_HANDLE,
         stop_notify: Option<Arc<tokio::sync::Notify>>,
+        stop_flag: Arc<AtomicBool>,
     }
 
     unsafe extern "system" fn service_handler(
@@ -77,46 +81,30 @@ where
                     dwWaitHint: 10000, // 10 seconds
                 };
                 unsafe {
-                    SetServiceStatus(ctx.status_handle, &status);
+                    let _ = SetServiceStatus(ctx.status_handle, &status);
                 }
                 if let Some(notify) = &ctx.stop_notify {
                     notify.notify_waiters();
                 }
-
-                // Watcher thread: terminate if not stopped after 7 seconds (3 seconds before wait hint)
-                let status_handle = ctx.status_handle;
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(7));
-                    // If still not stopped, set status to STOPPED and terminate
-                    let stopped_status = SERVICE_STATUS {
-                        dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-                        dwCurrentState: SERVICE_STOPPED,
-                        dwControlsAccepted: 0,
-                        dwWin32ExitCode: NO_ERROR,
-                        dwServiceSpecificExitCode: 0,
-                        dwCheckPoint: 0,
-                        dwWaitHint: 0,
-                    };
-                    unsafe {
-                        SetServiceStatus(status_handle, &stopped_status);
-                    }
-                    println!("Watcher: Service did not stop in time. Terminating process.");
-                    std::process::exit(1);
-                });
+                // Set atomic flag so the main thread (which owns the service handle)
+                // can perform any required SetServiceStatus or shutdown logic.
+                ctx.stop_flag.store(true, Ordering::SeqCst);
 
                 NO_ERROR
             }
             SERVICE_CONTROL_INTERROGATE => NO_ERROR,
-            _ => ERROR_CALL_NOT_IMPLEMENTED,
+            _ => ERROR_CALL_NOT_IMPLEMENTED.0,
         }
     }
 
     let service_name_wide = to_wide_string(service_name);
 
     // Use Box instead of Arc for handler context
+    let stop_flag = Arc::new(AtomicBool::new(false));
     let handler_ctx = Box::new(HandlerContext {
         status_handle: SERVICE_STATUS_HANDLE::default(),
-        stop_notify: None,
+        stop_notify: Some(stop_notify.clone()),
+        stop_flag: stop_flag.clone(),
     });
 
     unsafe {
@@ -125,13 +113,9 @@ where
         let handle = RegisterServiceCtrlHandlerExW(
             PWSTR(service_name_wide.as_ptr() as *mut _),
             Some(service_handler),
-            ctx_ptr as *mut _,
-        );
-        if handle.is_invalid() {
-            // Clean up if registration failed
-            let _ = Box::from_raw(ctx_ptr);
-            return Err(windows::core::Error::from_win32());
-        }
+            Some(ctx_ptr as *const std::ffi::c_void),
+        )?;
+
         // Update the status_handle in the original Box
         (*ctx_ptr).status_handle = handle;
 
@@ -151,9 +135,7 @@ where
         };
 
         // Set initial service status
-        if SetServiceStatus(handle, &service_status) == BOOL(0) {
-            return Err(windows::core::Error::from_win32());
-        }
+        SetServiceStatus(handle, &service_status)?;
 
         // Run the user-provided service logic
         let ctx = ServiceContext {
@@ -163,11 +145,16 @@ where
 
         let ready_check = ready_notify.clone();
         let handle_copy = handle;
-        // Store the stop_notify in the handler context so the service handler can notify
-        (*ctx_ptr).stop_notify = Some(stop_notify.clone());
+        // stop_notify already stored in the handler context at creation so the handler sees a
+        // fully-initialized context immediately after registration.
+        // Track when service_main has exited so we can perform cleanup/watchdog actions.
+        let finished_flag = Arc::new(AtomicBool::new(false));
+        let finished_flag_thread = finished_flag.clone();
+
         let handle_thread = std::thread::spawn(move || {
             service_main(ctx);
-
+            // Mark finished so main thread can act accordingly.
+            finished_flag_thread.store(true, Ordering::SeqCst);
             // If we were waiting for readiness, we cannot check an atomic flag anymore.
             // We simply log that the service_main returned without explicit readiness notification.
             if ready_check.is_some() {
@@ -180,7 +167,7 @@ where
             if let Some(ready) = ready_notify {
                 // Block on readiness or stop notification using a small tokio runtime
                 let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_time()
+                    .enable_all()
                     .build()
                     .expect("failed to build runtime for readiness wait");
                 rt.block_on(async {
@@ -199,21 +186,49 @@ where
                 // For simplicity, set RUNNING unconditionally if readiness was signaled.
                 service_status.dwCurrentState = SERVICE_RUNNING;
                 service_status.dwWaitHint = 0;
-                if SetServiceStatus(handle_copy, &service_status) == BOOL(0) {
-                    return Err(windows::core::Error::from_win32());
-                }
+                SetServiceStatus(handle_copy, &service_status)?;
                 println!("[SERVICE] Status set to RUNNING after readiness signal");
             }
         }
 
+        // Watchdog loop: allow the main thread (which owns `handle`) to enforce a timeout
+        // after a STOP request. We track when stop was first requested and, if the
+        // service_main hasn't finished within the grace period, set STOPPED and exit.
+        {
+            let mut stop_requested_at: Option<std::time::Instant> = None;
+            let grace = std::time::Duration::from_secs(7);
+            loop {
+                if finished_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+                if stop_flag.load(Ordering::SeqCst) {
+                    if stop_requested_at.is_none() {
+                        stop_requested_at = Some(std::time::Instant::now());
+                    } else if stop_requested_at.unwrap().elapsed() >= grace {
+                        // Timeout expired; set STOPPED (from owning thread) and terminate.
+                        service_status.dwCurrentState = SERVICE_STOPPED;
+                        service_status.dwWaitHint = 0;
+                        let _ = SetServiceStatus(handle, &service_status);
+                        println!("Watcher: Service did not stop in time. Terminating process.");
+                        // Free handler context before exiting
+                        let _ = Box::from_raw(ctx_ptr);
+                        std::process::exit(1);
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+
+        // service_main finished; join thread and continue shutdown.
         handle_thread.join().unwrap();
 
         // Set service status to stopped
         service_status.dwCurrentState = SERVICE_STOPPED;
         service_status.dwWaitHint = 0;
-        if SetServiceStatus(handle, &service_status) == BOOL(0) {
-            return Err(windows::core::Error::from_win32());
-        }
+        SetServiceStatus(handle, &service_status)?;
+
+        // Free the handler context Box allocated earlier
+        let _ = Box::from_raw(ctx_ptr);
     }
     Ok(())
 }
@@ -275,7 +290,7 @@ pub fn install_service(
     display_name: &str,
     executable_path: &str,
 ) -> windows::core::Result<()> {
-    let scm_handle = unsafe { OpenSCManagerW(None, None, SC_MANAGER_CREATE_SERVICE) };
+    let scm_handle = unsafe { OpenSCManagerW(None, None, SC_MANAGER_CREATE_SERVICE)? };
     if scm_handle.is_invalid() {
         return Err(windows::core::Error::from_win32());
     }
@@ -295,56 +310,57 @@ pub fn install_service(
             SERVICE_ERROR_NORMAL,
             PWSTR(executable_path_wide.as_ptr() as *mut u16),
             None,
-            std::ptr::null_mut(),
             None,
             None,
             None,
-        )
+            None,
+        )?
     };
 
     if service_handle.is_invalid() {
-        unsafe { CloseServiceHandle(scm_handle) };
+        unsafe { CloseServiceHandle(scm_handle)? };
         return Err(windows::core::Error::from_win32());
     }
 
     // --- Grant SERVICE_START to Everyone, preserving existing DACL (SDDL injection, like Python) ---
+    use std::ptr::null_mut;
+    use windows::Win32::Security::DACL_SECURITY_INFORMATION;
+    use windows::Win32::System::Services::QueryServiceObjectSecurity;
     unsafe {
-        use std::ptr::null_mut;
-        use windows::Win32::Security::DACL_SECURITY_INFORMATION;
-        use windows::Win32::System::Services::QueryServiceObjectSecurity;
-
         // Query the current SDDL string
         let mut needed = 0u32;
         let _ = QueryServiceObjectSecurity(
             service_handle,
-            DACL_SECURITY_INFORMATION,
-            null_mut(),
+            DACL_SECURITY_INFORMATION.0,
+            None,
             0,
             &mut needed,
         );
         let mut buf = vec![0u8; needed as usize];
         let ok = QueryServiceObjectSecurity(
             service_handle,
-            DACL_SECURITY_INFORMATION,
-            buf.as_mut_ptr() as *mut _,
+            DACL_SECURITY_INFORMATION.0,
+            Some(windows::Win32::Security::PSECURITY_DESCRIPTOR(
+                buf.as_mut_ptr() as *mut _,
+            )),
             needed,
             &mut needed,
         );
-        if ok.as_bool() {
+        if ok.is_ok() {
             // Convert security descriptor to SDDL string
             use windows::Win32::Security::Authorization::{
                 ConvertSecurityDescriptorToStringSecurityDescriptorW, SDDL_REVISION_1,
             };
-            let mut sddl_ptr: windows::Win32::Foundation::PWSTR = PWSTR(null_mut());
+            let mut sddl_ptr: PWSTR = PWSTR(null_mut());
             let mut sddl_len = 0u32;
             if ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                buf.as_ptr() as *const _,
+                windows::Win32::Security::PSECURITY_DESCRIPTOR(buf.as_ptr() as *mut _),
                 SDDL_REVISION_1,
                 DACL_SECURITY_INFORMATION,
                 &mut sddl_ptr,
-                &mut sddl_len,
+                Some(&mut sddl_len),
             )
-            .as_bool()
+            .is_ok()
             {
                 let sddl = {
                     // Find the length of the null-terminated UTF-16 string
@@ -375,29 +391,31 @@ pub fn install_service(
                 let mut new_sd: *mut std::ffi::c_void = null_mut();
                 let mut new_sd_len = 0u32;
                 let new_sddl_w: Vec<u16> = new_sddl.encode_utf16().chain(Some(0)).collect();
-                PWSTR(new_sddl_w.as_ptr() as *mut _);
                 if ConvertStringSecurityDescriptorToSecurityDescriptorW(
                     PWSTR(new_sddl_w.as_ptr() as *mut _),
                     SDDL_REVISION_1,
-                    &mut new_sd as *mut _
-                        as *mut *mut windows::Win32::Security::SECURITY_DESCRIPTOR,
-                    &mut new_sd_len,
+                    &mut new_sd as *mut _ as *mut windows::Win32::Security::PSECURITY_DESCRIPTOR,
+                    Some(&mut new_sd_len),
                 )
-                .as_bool()
+                .is_ok()
                 {
                     // Set the new security descriptor
                     SetServiceObjectSecurity(
                         service_handle,
                         DACL_SECURITY_INFORMATION,
-                        new_sd as *const _,
-                    );
+                        windows::Win32::Security::PSECURITY_DESCRIPTOR(new_sd),
+                    )?;
                 }
             }
         }
     }
 
-    unsafe { CloseServiceHandle(service_handle) };
-    unsafe { CloseServiceHandle(scm_handle) };
+    unsafe {
+        CloseServiceHandle(service_handle)?;
+    }
+    unsafe {
+        CloseServiceHandle(scm_handle)?;
+    }
     Ok(())
 }
 
@@ -407,7 +425,6 @@ pub fn stop_service(service_name: &str) -> windows::core::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::thread::sleep;
     use std::time::{Duration, Instant};
-    use windows::Win32::Foundation::PWSTR;
     use windows::Win32::System::Services::{
         CloseServiceHandle, ControlService, OpenSCManagerW, OpenServiceW, QueryServiceStatus,
         SC_MANAGER_CONNECT, SERVICE_ALL_ACCESS, SERVICE_CONTROL_STOP, SERVICE_STATUS,
@@ -420,39 +437,32 @@ pub fn stop_service(service_name: &str) -> windows::core::Result<()> {
         .collect();
 
     unsafe {
-        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
-        if scm.is_invalid() {
-            return Err(windows::core::Error::from_win32());
-        }
+        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT)?;
         let service = OpenServiceW(
             scm,
             PWSTR(service_name_wide.as_ptr() as *mut _),
             SERVICE_ALL_ACCESS,
-        );
-        if service.is_invalid() {
-            CloseServiceHandle(scm);
-            return Err(windows::core::Error::from_win32());
-        }
+        )?;
 
         let mut status = SERVICE_STATUS::default();
-        if QueryServiceStatus(service, &mut status).as_bool() {
+        if QueryServiceStatus(service, &mut status).is_ok() {
             if status.dwCurrentState != SERVICE_STOPPED {
-                ControlService(service, SERVICE_CONTROL_STOP, &mut status);
+                let _ = ControlService(service, SERVICE_CONTROL_STOP, &mut status);
                 // Wait for the service to stop (max 10 seconds)
                 let start = Instant::now();
                 while status.dwCurrentState != SERVICE_STOPPED
                     && start.elapsed() < Duration::from_secs(10)
                 {
                     sleep(Duration::from_millis(200));
-                    if !QueryServiceStatus(service, &mut status).as_bool() {
+                    if QueryServiceStatus(service, &mut status).is_err() {
                         break;
                     }
                 }
             }
         }
 
-        CloseServiceHandle(service);
-        CloseServiceHandle(scm);
+        CloseServiceHandle(service)?;
+        CloseServiceHandle(scm)?;
         Ok(())
     }
 }
@@ -468,7 +478,7 @@ pub fn uninstall_service(
     use std::os::windows::ffi::OsStrExt;
     use std::thread::sleep;
     use std::time::{Duration, Instant};
-    use windows::Win32::Foundation::{ERROR_SERVICE_MARKED_FOR_DELETE, PWSTR};
+    use windows::Win32::Foundation::ERROR_SERVICE_MARKED_FOR_DELETE;
     use windows::Win32::System::Services::{
         CloseServiceHandle, DeleteService, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT,
         SERVICE_ALL_ACCESS,
@@ -486,29 +496,22 @@ pub fn uninstall_service(
     }
 
     unsafe {
-        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
-        if scm.is_invalid() {
-            return Err(windows::core::Error::from_win32());
-        }
+        let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT)?;
         let service = OpenServiceW(
             scm,
             PWSTR(service_name_wide.as_ptr() as *mut _),
             SERVICE_ALL_ACCESS,
-        );
-        if service.is_invalid() {
-            CloseServiceHandle(scm);
-            return Err(windows::core::Error::from_win32());
-        }
+        )?;
 
         let result = DeleteService(service);
-        CloseServiceHandle(service);
-        CloseServiceHandle(scm);
+        CloseServiceHandle(service)?;
+        CloseServiceHandle(scm)?;
 
-        if !result.as_bool() {
-            let err = windows::core::Error::from_win32();
+        if result.is_err() {
+            let err = result.err().unwrap();
             // If already marked for delete, treat as success
             if let Some(code) = err.code().0.checked_abs() {
-                if code == ERROR_SERVICE_MARKED_FOR_DELETE as i32 {
+                if code == ERROR_SERVICE_MARKED_FOR_DELETE.0 as i32 {
                     return Ok(());
                 }
             }
@@ -519,20 +522,21 @@ pub fn uninstall_service(
         let start = Instant::now();
         loop {
             let scm = OpenSCManagerW(None, None, SC_MANAGER_CONNECT);
-            if scm.is_invalid() {
+            if scm.is_err() {
                 break;
             }
+            let scm = scm.unwrap();
             let svc = OpenServiceW(
                 scm,
                 PWSTR(service_name_wide.as_ptr() as *mut _),
                 SERVICE_ALL_ACCESS,
             );
-            CloseServiceHandle(scm);
-            if svc.is_invalid() {
+            CloseServiceHandle(scm)?;
+            if svc.is_err() {
                 // Service no longer exists
                 break;
             }
-            CloseServiceHandle(svc);
+            CloseServiceHandle(svc.unwrap())?;
             if start.elapsed() > Duration::from_secs(10) {
                 break;
             }
@@ -555,7 +559,7 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
     use std::ptr::null_mut;
     use std::thread::sleep;
     use std::time::{Duration, Instant};
-    use windows::Win32::Foundation::{ERROR_SERVICE_ALREADY_RUNNING, PWSTR};
+    use windows::Win32::Foundation::ERROR_SERVICE_ALREADY_RUNNING;
     use windows::Win32::System::Services::{
         CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatus, StartServiceW,
         SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_START, SERVICE_STATUS,
@@ -568,38 +572,31 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
         .collect();
 
     unsafe {
-        let scm = OpenSCManagerW(PWSTR(null_mut()), PWSTR(null_mut()), SC_MANAGER_CONNECT);
-        if scm.is_invalid() {
-            return Err(std::io::Error::last_os_error());
-        }
+        let scm = OpenSCManagerW(PWSTR(null_mut()), PWSTR(null_mut()), SC_MANAGER_CONNECT)?;
         let service = OpenServiceW(
             scm,
             PWSTR(service_name_wide.as_ptr() as *mut _),
             SERVICE_START | SERVICE_QUERY_STATUS,
-        );
-        if service.is_invalid() {
-            CloseServiceHandle(scm);
-            return Err(std::io::Error::last_os_error());
-        }
+        )?;
         let mut status = SERVICE_STATUS::default();
-        if QueryServiceStatus(service, &mut status).as_bool() {
+        if QueryServiceStatus(service, &mut status).is_ok() {
             if status.dwCurrentState == SERVICE_RUNNING {
-                CloseServiceHandle(service);
-                CloseServiceHandle(scm);
+                CloseServiceHandle(service)?;
+                CloseServiceHandle(scm)?;
                 return Ok(());
             }
         }
-        let result = StartServiceW(service, 0, null_mut());
+        let result = StartServiceW(service, None);
         let err = std::io::Error::last_os_error();
 
         // Optionally wait for RUNNING state
-        let final_result = if result.as_bool()
-            || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING as i32)
+        let final_result = if result.is_ok()
+            || err.raw_os_error() == Some(ERROR_SERVICE_ALREADY_RUNNING.0 as i32)
         {
             if let Some(timeout_secs) = service_run_timeout {
                 let start = Instant::now();
                 while start.elapsed() < Duration::from_secs(timeout_secs) {
-                    if QueryServiceStatus(service, &mut status).as_bool() {
+                    if QueryServiceStatus(service, &mut status).is_ok() {
                         if status.dwCurrentState == SERVICE_RUNNING {
                             break;
                         }
@@ -624,8 +621,8 @@ pub fn start_service(service_name: &str, service_run_timeout: Option<u64>) -> st
             Err(err)
         };
 
-        CloseServiceHandle(service);
-        CloseServiceHandle(scm);
+        CloseServiceHandle(service)?;
+        CloseServiceHandle(scm)?;
         final_result
     }
 }
