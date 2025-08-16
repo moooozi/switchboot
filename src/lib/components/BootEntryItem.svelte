@@ -2,6 +2,7 @@
   import type { BootEntry } from "../types";
   import Button from "./Button.svelte";
   import Label from "./Label.svelte";
+  import OsIcon from "./OsIcon.svelte";
 
   export let entry: BootEntry;
   export let index: number;
@@ -38,7 +39,10 @@
   role="button"
   tabindex="0"
 >
-  <span class="flex-1 text-base">{entry.description}</span>
+  <div class="flex items-center gap-3 flex-1">
+  <OsIcon description={entry.description} size={28} />
+    <span class="text-base">{entry.description}</span>
+  </div>
 
   {#if entry.is_current}
     <Label

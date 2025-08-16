@@ -94,6 +94,7 @@
     name: string;
     entryId: number;
     reboot: boolean;
+    iconId?: string;
   }) {
     busy = true;
     try {
@@ -102,6 +103,7 @@
           name: config.name,
           entry_id: config.entryId,
           reboot: config.reboot,
+          icon_id: config.iconId,
         },
       });
     } catch (e) {

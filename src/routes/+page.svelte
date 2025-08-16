@@ -6,6 +6,7 @@
   import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import ApiService from "../lib/components/ApiService.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
+  import { getIconId } from '../lib/iconMap';
 
   let bootEntries: BootEntry[] = [];
   let originalOrder: number[] = [];
@@ -134,10 +135,13 @@
   }) {
     if (!shortcutEntry) return;
 
+  const iconId = getIconId(shortcutEntry.description);
+
     await apiService.createShortcut({
       name: config.name,
       entryId: shortcutEntry.id,
       reboot: config.reboot,
+      iconId,
     });
     showShortcutDialog = false;
     shortcutEntry = null;

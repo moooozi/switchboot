@@ -29,6 +29,7 @@ pub fn create_shortcut_on_desktop(
     entry_id: u16,
     restart: bool,
     shortcut_name: &str,
+    icon_id: Option<String>,
 ) -> Result<(), String> {
     use std::path::PathBuf;
     use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
@@ -81,6 +82,62 @@ pub fn create_shortcut_on_desktop(
                 to_wide("SwitchBoot: Set boot entry and restart").as_ptr(),
             ))
             .map_err(|e| format!("SetDescription failed: {e}"))?;
+
+        // Determine icon path using the installed layout: <exe_parent>/resources/icons/ico/<icon>.ico
+        let icon_path = if let Some(id) = icon_id {
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_parent) = exe_path.parent() {
+                    let p = exe_parent
+                        .join("resources")
+                        .join("icons")
+                        .join("ico")
+                        .join(format!("{}.ico", id));
+                    if p.exists() {
+                        p
+                    } else {
+                        std::path::PathBuf::new()
+                    }
+                } else {
+                    std::path::PathBuf::new()
+                }
+            } else {
+                std::path::PathBuf::new()
+            }
+        } else {
+            std::path::PathBuf::new()
+        };
+
+        // Determine final icon: prefer the requested icon_path, otherwise search for the bundled fallback
+        let final_icon = if icon_path.exists() {
+            icon_path
+        } else if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_parent) = exe_path.parent() {
+                let fb = exe_parent
+                    .join("resources")
+                    .join("icons")
+                    .join("ico")
+                    .join("generic.ico");
+                if fb.exists() {
+                    fb
+                } else {
+                    std::path::PathBuf::new()
+                }
+            } else {
+                std::path::PathBuf::new()
+            }
+        } else {
+            std::path::PathBuf::new()
+        };
+
+        if final_icon.exists() {
+            // set icon location on the shortcut
+            // keep wide buffer alive for the FFI call
+            let icon_wide = to_wide(final_icon.display().to_string());
+            shell_link
+                .SetIconLocation(PCWSTR::from_raw(icon_wide.as_ptr()), 0)
+                .map_err(|e| format!("SetIconLocation failed: {e}"))?;
+            // icon_wide dropped afterwards
+        }
 
         let persist_file: IPersistFile = shell_link
             .cast()

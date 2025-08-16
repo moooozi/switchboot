@@ -1,7 +1,7 @@
 use std::process::Command;
 mod cli_user;
-pub mod types;
 pub mod config;
+pub mod types;
 #[cfg(target_os = "linux")]
 use cli_user::call_cli;
 #[cfg(target_os = "windows")]
@@ -123,6 +123,7 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         config.entry_id,
         config.reboot,
         &config.name,
+        config.icon_id.clone(),
     )
 }
 
@@ -136,21 +137,26 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     let exe = env::current_exe().map_err(|e| e.to_string())?;
 
     // Build the command line for the shortcut
-    let mut exec_cmd = format!("\"{}\" --exec set-boot-next {}", exe.display(), config.entry_id);
+    let mut exec_cmd = format!(
+        "\"{}\" --exec set-boot-next {}",
+        exe.display(),
+        config.entry_id
+    );
     if config.reboot {
         exec_cmd.push_str(" reboot");
     }
 
     // Build the .desktop file content
+    let icon_name = config.icon_id.as_deref().unwrap_or("generic");
     let desktop_entry = format!(
         "[Desktop Entry]\n\
         Type=Application\n\
         Name={}\n\
         Exec={}\n\
-        Icon=system-restart\n\
+        Icon=/usr/share/switchboot/icons/svg/{}.svg\n\
         Terminal=false\n\
         Categories=Utility;\n",
-        config.name, exec_cmd
+        config.name, exec_cmd, icon_name
     );
 
     // Get XDG_DATA_HOME or default to ~/.local/share
@@ -244,7 +250,7 @@ pub fn run(app_config: Option<config::AppConfig>) {
     if let Some(cfg) = app_config {
         config::init_config(cfg);
     }
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

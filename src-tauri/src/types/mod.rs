@@ -9,6 +9,7 @@ pub struct ShortcutConfig {
     pub name: String,
     pub entry_id: u16,
     pub reboot: bool,
+    pub icon_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

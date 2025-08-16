@@ -23,6 +23,9 @@
     }
   },
   "bundle": {
+    "resources": [
+      "resources/icons"
+    ],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",
@@ -35,18 +38,20 @@
       "deb": {
         "depends": ["policykit-1"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy"
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy",
+          "/usr/share/switchboot/icons": "resources/icons/svg"
         }
       },
       "rpm": {
         "depends": ["polkit"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy"
+          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy",
+          "/usr/share/switchboot/icons": "resources/icons/svg"
         }
       }
     },
     "active": true,
-    "targets": "all",
+    "targets": ["app","deb","rpm","nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

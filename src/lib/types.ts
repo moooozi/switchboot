@@ -10,4 +10,5 @@ export type ShortcutConfig = {
   name: string;
   entryId: number;
   reboot: boolean;
+  iconId?: string;
 };
