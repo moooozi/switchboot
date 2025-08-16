@@ -5,9 +5,9 @@ use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Once};
+use std::sync::{Arc, Condvar, Mutex, Once};
 use windows::core::PWSTR;
-use windows::Win32::Foundation::ERROR_CALL_NOT_IMPLEMENTED;
+use windows::Win32::Foundation::{LocalFree, ERROR_CALL_NOT_IMPLEMENTED, HLOCAL};
 const NO_ERROR: u32 = 0;
 
 use windows::Win32::System::Services::{
@@ -59,6 +59,9 @@ where
         status_handle: SERVICE_STATUS_HANDLE,
         stop_notify: Option<Arc<tokio::sync::Notify>>,
         stop_flag: Arc<AtomicBool>,
+        // Pair of (stop_requested bool, condvar) used by the owning thread to wait
+        // for stop or finish without polling.
+        condvar_pair: Option<Arc<(Mutex<bool>, Condvar)>>,
     }
 
     unsafe extern "system" fn service_handler(
@@ -80,11 +83,20 @@ where
                     dwCheckPoint: 0,
                     dwWaitHint: 10000, // 10 seconds
                 };
-                unsafe {
-                    let _ = SetServiceStatus(ctx.status_handle, &status);
+                // Only call SetServiceStatus if the status_handle has been initialized
+                if !ctx.status_handle.0.is_null() {
+                    let _ = unsafe { SetServiceStatus(ctx.status_handle, &status) };
                 }
                 if let Some(notify) = &ctx.stop_notify {
                     notify.notify_waiters();
+                }
+                // Signal condvar pair if present so owner thread wakes immediately
+                if let Some(pair) = &ctx.condvar_pair {
+                    let (lock, cvar) = &**pair;
+                    if let Ok(mut guard) = lock.lock() {
+                        *guard = true;
+                    }
+                    cvar.notify_all();
                 }
                 // Set atomic flag so the main thread (which owns the service handle)
                 // can perform any required SetServiceStatus or shutdown logic.
@@ -101,20 +113,30 @@ where
 
     // Use Box instead of Arc for handler context
     let stop_flag = Arc::new(AtomicBool::new(false));
+    // Condvar pair to allow the owner thread to block until stop or finished
+    let condvar_pair = Arc::new((Mutex::new(false), Condvar::new()));
     let handler_ctx = Box::new(HandlerContext {
         status_handle: SERVICE_STATUS_HANDLE::default(),
         stop_notify: Some(stop_notify.clone()),
         stop_flag: stop_flag.clone(),
+        condvar_pair: Some(condvar_pair.clone()),
     });
 
     unsafe {
         // Register handler, passing pointer to Box
         let ctx_ptr = Box::into_raw(handler_ctx);
-        let handle = RegisterServiceCtrlHandlerExW(
+        let handle = match RegisterServiceCtrlHandlerExW(
             PWSTR(service_name_wide.as_ptr() as *mut _),
             Some(service_handler),
             Some(ctx_ptr as *const std::ffi::c_void),
-        )?;
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                // Registration failed: reclaim the Box to avoid leaking the HandlerContext
+                let _ = Box::from_raw(ctx_ptr);
+                return Err(e);
+            }
+        };
 
         // Update the status_handle in the original Box
         (*ctx_ptr).status_handle = handle;
@@ -145,16 +167,21 @@ where
 
         let ready_check = ready_notify.clone();
         let handle_copy = handle;
-        // stop_notify already stored in the handler context at creation so the handler sees a
-        // fully-initialized context immediately after registration.
         // Track when service_main has exited so we can perform cleanup/watchdog actions.
         let finished_flag = Arc::new(AtomicBool::new(false));
         let finished_flag_thread = finished_flag.clone();
+        let condvar_pair_thread = condvar_pair.clone();
 
         let handle_thread = std::thread::spawn(move || {
             service_main(ctx);
             // Mark finished so main thread can act accordingly.
             finished_flag_thread.store(true, Ordering::SeqCst);
+            // Wake the owning thread in case it's waiting on the condvar
+            let (m, c) = &*condvar_pair_thread;
+            if let Ok(mut guard) = m.lock() {
+                *guard = true;
+            }
+            c.notify_all();
             // If we were waiting for readiness, we cannot check an atomic flag anymore.
             // We simply log that the service_main returned without explicit readiness notification.
             if ready_check.is_some() {
@@ -167,7 +194,7 @@ where
             if let Some(ready) = ready_notify {
                 // Block on readiness or stop notification using a small tokio runtime
                 let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
+                    .enable_time()
                     .build()
                     .expect("failed to build runtime for readiness wait");
                 rt.block_on(async {
@@ -191,31 +218,51 @@ where
             }
         }
 
-        // Watchdog loop: allow the main thread (which owns `handle`) to enforce a timeout
-        // after a STOP request. We track when stop was first requested and, if the
-        // service_main hasn't finished within the grace period, set STOPPED and exit.
+        // Watchdog: block on a condvar until stop or finished; enforce a grace period
+        // after stop is requested using wait_timeout to avoid polling.
         {
-            let mut stop_requested_at: Option<std::time::Instant> = None;
-            let grace = std::time::Duration::from_secs(7);
+            use std::time::{Duration, Instant};
+            let grace = Duration::from_secs(7);
+            // condvar_pair was created earlier and cloned into handler_ctx
+            let (lock, cvar) = &*condvar_pair;
+            // Acquire the mutex guard up-front
+            let mut guard = lock.lock().unwrap();
+            let mut stop_requested_at: Option<Instant> = None;
+
             loop {
+                // Check if service_main already finished
                 if finished_flag.load(Ordering::SeqCst) {
                     break;
                 }
-                if stop_flag.load(Ordering::SeqCst) {
+
+                // If a stop was requested (via handler setting the bool), record time and
+                // start wait_timeout logic.
+                if *guard {
                     if stop_requested_at.is_none() {
-                        stop_requested_at = Some(std::time::Instant::now());
-                    } else if stop_requested_at.unwrap().elapsed() >= grace {
+                        stop_requested_at = Some(Instant::now());
+                    }
+                    // Calculate remaining time for grace period
+                    let start = stop_requested_at.unwrap();
+                    let elapsed = start.elapsed();
+                    if elapsed >= grace {
                         // Timeout expired; set STOPPED (from owning thread) and terminate.
                         service_status.dwCurrentState = SERVICE_STOPPED;
                         service_status.dwWaitHint = 0;
                         let _ = SetServiceStatus(handle, &service_status);
                         println!("Watcher: Service did not stop in time. Terminating process.");
-                        // Free handler context before exiting
-                        let _ = Box::from_raw(ctx_ptr);
+                        // Do not free handler context here to avoid possible use-after-free
+                        // (we intentionally leak the context for process-lifetime safety)
                         std::process::exit(1);
                     }
+                    let remaining = grace - elapsed;
+                    let (g, _timeout_res) = cvar.wait_timeout(guard, remaining).unwrap();
+                    guard = g;
+                    // loop to re-check finished_flag or timeout
+                    continue;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(100));
+
+                // No stop requested yet; block until condvar notified (stop or finished)
+                guard = cvar.wait(guard).unwrap();
             }
         }
 
@@ -227,8 +274,8 @@ where
         service_status.dwWaitHint = 0;
         SetServiceStatus(handle, &service_status)?;
 
-        // Free the handler context Box allocated earlier
-        let _ = Box::from_raw(ctx_ptr);
+        // Intentionally do not free the handler context here to avoid races with
+        // the service control handler; the memory will be reclaimed at process exit.
     }
     Ok(())
 }
@@ -405,6 +452,14 @@ pub fn install_service(
                         DACL_SECURITY_INFORMATION,
                         windows::Win32::Security::PSECURITY_DESCRIPTOR(new_sd),
                     )?;
+                    // Free the security descriptor allocated by ConvertStringSecurityDescriptorToSecurityDescriptorW
+                    if !new_sd.is_null() {
+                        let _ = LocalFree(Some(HLOCAL(new_sd as *mut std::ffi::c_void)));
+                    }
+                }
+                // Free SDDL string allocated by ConvertSecurityDescriptorToStringSecurityDescriptorW
+                if !sddl_ptr.0.is_null() {
+                    let _ = LocalFree(Some(HLOCAL(sddl_ptr.0 as *mut std::ffi::c_void)));
                 }
             }
         }
