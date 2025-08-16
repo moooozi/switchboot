@@ -1,8 +1,6 @@
 pub const SERVICE_NAME: &str = "swboot-cli";
 pub const SERVICE_DISPLAY_NAME: &str = "Switchboot System Service";
-use super::pipe::PIPE_NAME;
-use super::pipe::{handle_client_request, run_pipe_client};
-use std::sync::Arc;
+use super::pipe::{run_pipe_client, run_pipe_server_async_with_ready};
 
 const SERVICE_START_TIMEOUT: u64 = 5; // seconds
 
@@ -13,25 +11,58 @@ pub fn launch_windows_service() {
 
 #[cfg(windows)]
 pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
-    use winservice_ipc::service::run_service;
     println!("Service main started with arguments: {:?}", arguments);
-    let pipe_name_owned = PIPE_NAME.to_owned();
-    if let Err(e) = run_service(SERVICE_NAME, move |ctx| {
-        use winservice_ipc::ipc_server::{pipe_server_blocking, IPCServer};
 
-        use crate::PIPE_SERVER_WAIT_TIMEOUT;
-        use std::time::Duration;
+    use crate::PIPE_SERVER_WAIT_TIMEOUT;
+    use winservice_ipc::service::run_service_with_readiness;
 
-        let ipc = Arc::new(IPCServer::new(&pipe_name_owned));
-        pipe_server_blocking(
-            ctx.stop_flag,
-            ipc,
-            handle_client_request,
-            Some(Duration::from_secs(PIPE_SERVER_WAIT_TIMEOUT)),
-            false,
-        );
-    }) {
-        println!("Error running service: {:?}", e);
+    if let Err(e) = run_service_with_readiness(
+        SERVICE_NAME,
+        move |ctx| {
+            // Create tokio runtime for async operations
+            let rt =
+                tokio::runtime::Runtime::new().expect("Failed to create tokio runtime in service");
+
+            // Convert Windows service stop flag to our pipe server format
+            let shutdown_signal = ctx.stop_flag.clone();
+
+            // Use the service's ready signal for pipe server readiness
+            let ready_signal = ctx.ready_signal.clone();
+
+            println!("[SERVICE] Starting tokio-based pipe server...");
+
+            // Run the async pipe server with Windows service shutdown integration and readiness signaling
+            let server_task = rt.spawn(run_pipe_server_async_with_ready(
+                shutdown_signal,
+                Some(PIPE_SERVER_WAIT_TIMEOUT),
+                false, // Don't wait for new clients in service mode
+                ready_signal,
+            ));
+
+            println!("[SERVICE] Waiting for pipe server to complete...");
+
+            // Wait for the server task to complete
+            match rt.block_on(server_task) {
+                Ok(Ok(())) => {
+                    // Success case
+                    println!("[SERVICE] Pipe server completed successfully");
+                }
+                Ok(Err(server_error)) => {
+                    eprintln!("[SERVICE ERROR] Pipe server failed: {}", server_error);
+                }
+                Err(join_error) => {
+                    if !join_error.is_cancelled() {
+                        eprintln!("[SERVICE ERROR] Server task failed: {}", join_error);
+                    }
+                }
+            }
+
+            println!("[SERVICE] Service stopped gracefully");
+        },
+        true,
+    ) {
+        // Enable readiness waiting
+        eprintln!("Error running service: {:?}", e);
     }
 }
 

@@ -3,8 +3,8 @@ use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     ChaCha20Poly1305, Key, Nonce,
 };
-use std::sync::Arc;
 use std::os::windows::prelude::AsRawHandle;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tokio::sync::{broadcast, Mutex};
@@ -174,31 +174,32 @@ impl NamedPipeServerStruct {
     fn create_server_with_security(pipe_name: &str) -> Result<NamedPipeServer> {
         // Create server with proper permissions
         let mut server_options = ServerOptions::new();
-        
+
         // Enable write_dac to allow setting security information
         server_options.write_dac(true);
-        
+
         // Create the server
-        let server = server_options.create(pipe_name)
+        let server = server_options
+            .create(pipe_name)
             .map_err(|e| NamedPipeError::Io(e))?;
 
         // Set security to allow all users to connect
         #[cfg(windows)]
         unsafe {
             use windows::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
-            use windows::Win32::Security::DACL_SECURITY_INFORMATION;
             use windows::Win32::Security::Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT};
-            
+            use windows::Win32::Security::DACL_SECURITY_INFORMATION;
+
             let result = SetSecurityInfo(
                 HANDLE(server.as_raw_handle() as *mut std::ffi::c_void),
                 SE_KERNEL_OBJECT,
                 DACL_SECURITY_INFORMATION,
-                None,        // owner
-                None,        // group
-                None,        // NULL DACL allows everyone
-                None,        // sacl
+                None, // owner
+                None, // group
+                None, // NULL DACL allows everyone
+                None, // sacl
             );
-            
+
             if result != ERROR_SUCCESS {
                 eprintln!("Warning: Failed to set security info: {:?}", result);
                 // Continue anyway, might work on some systems

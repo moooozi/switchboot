@@ -21,6 +21,7 @@ use windows::Win32::System::Services::{
 use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABLE_ENTRYW};
 pub struct ServiceContext {
     pub stop_flag: Arc<AtomicBool>,
+    pub ready_signal: Option<Arc<AtomicBool>>,
 }
 
 fn to_wide_string(s: &str) -> Vec<u16> {
@@ -33,7 +34,26 @@ pub fn run_service<F>(service_name: &str, service_main: F) -> windows::core::Res
 where
     F: FnOnce(ServiceContext) + Send + 'static,
 {
+    run_service_with_readiness(service_name, service_main, false)
+}
+
+/// Runs a Windows service with readiness checking.
+/// If `wait_for_ready` is true, the service will set its status to START_PENDING
+/// until the service_main signals readiness via ready_signal.
+pub fn run_service_with_readiness<F>(
+    service_name: &str,
+    service_main: F,
+    wait_for_ready: bool,
+) -> windows::core::Result<()>
+where
+    F: FnOnce(ServiceContext) + Send + 'static,
+{
     let stop_service = Arc::new(AtomicBool::new(false));
+    let ready_signal = if wait_for_ready {
+        Some(Arc::new(AtomicBool::new(false)))
+    } else {
+        None
+    };
 
     // Add a struct to hold both the stop flag and the status handle
     struct HandlerContext {
@@ -119,28 +139,69 @@ where
 
         let mut service_status = SERVICE_STATUS {
             dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-            dwCurrentState: SERVICE_RUNNING,
+            dwCurrentState: if wait_for_ready {
+                use windows::Win32::System::Services::SERVICE_START_PENDING;
+                SERVICE_START_PENDING
+            } else {
+                SERVICE_RUNNING
+            },
             dwControlsAccepted: SERVICE_ACCEPT_STOP,
             dwWin32ExitCode: NO_ERROR,
             dwServiceSpecificExitCode: 0,
             dwCheckPoint: 0,
-            dwWaitHint: 0,
+            dwWaitHint: if wait_for_ready { 30000 } else { 0 }, // 30 seconds wait hint for start pending
         };
 
-        // Set service status to running
+        // Set initial service status
         if SetServiceStatus(handle, &service_status) == BOOL(0) {
             return Err(windows::core::Error::from_win32());
         }
 
         // Run the user-provided service logic
         let ctx = ServiceContext {
-            stop_flag: stop_service,
+            stop_flag: Arc::clone(&stop_service),
+            ready_signal: ready_signal.clone(),
         };
-        let handle_thread = std::thread::spawn(move || service_main(ctx));
+
+        let ready_check = ready_signal.clone();
+        let handle_copy = handle;
+        let stop_check = Arc::clone(&stop_service);
+        let handle_thread = std::thread::spawn(move || {
+            service_main(ctx);
+
+            // If we were waiting for readiness, check if it was never signaled
+            if let Some(ready) = ready_check {
+                if !ready.load(Ordering::Relaxed) {
+                    eprintln!("Warning: Service completed without signaling readiness");
+                }
+            }
+        });
+
+        // If waiting for readiness, monitor the ready signal
+        if wait_for_ready {
+            if let Some(ready) = ready_signal {
+                // Wait for ready signal or stop signal
+                while !ready.load(Ordering::Relaxed) && !stop_check.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+
+                // Update service status to RUNNING when ready
+                if !stop_check.load(Ordering::Relaxed) {
+                    service_status.dwCurrentState = SERVICE_RUNNING;
+                    service_status.dwWaitHint = 0;
+                    if SetServiceStatus(handle_copy, &service_status) == BOOL(0) {
+                        return Err(windows::core::Error::from_win32());
+                    }
+                    println!("[SERVICE] Status set to RUNNING after readiness signal");
+                }
+            }
+        }
+
         handle_thread.join().unwrap();
 
         // Set service status to stopped
         service_status.dwCurrentState = SERVICE_STOPPED;
+        service_status.dwWaitHint = 0;
         if SetServiceStatus(handle, &service_status) == BOOL(0) {
             return Err(windows::core::Error::from_win32());
         }

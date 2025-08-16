@@ -7,7 +7,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 
 // Include the compile-time generated default key
-// Make rust-analyzer ignore non-existing file error
 include!(concat!(env!("OUT_DIR"), "/default_key.rs"));
 
 /// A named pipe client for Windows
