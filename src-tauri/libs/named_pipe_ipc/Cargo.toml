@@ -23,33 +23,14 @@ name = "basic_communication"
 path = "examples/basic_communication.rs"
 
 [[example]]
-name = "echo_server"
-path = "examples/echo_server.rs"
-
-[[example]]
-name = "json_communication"
-path = "examples/json_communication.rs"
+name = "encryption_options"
+path = "examples/encryption_options.rs"
 
 [[example]]
 name = "multi_client_server"
 path = "examples/multi_client_server.rs"
 
 [[example]]
-name = "interactive_client"
-path = "examples/interactive_client.rs"
-
-[[example]]
 name = "event_driven_server"
 path = "examples/event_driven_server.rs"
 
-[[example]]
-name = "event_client"
-path = "examples/event_client.rs"
-
-[[example]]
-name = "simple_test"
-path = "examples/simple_test.rs"
-
-[[example]]
-name = "direct_test"
-path = "examples/direct_test.rs"

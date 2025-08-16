@@ -11,7 +11,6 @@ A Rust library for inter-process communication using Windows Named Pipes with To
 - **Error Handling**: Comprehensive error types with detailed error information
 - **Type Safety**: Strongly typed interfaces for reliable communication
 - **Connection Management**: Automatic connection lifecycle management
-- **Zero-Copy Bytes**: Efficient byte-level communication without serialization overhead
 
 ## Quick Start
 

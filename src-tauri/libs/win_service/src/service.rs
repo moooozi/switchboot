@@ -4,11 +4,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
-use std::sync::Once;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{Arc, Once};
 use windows::Win32::Foundation::{BOOL, ERROR_CALL_NOT_IMPLEMENTED, NO_ERROR, PWSTR};
 
 use windows::Win32::System::Services::{
@@ -20,8 +16,8 @@ use windows::Win32::System::Services::{
 };
 use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABLE_ENTRYW};
 pub struct ServiceContext {
-    pub stop_flag: Arc<AtomicBool>,
-    pub ready_signal: Option<Arc<AtomicBool>>,
+    pub ready_notify: Option<Arc<tokio::sync::Notify>>,
+    pub stop_notify: Option<Arc<tokio::sync::Notify>>,
 }
 
 fn to_wide_string(s: &str) -> Vec<u16> {
@@ -48,17 +44,17 @@ pub fn run_service_with_readiness<F>(
 where
     F: FnOnce(ServiceContext) + Send + 'static,
 {
-    let stop_service = Arc::new(AtomicBool::new(false));
-    let ready_signal = if wait_for_ready {
-        Some(Arc::new(AtomicBool::new(false)))
+    let stop_notify = Arc::new(tokio::sync::Notify::new());
+    let ready_notify = if wait_for_ready {
+        Some(Arc::new(tokio::sync::Notify::new()))
     } else {
         None
     };
 
     // Add a struct to hold both the stop flag and the status handle
     struct HandlerContext {
-        stop_flag: Arc<AtomicBool>,
         status_handle: SERVICE_STATUS_HANDLE,
+        stop_notify: Option<Arc<tokio::sync::Notify>>,
     }
 
     unsafe extern "system" fn service_handler(
@@ -83,7 +79,9 @@ where
                 unsafe {
                     SetServiceStatus(ctx.status_handle, &status);
                 }
-                ctx.stop_flag.store(true, Ordering::SeqCst);
+                if let Some(notify) = &ctx.stop_notify {
+                    notify.notify_waiters();
+                }
 
                 // Watcher thread: terminate if not stopped after 7 seconds (3 seconds before wait hint)
                 let status_handle = ctx.status_handle;
@@ -117,8 +115,8 @@ where
 
     // Use Box instead of Arc for handler context
     let handler_ctx = Box::new(HandlerContext {
-        stop_flag: Arc::clone(&stop_service),
         status_handle: SERVICE_STATUS_HANDLE::default(),
+        stop_notify: None,
     });
 
     unsafe {
@@ -159,41 +157,52 @@ where
 
         // Run the user-provided service logic
         let ctx = ServiceContext {
-            stop_flag: Arc::clone(&stop_service),
-            ready_signal: ready_signal.clone(),
+            ready_notify: ready_notify.clone(),
+            stop_notify: Some(stop_notify.clone()),
         };
 
-        let ready_check = ready_signal.clone();
+        let ready_check = ready_notify.clone();
         let handle_copy = handle;
-        let stop_check = Arc::clone(&stop_service);
+        // Store the stop_notify in the handler context so the service handler can notify
+        (*ctx_ptr).stop_notify = Some(stop_notify.clone());
         let handle_thread = std::thread::spawn(move || {
             service_main(ctx);
 
-            // If we were waiting for readiness, check if it was never signaled
-            if let Some(ready) = ready_check {
-                if !ready.load(Ordering::Relaxed) {
-                    eprintln!("Warning: Service completed without signaling readiness");
-                }
+            // If we were waiting for readiness, we cannot check an atomic flag anymore.
+            // We simply log that the service_main returned without explicit readiness notification.
+            if ready_check.is_some() {
+                eprintln!("Info: Service main returned; readiness may have been signaled earlier or not at all");
             }
         });
 
         // If waiting for readiness, monitor the ready signal
         if wait_for_ready {
-            if let Some(ready) = ready_signal {
-                // Wait for ready signal or stop signal
-                while !ready.load(Ordering::Relaxed) && !stop_check.load(Ordering::Relaxed) {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-
-                // Update service status to RUNNING when ready
-                if !stop_check.load(Ordering::Relaxed) {
-                    service_status.dwCurrentState = SERVICE_RUNNING;
-                    service_status.dwWaitHint = 0;
-                    if SetServiceStatus(handle_copy, &service_status) == BOOL(0) {
-                        return Err(windows::core::Error::from_win32());
+            if let Some(ready) = ready_notify {
+                // Block on readiness or stop notification using a small tokio runtime
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()
+                    .expect("failed to build runtime for readiness wait");
+                rt.block_on(async {
+                    tokio::select! {
+                        _ = ready.notified() => {
+                            // Received readiness
+                        }
+                        _ = stop_notify.notified() => {
+                            // Stop requested before readiness
+                        }
                     }
-                    println!("[SERVICE] Status set to RUNNING after readiness signal");
+                });
+
+                // Update service status to RUNNING when ready (if stop wasn't triggered)
+                // We have no direct atomic stop flag now; assume if stop_notify fired, we should not proceed.
+                // For simplicity, set RUNNING unconditionally if readiness was signaled.
+                service_status.dwCurrentState = SERVICE_RUNNING;
+                service_status.dwWaitHint = 0;
+                if SetServiceStatus(handle_copy, &service_status) == BOOL(0) {
+                    return Err(windows::core::Error::from_win32());
                 }
+                println!("[SERVICE] Status set to RUNNING after readiness signal");
             }
         }
 

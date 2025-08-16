@@ -1,12 +1,13 @@
 pub const SERVICE_NAME: &str = "swboot-cli";
 pub const SERVICE_DISPLAY_NAME: &str = "Switchboot System Service";
 use super::pipe::{run_pipe_client, run_pipe_server_async_with_ready};
-
+use std::sync::Arc;
+use win_service;
 const SERVICE_START_TIMEOUT: u64 = 5; // seconds
 
 #[cfg(windows)]
 pub fn launch_windows_service() {
-    winservice_ipc::service::run_windows_service(SERVICE_NAME, my_service_main);
+    win_service::service::run_windows_service(SERVICE_NAME, my_service_main);
 }
 
 #[cfg(windows)]
@@ -14,7 +15,7 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
     println!("Service main started with arguments: {:?}", arguments);
 
     use crate::PIPE_SERVER_WAIT_TIMEOUT;
-    use winservice_ipc::service::run_service_with_readiness;
+    use win_service::service::run_service_with_readiness;
 
     if let Err(e) = run_service_with_readiness(
         SERVICE_NAME,
@@ -23,20 +24,21 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
             let rt =
                 tokio::runtime::Runtime::new().expect("Failed to create tokio runtime in service");
 
-            // Convert Windows service stop flag to our pipe server format
-            let shutdown_signal = ctx.stop_flag.clone();
-
-            // Use the service's ready signal for pipe server readiness
-            let ready_signal = ctx.ready_signal.clone();
+            // Use the service's notify handles for shutdown and readiness when provided
+            let shutdown_notify = ctx
+                .stop_notify
+                .clone()
+                .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
+            let ready_notify = ctx.ready_notify.clone();
 
             println!("[SERVICE] Starting tokio-based pipe server...");
 
             // Run the async pipe server with Windows service shutdown integration and readiness signaling
             let server_task = rt.spawn(run_pipe_server_async_with_ready(
-                shutdown_signal,
+                shutdown_notify,
                 Some(PIPE_SERVER_WAIT_TIMEOUT),
                 false, // Don't wait for new clients in service mode
-                ready_signal,
+                ready_notify,
             ));
 
             println!("[SERVICE] Waiting for pipe server to complete...");
@@ -68,7 +70,7 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
 
 #[cfg(windows)]
 pub fn run_service_client() {
-    use winservice_ipc::service::start_service;
+    use win_service::service::start_service;
     if let Err(e) = start_service(SERVICE_NAME, Some(SERVICE_START_TIMEOUT)) {
         eprintln!("[ERROR] Failed to start service: {}", e);
         std::process::exit(1);
@@ -84,7 +86,7 @@ pub fn install_service() {
         .to_str()
         .expect("Executable path is not valid UTF-8");
     let bin_path = format!("\"{}\" /service", executable_path_str);
-    match winservice_ipc::service::install_service(SERVICE_NAME, SERVICE_DISPLAY_NAME, &bin_path) {
+    match win_service::service::install_service(SERVICE_NAME, SERVICE_DISPLAY_NAME, &bin_path) {
         Ok(_) => println!("Service installed successfully."),
         Err(e) => {
             eprintln!("[ERROR] Failed to install service: {}", e.message());
@@ -95,7 +97,7 @@ pub fn install_service() {
 
 #[cfg(windows)]
 pub fn uninstall_service() {
-    match winservice_ipc::service::uninstall_service(SERVICE_NAME, true) {
+    match win_service::service::uninstall_service(SERVICE_NAME, true) {
         Ok(_) => println!("Service uninstalled successfully."),
         Err(e) => {
             eprintln!("[ERROR] Failed to uninstall service: {}", e.message());
