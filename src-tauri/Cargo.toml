@@ -39,6 +39,10 @@ windows = "0.61"
 libc = "0.2"
 
 
+[target.'cfg(linux)'.build]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+
 [features]
 default = ["encrypted_pipe"]
 encrypted_pipe = []

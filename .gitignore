@@ -9,5 +9,5 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 src-tauri/resources/icons/ico/
-src-tauri/resources/icons/svg/
 src-tauri/icons/
+src-tauri/icons-linux/

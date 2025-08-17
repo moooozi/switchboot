@@ -153,7 +153,7 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         Type=Application\n\
         Name={}\n\
         Exec={}\n\
-        Icon=/usr/share/switchboot/icons/svg/{}.svg\n\
+        Icon=swboot-{}\n\
         Terminal=false\n\
         Categories=Utility;\n",
         config.name, exec_cmd, icon_name
@@ -177,16 +177,24 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     let mut desktop_path = data_home;
     desktop_path.push("applications");
     fs::create_dir_all(&desktop_path).map_err(|e| e.to_string())?;
-    desktop_path.push(format!("{}-{}.desktop", APP_IDENTIFIER, config.entry_id));
-    fs::write(&desktop_path, desktop_entry).map_err(|e| e.to_string())?;
+    // Choose the filename extension based on whether this shortcut reboots
+    let name_extension = if config.reboot { "reboot" } else { "bootnext" };
+
+    // Build the final desktop file path without mutating the applications directory path
+    let desktop_file = desktop_path.join(format!(
+        "{}-{}-{}.desktop",
+        APP_IDENTIFIER, name_extension, config.entry_id
+    ));
+
+    fs::write(&desktop_file, desktop_entry).map_err(|e| e.to_string())?;
 
     // Make the .desktop file executable
     use std::os::unix::fs::PermissionsExt;
-    let mut perms = fs::metadata(&desktop_path)
+    let mut perms = fs::metadata(&desktop_file)
         .map_err(|e| e.to_string())?
         .permissions();
     perms.set_mode(0o755);
-    fs::set_permissions(&desktop_path, perms).map_err(|e| e.to_string())?;
+    fs::set_permissions(&desktop_file, perms).map_err(|e| e.to_string())?;
 
     Ok(())
 }

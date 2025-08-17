@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { mockBootEntries } from "./mockBootEntries";
-  import type { BootEntry } from "../lib/types";
-  import Header from "../lib/components/Header.svelte";
-  import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import ApiService from "../lib/components/ApiService.svelte";
+  import BootEntriesList from "../lib/components/BootEntriesList.svelte";
+  import Header from "../lib/components/Header.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
   import { getIconId } from '../lib/iconMap';
+  import type { BootEntry } from "../lib/types";
+  import { mockBootEntries } from "./mockBootEntries";
 
   let bootEntries: BootEntry[] = [];
   let originalOrder: number[] = [];
@@ -135,7 +135,7 @@
   }) {
     if (!shortcutEntry) return;
 
-  const iconId = getIconId(shortcutEntry.description);
+  const iconId = getIconId(shortcutEntry.description) || "generic";
 
     await apiService.createShortcut({
       name: config.name,

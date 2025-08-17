@@ -14,10 +14,17 @@ pub fn call_cli(cmd: &CliCommand, needs_privilege: bool) -> Result<String, Strin
     let mut cmd = {
         if needs_privilege {
             let mut c = Command::new("pkexec");
-            if cmd.allow_non_auth_exec() {
-                c.arg("--action-id").arg("com.switchboot.cli.nopass");
-            }
-            c.arg(&cli_path);
+            // if the command is allowed to run without interactive auth, prefer
+            // the nopass wrapper. Otherwise use the regular CLI binary.
+            let exec_path = if cmd.allow_non_auth_exec() {
+                let mut p = cli_path.clone();
+                p.set_file_name("switchboot-cli-nopass");
+                p
+            } else {
+                cli_path.clone()
+            };
+
+            c.arg(&exec_path);
             c
         } else {
             Command::new(&cli_path)

@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "Switchboot",
-        
+
         "width": 800,
         "height": 600
       }
@@ -23,9 +23,7 @@
     }
   },
   "bundle": {
-    "resources": [
-      "resources/icons"
-    ],
+    "resources": ["resources/icons"],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",
@@ -38,20 +36,22 @@
       "deb": {
         "depends": ["policykit-1"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy",
-          "/usr/share/switchboot/icons": "resources/icons/svg"
+          "/usr/share/polkit-1": "platform/linux/polkit-1",
+          "/usr/share/icons/hicolor": "icons-linux/hicolor",
+          "/usr/bin/switchboot-cli-nopass": "platform/links/switchboot-cli-nopass"
         }
       },
       "rpm": {
         "depends": ["polkit"],
         "files": {
-          "/usr/share/polkit-1/actions/com.switchboot.cli.policy": "platform/linux/polkit/com.switchboot.cli.policy",
-          "/usr/share/switchboot/icons": "resources/icons/svg"
+          "/usr/share/polkit-1": "platform/linux/polkit-1",
+          "/usr/share/icons/hicolor": "icons-linux/hicolor",
+          "/usr/bin/switchboot-cli-nopass": "platform/links/switchboot-cli-nopass"
         }
       }
     },
     "active": true,
-    "targets": ["app","deb","rpm","nsis"],
+    "targets": ["app", "deb", "rpm", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
