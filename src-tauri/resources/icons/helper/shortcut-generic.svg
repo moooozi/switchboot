@@ -13,15 +13,6 @@
       <feDropShadow dx="0" dy="6" stdDeviation="18" flood-color="#000" flood-opacity="0.12" />
     </filter>
 
-    <!-- switch gradient used by the inner switch border -->
-    <linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#b73393" />
-      <stop offset="20%" stop-color="#9f39e5" />
-      <stop offset="40%" stop-color="#006adb" />
-      <stop offset="60%" stop-color="#02b833" />
-      <stop offset="80%" stop-color="#ffc800" />
-      <stop offset="100%" stop-color="#ff6e1b" />
-    </linearGradient>
 
     <!-- Clip path for the switch knob -->
     <clipPath id="innerClip">
@@ -38,9 +29,26 @@
   <!-- Center the switch graphic by translating the original 300x150 artwork to the center of 512 canvas -->
   <!-- calculation: center (256,256) then shift by half of original dims * scale; using scale 1.2 -> translate(256 256) scale(1.2) translate(-150 -75) --> keeps it centered -->
   <g transform="translate(256 256) scale(1.2) translate(-150 -75)">
-    <!-- Outer gradient border (slightly larger) -->
-    <rect x="3" y="3" width="294" height="144" rx="74" ry="74" fill="url(#borderGradient)" />
+    <!-- Outer segmented border (8 curved segments) -->
+    <!-- Perimeter approx P = 1016.9911; base segment length S' = 127.4238898038469; gap G' = 889.5672286269283 -->
+    <g aria-hidden="true">
+  <!-- accurate perimeter for rounded rect: w=294,h=132,rx=66 -->
+  <!-- P = 2*(w+h-4*rx) + 2*pi*rx = 738.6902302738527 -->
+  <!-- Using unscaled segment length S_unscaled = 100 -->
+  <!-- Gap_unscaled = P - 100 = 638.6902302738527 -->
+  <!-- Spacing (to place segments) = P / 8 = 92.33627878423159 -->
+  <!-- Dasharray uses unscaled values so the group scale(1.2) preserves displayed length -->
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#b73393" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="0" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#9f39e5" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-92.33627878423159" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#006adb" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-184.67255756846318" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#0fa3a3" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-277.0088363526948" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#02b833" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-369.34511513692637" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#ffc800" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-461.68139392115796" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#ff6e1b" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-554.0176727053895" />
+  <rect x="3" y="9" width="294" height="132" rx="66" ry="66" fill="none" stroke="#ff4d79" stroke-width="10" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="100 638.6902302738527" stroke-dashoffset="-646.3539514896211" />
+    </g>
 
+    <g transform="translate(150 75) scale(1.06) translate(-150 -75)">
     <!-- Inner white body -->
     <rect x="15" y="15" width="270" height="120" rx="60" ry="60" fill="white" />
 
@@ -53,6 +61,7 @@
     <!-- Reboot symbol (rotated & thickened white) centered in knob -->
     <g transform="translate(225 75) scale(1.3) translate(-25 -25)">
       <path transform="rotate(90 25 25)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M 25 2 A 2.0002 2.0002 0 1 0 25 6 C 35.517124 6 44 14.482876 44 25 C 44 35.517124 35.517124 44 25 44 C 14.482876 44 6 35.517124 6 25 C 6 19.524201 8.3080175 14.608106 12 11.144531 L 12 15 A 2.0002 2.0002 0 1 0 16 15 L 16 4 L 5 4 A 2.0002 2.0002 0 1 0 5 8 L 9.5253906 8 C 4.9067015 12.20948 2 18.272325 2 25 C 2 37.678876 12.321124 48 25 48 C 37.678876 48 48 37.678876 48 25 C 48 12.321124 37.678876 2 25 2 z"/>
+    </g>
     </g>
   </g>
 </svg>

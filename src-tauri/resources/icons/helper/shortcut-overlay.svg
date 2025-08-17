@@ -1,35 +1,18 @@
-<svg width="300" height="150" viewBox="0 0 300 150" xmlns="http://www.w3.org/2000/svg">
-  <!-- Gradient definition -->
+<svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shortcut overlay: only the restart knob and symbol -->
+  <!-- Keep minimal defs: no gradient required -->
   <defs>
-    <linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#b73393" />
-      <stop offset="20%" stop-color="#9f39e5" />
-  <stop offset="40%" stop-color="#1EA38A" />
-      <stop offset="60%" stop-color="#02b833" />
-      <stop offset="80%" stop-color="#ffc800" />
-      <stop offset="100%" stop-color="#ff6e1b" />
-    </linearGradient>
-
-    <!-- Clip path for toggle knob (kept from original) -->
     <clipPath id="innerClip">
-      <rect x="15" y="15" width="270" height="120" rx="60" ry="60" />
+      <rect x="15" y="15" width="120" height="120" rx="60" ry="60" />
     </clipPath>
   </defs>
 
-  <!-- Outer gradient border -->
-  <rect x="3" y="3" width="294" height="144" rx="74" ry="74" fill="url(#borderGradient)" />
+  <!-- Dark circle (knob) centered in 150x150 - darker, less bluish -->
+  <circle cx="75" cy="75" r="45" fill="#252529ff" clip-path="url(#innerClip)" />
 
-  <!-- Inner white body -->
-  <rect x="15" y="15" width="270" height="120" rx="60" ry="60" fill="white" />
-
-  <!-- Left horizontal line (off indicator) -->
-  <rect x="50" y="65" width="60" height="20" rx="10" ry="10" fill="#071B2F" />
-
-  <!-- Right dark circle (toggle knob) -->
-  <circle cx="225" cy="75" r="60" fill="#071B2F" clip-path="url(#innerClip)" />
-
-  <!-- Reboot symbol centered inside the knob. Path is rotated in-place 90deg; scaled to 1.2 so it fits nicely. -->
-  <g transform="translate(225 75) scale(1.3) translate(-25 -25)">
+  <!-- Reboot symbol centered inside the knob. Increased scale and stroke for visibility. -->
+  <g transform="translate(75 75) scale(1.4) translate(-25 -25)">
     <path transform="rotate(90 25 25)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M 25 2 A 2.0002 2.0002 0 1 0 25 6 C 35.517124 6 44 14.482876 44 25 C 44 35.517124 35.517124 44 25 44 C 14.482876 44 6 35.517124 6 25 C 6 19.524201 8.3080175 14.608106 12 11.144531 L 12 15 A 2.0002 2.0002 0 1 0 16 15 L 16 4 L 5 4 A 2.0002 2.0002 0 1 0 5 8 L 9.5253906 8 C 4.9067015 12.20948 2 18.272325 2 25 C 2 37.678876 12.321124 48 25 48 C 37.678876 48 48 37.678876 48 25 C 48 12.321124 37.678876 2 25 2 z"/>
   </g>
+
 </svg>

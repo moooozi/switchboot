@@ -75,10 +75,13 @@ async function combine(){
       srcH = srcH || 128;
     }
 
-    // scale and center source into canvas, preserving aspect ratio
-    const canvasSize = 128;
-    const srcMax = Math.max(srcW, srcH);
-    const sourceScale = canvasSize / srcMax;
+  // scale and center source into canvas, preserving aspect ratio.
+  // Leave a small uniform padding so the OS icon doesn't touch the edges or the overlay.
+  const canvasSize = 128;
+  const padding = 10; // px of space on each side
+  const srcMax = Math.max(srcW, srcH);
+  const canvasInner = canvasSize - padding * 2;
+  const sourceScale = canvasInner / srcMax;
 
     // overlay detection: auto-detect overlay's natural size using viewBox or width/height attributes
     let overlayW = null, overlayH = null;
@@ -100,9 +103,9 @@ async function combine(){
 
   // Make the overlay larger and add padding so it doesn't sit flush against the corner.
   // Use separate X and Y padding so vertical inset can be smaller than horizontal.
-  const overlayTargetSize = 56; // desired final overlay size in px inside canvas (larger than before)
-  const overlayPaddingX = 4; // horizontal padding between overlay and canvas edge
-  const overlayPaddingY = -10; // vertical padding between overlay and canvas edge (smaller than X)
+  const overlayTargetSize = 64; // desired final overlay size in px inside canvas (larger than before)
+  const overlayPaddingX = -8; // horizontal padding between overlay and canvas edge
+  const overlayPaddingY = -8; // vertical padding between overlay and canvas edge (smaller than X)
   const overlayTranslateX = canvasSize - overlayTargetSize - overlayPaddingX;
   const overlayTranslateY = canvasSize - overlayTargetSize - overlayPaddingY;
   const overlayScale = overlayTargetSize / overlayNatural;
@@ -117,11 +120,11 @@ async function combine(){
   console.log(`Detected source size for ${name}: ${srcW}x${srcH}, sourceScale=${sourceScale}`);
   console.log(`Detected overlay natural size: ${overlayNatural}`);
 
-  // compute final size of the source after scaling
+  // compute final size of the source after scaling and center it within the padded inner area
   const finalSrcW = Math.round(srcW * sourceScale);
   const finalSrcH = Math.round(srcH * sourceScale);
-  const srcX = Math.round((canvasSize - finalSrcW) / 2);
-  const srcY = Math.round((canvasSize - finalSrcH) / 2);
+  const srcX = Math.round(padding + (canvasInner - finalSrcW) / 2);
+  const srcY = Math.round(padding + (canvasInner - finalSrcH) / 2);
 
   // overlay size and position
   const overlaySizePx = overlayTargetSize; // e.g. 48
