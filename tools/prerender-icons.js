@@ -100,7 +100,7 @@ async function combine(){
 
   // Make the overlay larger and add padding so it doesn't sit flush against the corner.
   // Use separate X and Y padding so vertical inset can be smaller than horizontal.
-  const overlayTargetSize = 48; // desired final overlay size in px inside canvas (larger than before)
+  const overlayTargetSize = 56; // desired final overlay size in px inside canvas (larger than before)
   const overlayPaddingX = 4; // horizontal padding between overlay and canvas edge
   const overlayPaddingY = -10; // vertical padding between overlay and canvas edge (smaller than X)
   const overlayTranslateX = canvasSize - overlayTargetSize - overlayPaddingX;
