@@ -1,0 +1,89 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Rust via rustup (stable)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Downloading rustup-init.exe"
+          Invoke-WebRequest -Uri 'https://win.rustup.rs' -UseBasicParsing -OutFile 'rustup-init.exe'
+          Write-Host "Running rustup-init.exe (non-interactive)"
+          Start-Process -FilePath .\rustup-init.exe -ArgumentList '-y','--no-modify-path','--default-toolchain','stable' -Wait
+          Remove-Item .\rustup-init.exe
+          # Add cargo bin to PATH for remaining steps
+          $cargo = "$env:USERPROFILE\\.cargo\\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $cargo
+          Write-Host "rustup and rustc versions:"
+          rustup --version
+          rustc --version
+
+      - name: Read package version
+        shell: pwsh
+        run: |
+          $pj = Get-Content package.json | ConvertFrom-Json
+          Add-Content -Path $env:GITHUB_ENV -Value ("APP_VERSION=$($pj.version)")
+
+      - name: Remove .gitkeep files in src-tauri
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path 'src-tauri' -Recurse -Filter '.gitkeep' -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+
+      - name: Generate Tauri icons
+        run: pnpm tauri icon ./app-icon.svg
+
+      - name: Generate prerendered icons
+        run: pnpm icons
+
+      - name: Build Tauri (release)
+        run: pnpm tauri build
+
+      - name: Bundle portable
+        run: pnpm bundle:portable
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+
+          $nsis = Get-ChildItem -Path 'src-tauri\target\release\bundle\nsis' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
+          if (-not $nsis) { Write-Error "NSIS installer not found in src-tauri\target\release\bundle\nsis"; exit 1 }
+          Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $nsis.Name)
+
+          $portable = Get-ChildItem -Path 'src-tauri\target\release\bundle\portable_win' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
+          if (-not $portable) { Write-Error "Portable exe not found in src-tauri\target\release\bundle\portable_win"; exit 1 }
+          $newName = "Switchboot_${env:APP_VERSION}_x64-portable.exe"
+          Copy-Item $portable.FullName -Destination (Join-Path $PWD 'artifacts' $newName)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-artifacts
+          path: artifacts/*

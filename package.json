@@ -10,7 +10,10 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "icons": "node ./tools/prerender-icons.js"
+    "icons": "node ./tools/prerender-icons.js",
+    "bundle:portable": "cmd.exe /c \"src-tauri\\platform\\windows\\build-portable.bat\""
+
+
   },
   "license": "MIT",
   "dependencies": {
