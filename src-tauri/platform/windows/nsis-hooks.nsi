@@ -8,6 +8,8 @@
   DetailPrint "Installing service returned: $0"
 !macroend
 
-!macro NSIS_HOOK_POSTUNINSTALL
+!macro NSIS_HOOK_PREUNINSTALL
   nsExec::Exec '"$INSTDIR\switchboot-cli.exe" /uninstall_service'
+  Pop $0 ; return code
+  DetailPrint "Uninstalling service returned: $0"
 !macroend

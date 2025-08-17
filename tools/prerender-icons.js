@@ -20,9 +20,8 @@ if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 if (produceSvg && !fs.existsSync(outSvg)) fs.mkdirSync(outSvg, { recursive: true });
 if (produceIco && !fs.existsSync(outIco)) fs.mkdirSync(outIco, { recursive: true });
 
-// helper files may live under src-tauri/resources/icons/helper now (not in static)
-const helperDir = path.resolve(process.cwd(), 'src-tauri', 'resources', 'icons', 'helper');
-let overlayPath = path.join(helperDir, 'shortcut-overlay.svg');
+const rawIconDirectory = path.resolve(process.cwd(), 'src-tauri', 'raw-icons');
+let overlayPath = path.join(rawIconDirectory, 'shortcut-overlay.svg');
 if (!fs.existsSync(overlayPath)){
   // fallback to static location used by the frontend
   overlayPath = path.join(base, '..', 'shortcut-overlay.svg');
@@ -138,7 +137,7 @@ async function combine(){
     // Before processing individual icons, also emit the generic shortcut assets (no overlay).
     // The generic source lives at static/shortcut-generic.svg
     // generic helper source may live in helper dir or in static
-    let genericSrcPath = path.join(helperDir, 'shortcut-generic.svg');
+    let genericSrcPath = path.join(rawIconDirectory, 'shortcut-generic.svg');
     if (!fs.existsSync(genericSrcPath)){
       genericSrcPath = path.join(process.cwd(), 'static', 'shortcut-generic.svg');
     }
