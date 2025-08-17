@@ -1,9 +1,12 @@
 name: Windows Build
 
+permissions:
+  contents: write
+
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch: {}
+    tags:
+      - 'v*'
 
 concurrency:
   group: windows-build
@@ -28,6 +31,16 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Cache pnpm store and node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
       - name: Install dependencies
         run: pnpm install
 
@@ -47,11 +60,32 @@ jobs:
           rustup --version
           rustc --version
 
-      - name: Read package version
+      - name: Cache Cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo build target (optional)
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-
+
+      - name: Compute release version from tag
+        id: ver
         shell: pwsh
         run: |
-          $pj = Get-Content package.json | ConvertFrom-Json
-          Add-Content -Path $env:GITHUB_ENV -Value ("APP_VERSION=$($pj.version)")
+          # GITHUB_REF example: refs/tags/v0.1.1
+          $ref = $env:GITHUB_REF
+          $ver = $ref -replace '^refs/tags/v', ''
+          Write-Output "version=$ver" >> $env:GITHUB_OUTPUT
 
       - name: Remove .gitkeep files in src-tauri
         shell: pwsh
@@ -71,21 +105,54 @@ jobs:
         run: pnpm bundle:portable
 
       - name: Collect artifacts
+        id: collect
         shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 
           $nsis = Get-ChildItem -Path 'src-tauri\target\release\bundle\nsis' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
           if (-not $nsis) { Write-Error "NSIS installer not found in src-tauri\target\release\bundle\nsis"; exit 1 }
+          $nsisDest = Join-Path $PWD $nsis.Name
           Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $nsis.Name)
 
           $portable = Get-ChildItem -Path 'src-tauri\target\release\bundle\portable_win' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
           if (-not $portable) { Write-Error "Portable exe not found in src-tauri\target\release\bundle\portable_win"; exit 1 }
-          $newName = "Switchboot_${env:APP_VERSION}_x64-portable.exe"
-          Copy-Item $portable.FullName -Destination (Join-Path $PWD 'artifacts' $newName)
+          Copy-Item $portable.FullName -Destination (Join-Path $PWD 'artifacts' $portable.Name)
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          Write-Output "nsis_artifact=$($nsis.Name)" >> $env:GITHUB_OUTPUT
+          Write-Output "portable_artifact=$($portable.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
         with:
-          name: windows-build-artifacts
-          path: artifacts/*
+          tag_name: ${{ github.ref_name }}
+          release_name: Switchboot ${{ steps.ver.outputs.version }} released
+          body: Switchboot ${{ steps.ver.outputs.version }} released
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload NSIS installer to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ steps.collect.outputs.nsis_artifact }}
+          asset_name: ${{ steps.collect.outputs.nsis_artifact }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Portable to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ steps.collect.outputs.portable_artifact }}
+          asset_name: ${{ steps.collect.outputs.portable_artifact }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

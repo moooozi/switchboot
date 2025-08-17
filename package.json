@@ -11,7 +11,7 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
     "icons": "node ./tools/prerender-icons.js",
-    "bundle:portable": "cmd.exe /c \"src-tauri\\platform\\windows\\build-portable.bat\""
+  "bundle:portable": "node ./src-tauri/platform/windows/build_portable.js"
 
 
   },

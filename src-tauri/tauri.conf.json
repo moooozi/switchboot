@@ -59,6 +59,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "zidane.dev"
+    "publisher": "zidane.dev",
+    "copyright": "Copyright © 2025 zidane.dev"
   }
 }
