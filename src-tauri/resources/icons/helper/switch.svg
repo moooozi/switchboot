@@ -1,0 +1,30 @@
+<svg width="300" height="150" viewBox="0 0 300 150" xmlns="http://www.w3.org/2000/svg">
+	<!-- Gradient definition -->
+	<defs>
+		<linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+			<stop offset="0%" stop-color="#b73393" />
+			<stop offset="20%" stop-color="#9f39e5" />
+			<stop offset="40%" stop-color="#1EA38A" />
+			<stop offset="60%" stop-color="#02b833" />
+			<stop offset="80%" stop-color="#ffc800" />
+			<stop offset="100%" stop-color="#ff6e1b" />
+		</linearGradient>
+
+		<!-- Clip path for toggle knob -->
+		<clipPath id="innerClip">
+			<rect x="15" y="15" width="270" height="120" rx="60" ry="60" />
+		</clipPath>
+	</defs>
+
+	<!-- Outer gradient border (slightly larger) -->
+	<rect x="3" y="3" width="294" height="144" rx="74" ry="74" fill="url(#borderGradient)" />
+
+	<!-- Inner white body -->
+	<rect x="15" y="15" width="270" height="120" rx="60" ry="60" fill="white" />
+
+	<!-- Left horizontal line (off indicator) -->
+	<rect x="50" y="65" width="60" height="20" rx="10" ry="10" fill="#071B2F" />
+
+	<!-- Right dark circle (toggle knob) -->
+	<circle cx="225" cy="75" r="60" fill="#071B2F" clip-path="url(#innerClip)" />
+</svg>

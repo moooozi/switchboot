@@ -14,29 +14,29 @@
       }) => void)
     | undefined = undefined;
   export let oncancel: (() => void) | undefined = undefined;
-
-  if (entry.description === "Windows Boot Manager") {
-    entry.description = "Windows";
+  let entry_descr = entry.description;
+  if (entry_descr === "Windows Boot Manager") {
+    entry_descr = "Windows";
   }
-  let shortcutName = `Reboot to ${entry.description}`;
+  let shortcutName = `Reboot to ${entry_descr}`;
   let setBootNext = true; // Always checked and disabled
   let reboot = true;
-  let originalName = `Reboot to ${entry.description}`;
+  let originalName = `Reboot to ${entry_descr}`;
   let hasUserChangedName = false;
 
   // Track if user manually changed the name
   function handleNameInput() {
     hasUserChangedName =
       shortcutName !== originalName &&
-      shortcutName !== `BootNext ${entry.description}`;
+      shortcutName !== `BootNext ${entry_descr}`;
   }
 
   // Update name when reboot checkbox changes (if user hasn't manually changed it)
   function handleRebootChange() {
     if (!hasUserChangedName) {
       shortcutName = reboot
-        ? `Reboot to ${entry.description}`
-        : `BootNext ${entry.description}`;
+        ? `Reboot to ${entry_descr}`
+        : `BootNext ${entry_descr}`;
       originalName = shortcutName;
     }
   }
@@ -58,7 +58,7 @@
   // Reset form when dialog opens
   let lastEntry: BootEntry | null = null;
   $: if (visible && entry && entry !== lastEntry) {
-    shortcutName = `Reboot to ${entry.description}`;
+    shortcutName = `Reboot to ${entry_descr}`;
     originalName = shortcutName;
     setBootNext = true;
     reboot = true;

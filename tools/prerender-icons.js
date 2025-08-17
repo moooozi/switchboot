@@ -20,9 +20,15 @@ if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 if (produceSvg && !fs.existsSync(outSvg)) fs.mkdirSync(outSvg, { recursive: true });
 if (produceIco && !fs.existsSync(outIco)) fs.mkdirSync(outIco, { recursive: true });
 
-const overlayPath = path.join(base, "..", 'shortcut-overlay.svg');
+// helper files may live under src-tauri/resources/icons/helper now (not in static)
+const helperDir = path.resolve(process.cwd(), 'src-tauri', 'resources', 'icons', 'helper');
+let overlayPath = path.join(helperDir, 'shortcut-overlay.svg');
 if (!fs.existsSync(overlayPath)){
-  console.error('Missing shortcut-overlay.svg in static/os-icons');
+  // fallback to static location used by the frontend
+  overlayPath = path.join(base, '..', 'shortcut-overlay.svg');
+}
+if (!fs.existsSync(overlayPath)){
+  console.error('Missing shortcut-overlay.svg in helper or static/os-icons');
   process.exit(1);
 }
 const overlay = fs.readFileSync(overlayPath, 'utf8');
@@ -92,11 +98,16 @@ async function combine(){
     }
     const overlayNatural = Math.max(overlayW || 32, overlayH || 32);
 
-    const overlayTargetSize = 32; // desired final overlay size in px inside canvas
-    const overlayTranslate = canvasSize - overlayTargetSize;
-    const overlayScale = overlayTargetSize / overlayNatural;
-    const tx_overlay = overlayTranslate / overlayScale;
-    const ty_overlay = overlayTranslate / overlayScale;
+  // Make the overlay larger and add padding so it doesn't sit flush against the corner.
+  // Use separate X and Y padding so vertical inset can be smaller than horizontal.
+  const overlayTargetSize = 48; // desired final overlay size in px inside canvas (larger than before)
+  const overlayPaddingX = 4; // horizontal padding between overlay and canvas edge
+  const overlayPaddingY = -10; // vertical padding between overlay and canvas edge (smaller than X)
+  const overlayTranslateX = canvasSize - overlayTargetSize - overlayPaddingX;
+  const overlayTranslateY = canvasSize - overlayTargetSize - overlayPaddingY;
+  const overlayScale = overlayTargetSize / overlayNatural;
+  const tx_overlay = overlayTranslateX / overlayScale;
+  const ty_overlay = overlayTranslateY / overlayScale;
 
     // inject xlink namespace if needed
     const needsXlink = /xlink:/i.test(inner) || /xlink:/i.test(overlayInner);
@@ -113,18 +124,59 @@ async function combine(){
   const srcY = Math.round((canvasSize - finalSrcH) / 2);
 
   // overlay size and position
-  const overlaySizePx = overlayTargetSize; // 32
-  const overlayX = canvasSize - overlaySizePx;
-  const overlayY = canvasSize - overlaySizePx;
+  const overlaySizePx = overlayTargetSize; // e.g. 48
+  // position overlay inset by respective padding so it doesn't touch the canvas edge
+  const overlayX = canvasSize - overlaySizePx - overlayPaddingX;
+  const overlayY = canvasSize - overlaySizePx - overlayPaddingY;
 
-  // embed source and overlay as nested <svg> elements which respect viewBox scaling
-  const combined = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"${xmlnsXlink} width=\"${canvasSize}\" height=\"${canvasSize}\" viewBox=\"0 0 ${canvasSize} ${canvasSize}\">\n  <svg x=\"${srcX}\" y=\"${srcY}\" width=\"${finalSrcW}\" height=\"${finalSrcH}\" viewBox=\"${srcMinX} ${srcMinY} ${srcW} ${srcH}\" preserveAspectRatio=\"xMidYMid meet\">\n    ${inner}\n  </svg>\n  <svg x=\"${overlayX}\" y=\"${overlayY}\" width=\"${overlaySizePx}\" height=\"${overlaySizePx}\" viewBox=\"0 0 ${overlayNatural} ${overlayNatural}\" preserveAspectRatio=\"xMidYMid meet\">\n    ${overlayInner}\n  </svg>\n</svg>`;
+  // embed source and overlay; use a <g> with translate+scale for overlay so padding is applied reliably
+  const combined = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"${xmlnsXlink} width=\"${canvasSize}\" height=\"${canvasSize}\" viewBox=\"0 0 ${canvasSize} ${canvasSize}\">\n  <svg x=\"${srcX}\" y=\"${srcY}\" width=\"${finalSrcW}\" height=\"${finalSrcH}\" viewBox=\"${srcMinX} ${srcMinY} ${srcW} ${srcH}\" preserveAspectRatio=\"xMidYMid meet\">\n    ${inner}\n  </svg>\n  <g transform=\"translate(${overlayX}, ${overlayY}) scale(${overlaySizePx/overlayNatural})\">\n    ${overlayInner}\n  </g>\n</svg>`;
 
-
-      if (!sharp){
-        console.error('sharp is required to emit PNG/ICO. Install it with: pnpm add -D sharp');
-        process.exit(1);
+    // Before processing individual icons, also emit the generic shortcut assets (no overlay).
+    // The generic source lives at static/shortcut-generic.svg
+    // generic helper source may live in helper dir or in static
+    let genericSrcPath = path.join(helperDir, 'shortcut-generic.svg');
+    if (!fs.existsSync(genericSrcPath)){
+      genericSrcPath = path.join(process.cwd(), 'static', 'shortcut-generic.svg');
+    }
+    if (fs.existsSync(genericSrcPath)){
+      const genericSvg = fs.readFileSync(genericSrcPath, 'utf8');
+      if (produceSvg){
+        try{
+          const genericOut = path.join(outSvg, 'generic.svg');
+          fs.writeFileSync(genericOut, genericSvg);
+          console.log(`Wrote ${path.relative(process.cwd(), genericOut)}`);
+        }catch(e){
+          console.error('Failed to write generic SVG:', e.message || e);
+        }
       }
+
+      if (produceIco){
+        if (!sharp || !pngToIco){
+          console.log('sharp/png-to-ico not available; skipping generic.ico generation');
+        } else {
+          try{
+            const buffers = [];
+            for (const s of sizes){
+              try{
+                const buf = await sharp(Buffer.from(genericSvg)).resize({ width: s, height: s, fit: 'contain' }).png().toBuffer();
+                buffers.push(buf);
+              }catch(e){
+                console.error(`Failed to rasterize generic at ${s}px:`, e.message || e);
+              }
+            }
+            if (buffers.length){
+              const icoBuf = await pngToIco(buffers);
+              const icoPath = path.join(outIco, 'generic.ico');
+              fs.writeFileSync(icoPath, icoBuf);
+              console.log(`Wrote ${path.relative(process.cwd(), icoPath)}`);
+            }
+          }catch(e){
+            console.error('Failed to create generic ICO:', e.message || e);
+          }
+        }
+      }
+    }
 
     // If Linux: write the composed SVG and move on.
     if (produceSvg){
