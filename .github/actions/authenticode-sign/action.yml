@@ -1,0 +1,40 @@
+name: "Authenticode Sign"
+description: "Composite action to sign one or more files with an Authenticode PFX on Windows runners."
+inputs:
+  files:
+    description: "Semicolon-separated list of file paths to sign (relative to workspace)."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Sign files with signtool
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $filesRaw = '${{ inputs.files }}'
+        $files = $filesRaw -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+
+        if (-not $env:CERT_PFX -or -not $env:CERT_PASSWORD) {
+          Write-Error 'Environment variables CERT_PFX and CERT_PASSWORD must be provided.'
+          exit 1
+        }
+
+        $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CERT_PFX))
+
+        function Sign-IfExists($file) {
+          if (Test-Path $file) {
+            Write-Host "Signing $file"
+            & signtool sign /fd SHA256 /a /f $pfxPath /p $env:CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $file
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $file" }
+            & signtool verify /pa /v $file
+          } else {
+            Write-Host "Not found, skipping: $file"
+          }
+        }
+
+        foreach ($f in $files) {
+          Sign-IfExists $f
+        }
+
+        Remove-Item $pfxPath -Force

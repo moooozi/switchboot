@@ -1,0 +1,45 @@
+name: "GPG Sign"
+description: "Composite action to create detached ASCII-armored GPG signatures for files.
+Requires GPG_PRIVATE_KEY (ASCII armoured) and optionally GPG_PASSPHRASE as secrets."
+inputs:
+  files:
+    description: "Semicolon-separated list of file paths to sign (relative to workspace)."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Import key and sign files
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $filesRaw = '${{ inputs.files }}'
+        $files = $filesRaw -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+
+        if (-not $env:GPG_PRIVATE_KEY) {
+          Write-Error 'Environment variable GPG_PRIVATE_KEY must be provided.'
+          exit 1
+        }
+
+        $gnupghome = Join-Path $env:RUNNER_TEMP 'gnupghome'
+        New-Item -ItemType Directory -Path $gnupghome -Force | Out-Null
+        $env:GNUPGHOME = $gnupghome
+
+        $keyPath = Join-Path $gnupghome 'private.key'
+        [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
+        gpg --batch --import $keyPath
+
+        foreach ($file in $files) {
+          if (Test-Path $file) {
+            Write-Host "Signing $file"
+            if ($env:GPG_PASSPHRASE) {
+              gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
+            } else {
+              gpg --batch --yes --armor --detach-sign -o "$file.asc" $file
+            }
+          } else {
+            Write-Host "Not found, skipping: $file"
+          }
+        }
+
+        # cleanup private key file; keep GNUPGHOME folder for possible verification steps
+        Remove-Item $keyPath -Force

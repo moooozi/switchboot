@@ -99,7 +99,37 @@ jobs:
         run: pnpm icons
 
       - name: Build Tauri (release)
-        run: pnpm tauri build
+        run: pnpm tauri build --no-bundle
+
+      - name: Gather release binaries to sign
+        if: ${{ secrets.CERT_PFX != '' && secrets.CERT_PASSWORD != '' }}
+        id: gather_sign_files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'src-tauri\target\release'
+          Write-Host "Searching for .exe and .dll under $root"
+          $items = Get-ChildItem -Path $root -Recurse -Include *.exe,*.dll -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+          if (-not $items) {
+            Write-Host "No binaries found to sign"
+            Write-Output "files=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $joined = $items -join ';'
+          Write-Host "Found $($items.Count) files to sign"
+          Write-Output "files=$joined" >> $env:GITHUB_OUTPUT
+
+      - name: Sign internal release binaries (Authenticode)
+        if: ${{ secrets.CERT_PFX != '' && secrets.CERT_PASSWORD != '' && steps.gather_sign_files.outputs.files != '' }}
+        uses: ./.github/actions/authenticode-sign
+        with:
+          files: ${{ steps.gather_sign_files.outputs.files }}
+        env:
+          CERT_PFX: ${{ secrets.CERT_PFX }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+
+      - name: Bundle Tauri
+        run: pnpm tauri bundle
 
       - name: Bundle portable
         run: pnpm bundle:portable
@@ -124,6 +154,48 @@ jobs:
           Write-Output "nsis_artifact=$($nsis.Name)" >> $env:GITHUB_OUTPUT
           Write-Output "portable_artifact=$($portable.Name)" >> $env:GITHUB_OUTPUT
 
+      - name: Sign artifacts with GPG
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        uses: ./.github/actions/gpg-sign
+        with:
+          files: |
+            artifacts/${{ steps.collect.outputs.nsis_artifact }};artifacts/${{ steps.collect.outputs.portable_artifact }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Sign bundled artifacts (Authenticode)
+        if: ${{ secrets.CERT_PFX != '' && secrets.CERT_PASSWORD != '' }}
+        uses: ./.github/actions/authenticode-sign
+        with:
+          files: |
+            artifacts/${{ steps.collect.outputs.nsis_artifact }};artifacts/${{ steps.collect.outputs.portable_artifact }}
+        env:
+          CERT_PFX: ${{ secrets.CERT_PFX }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+
+      - name: Verify Authenticode signatures on artifacts
+        if: ${{ secrets.CERT_PFX != '' && secrets.CERT_PASSWORD != '' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nsis = Join-Path $PWD "artifacts/${{ steps.collect.outputs.nsis_artifact }}"
+          $portable = Join-Path $PWD "artifacts/${{ steps.collect.outputs.portable_artifact }}"
+
+          $files = @($nsis, $portable)
+          foreach ($f in $files) {
+            if (Test-Path $f) {
+              Write-Host "Running signtool verify on: $f"
+              & signtool verify /pa /v $f
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "signtool verification failed for $f"
+                exit 1
+              }
+            } else {
+              Write-Host "Not found, skipping verification: $f"
+            }
+          }
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
@@ -133,6 +205,35 @@ jobs:
           body: Switchboot ${{ steps.ver.outputs.version }} released
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Export public GPG key
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gnupghome = Join-Path $env:RUNNER_TEMP 'gnupghome'
+          New-Item -ItemType Directory -Path $gnupghome -Force | Out-Null
+          $env:GNUPGHOME = $gnupghome
+
+          $keyPath = Join-Path $gnupghome 'private.key'
+          [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
+          gpg --batch --import $keyPath
+          Remove-Item $keyPath -Force
+
+          $pubOut = Join-Path $PWD 'artifacts/public_gpg_key.asc'
+          gpg --batch --armor --export > $pubOut
+          Write-Host "Exported public key to $pubOut"
+
+      - name: Upload public GPG key to release
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/public_gpg_key.asc
+          asset_name: public_gpg_key.asc
+          asset_content_type: text/plain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
