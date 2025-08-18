@@ -1,0 +1,152 @@
+name: Linux Build
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: linux-build
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build Linux App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute release version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" =~ refs/tags/v(.+) ]]; then
+            ver="${BASH_REMATCH[1]}"
+          else
+            ver=$(python -c "import json,sys;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          fi
+          echo "version=$ver" >> $GITHUB_OUTPUT
+          echo "tag=v$ver" >> $GITHUB_OUTPUT
+
+      - name: Check for GPG secret
+        id: secrets_check
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "have_gpg=true" >> $GITHUB_OUTPUT
+          else
+            echo "have_gpg=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "latest"
+
+      - name: Cache pnpm store and node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install mold linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold
+
+      - name: Setup Rust (stable)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+
+      - name: Cache Cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Build frontend and Tauri (no bundle)
+        run: |
+          pnpm tauri icon ./app-icon.svg
+          pnpm icons
+          pnpm tauri build --no-bundle
+
+      - name: Bundle Tauri (deb & rpm)
+        run: pnpm tauri bundle
+
+      - name: Collect artifacts
+        id: collect
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          # prefer the standard subfolders produced by Tauri
+          deb=$(ls src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | tail -n 1 || true)
+          rpm=$(ls src-tauri/target/release/bundle/rpm/*.rpm 2>/dev/null | tail -n 1 || true)
+          if [ -n "$deb" ]; then
+            cp "$deb" artifacts/
+            debname=$(basename "$deb")
+            echo "deb_artifact=$debname" >> $GITHUB_OUTPUT
+          fi
+          if [ -n "$rpm" ]; then
+            cp "$rpm" artifacts/
+            rpmname=$(basename "$rpm")
+            echo "rpm_artifact=$rpmname" >> $GITHUB_OUTPUT
+          fi
+          if [ -z "$deb" -a -z "$rpm" ]; then
+            echo "No deb or rpm artifact found under src-tauri/target/release/bundle"
+            ls -R src-tauri/target/release/bundle || true
+            exit 1
+          fi
+
+      - name: Sign artifacts with GPG
+        if: ${{ steps.secrets_check.outputs.have_gpg == 'true' }}
+        uses: ./.github/actions/gpg-sign
+        with:
+          files: |
+            artifacts/${{ steps.collect.outputs.deb_artifact }};artifacts/${{ steps.collect.outputs.rpm_artifact }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Switchboot ${{ steps.ver.outputs.version }}
+          body: |
+            Switchboot ${{ steps.ver.outputs.version }} released
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/${{ steps.collect.outputs.deb_artifact }}
+            artifacts/${{ steps.collect.outputs.rpm_artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

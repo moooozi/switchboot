@@ -8,7 +8,47 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Import key and sign files
+    - name: Import key and sign files (POSIX)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        filesRaw='${{ inputs.files }}'
+        IFS=';'
+        read -ra filesArr <<< "$filesRaw"
+
+        if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+          echo "Environment variable GPG_PRIVATE_KEY must be provided." >&2
+          exit 1
+        fi
+
+        gnupghome=$(mktemp -d)
+        export GNUPGHOME="$gnupghome"
+
+        echo "$GPG_PRIVATE_KEY" > "$gnupghome/private.key"
+        gpg --batch --import "$gnupghome/private.key"
+
+        for f in "${filesArr[@]}"; do
+          # trim
+          f="$(echo "$f" | xargs)"
+          [ -z "$f" ] && continue
+          if [ -f "$f" ]; then
+            echo "Signing $f"
+            if [ -n "${GPG_PASSPHRASE:-}" ]; then
+              gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign -o "$f.asc" "$f"
+            else
+              gpg --batch --yes --armor --detach-sign -o "$f.asc" "$f"
+            fi
+          else
+            echo "Not found, skipping: $f"
+          fi
+        done
+
+        # cleanup private key file
+        rm -f "$gnupghome/private.key"
+
+    - name: Import key and sign files (Windows)
+      if: runner.os == 'Windows'
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
