@@ -33,13 +33,13 @@
       case "secondary":
         return "bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:border-neutral-500";
       case "neutral":
-        return "bg-neutral-50 text-neutral-600 border-neutral-300 dark:bg-neutral-900 dark:text-neutral-300 dark:border-neutral-600";
+        return "bg-neutral-50 text-neutral-600 border-neutral-500 dark:bg-neutral-900 dark:text-neutral-300 dark:border-neutral-600";
       case "emerald":
-        return "bg-emerald-100 text-emerald-700 border-emerald-500 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-600";
+        return "bg-emerald-100 text-emerald-700 border-emerald-600 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-600";
       case "amber":
-        return "bg-amber-100 text-amber-700 border-amber-500 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-600";
+        return "bg-amber-100 text-amber-700 border-amber-600 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-600";
       case "purple":
-        return "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-200 dark:border-purple-500 opacity-80";
+        return "bg-purple-100 text-purple-700 border-purple-600 dark:bg-purple-900 dark:text-purple-200 dark:border-purple-500 opacity-80";
       case "small-neutral":
         return "bg-neutral-50 text-neutral-600 border-neutral-300 dark:bg-neutral-900 dark:text-neutral-300 dark:border-neutral-500";
     }
