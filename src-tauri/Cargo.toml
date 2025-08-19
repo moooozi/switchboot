@@ -3,7 +3,7 @@ name = "switchboot"
 version = "0.1.0"
 description = "SwitchBoot lets you manage EFI boot entries on your machine."
 authors = ["M Zidane"]
-edition = "2025"
+edition = "2021"
 default-run = "switchboot"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
