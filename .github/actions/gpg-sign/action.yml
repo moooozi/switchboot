@@ -66,16 +66,47 @@ runs:
 
         # Print GPG version and a few debug lines up-front
         Write-Host 'GPG debug info:'
+        $gpgOk = $false
         if (Get-Command gpg -ErrorAction SilentlyContinue) {
           try {
             gpg --version | ForEach-Object { Write-Host "  $_" }
             gpgconf --list-dirs | ForEach-Object { Write-Host "  $($_)" }
             gpgconf --list-options gpg-agent | ForEach-Object { Write-Host "  $($_)" }
+            $gpgOk = $true
           } catch {
-            Write-Warning "Failed to collect GPG debug info: $_"
+            Write-Warning "gpg present but --version/debug checks failed: $_"
+            $gpgOk = $false
           }
         } else {
           Write-Warning 'gpg not found'
+        }
+
+        # If gpg is missing or failing basic checks, try to install a Windows-native GnuPG via winget
+        if (-not $gpgOk) {
+          Write-Host 'Attempting to install GnuPG (Gpg4win) using winget (no choco)...'
+          if (Get-Command winget -ErrorAction SilentlyContinue) {
+            try {
+              winget install --id GnuPG.Gpg4win --accept-source-agreements --accept-package-agreements -e
+              Write-Host 'winget install finished; re-checking gpg'
+            } catch {
+              Write-Warning "winget install failed: $_"
+            }
+          } else {
+            Write-Warning 'winget not available on runner; cannot auto-install GnuPG'
+          }
+
+          # try to pick up newly-installed gpg
+          Start-Sleep -Seconds 2
+          if (Get-Command gpg -ErrorAction SilentlyContinue) {
+            try {
+              gpg --version | ForEach-Object { Write-Host "  $_" }
+              $gpgOk = $true
+            } catch {
+              Write-Warning "gpg still not usable after install attempt: $_"
+            }
+          } else {
+            Write-Warning 'gpg still not found after install attempt'
+          }
         }
 
         # Attempt to reload agent and kill it with delays; always continue and log outcome
@@ -89,15 +120,6 @@ runs:
           }
         } else {
           Write-Warning 'gpg-connect-agent not found'
-        }
-        Start-Sleep -Seconds 2
-
-        Write-Host 'Attempting: gpgconf --kill gpg-agent'
-        try {
-          gpgconf --kill gpg-agent
-          Write-Host 'gpgconf --kill gpg-agent succeeded'
-        } catch {
-          Write-Warning "gpgconf --kill gpg-agent failed: $_"
         }
         Start-Sleep -Seconds 2
 
