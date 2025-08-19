@@ -29,8 +29,10 @@ jobs:
           # Write whether cert and gpg secrets are present to outputs (do not print secret values)
           $hasCert = if ('${{ secrets.CERT_PFX }}' -ne '' -and '${{ secrets.CERT_PASSWORD }}' -ne '') { 'true' } else { '' }
           $hasGpg = if ('${{ secrets.GPG_PRIVATE_KEY }}' -ne '') { 'true' } else { '' }
+          $hasRoot = if ('${{ secrets.CERT_ROOT }}' -ne '') { 'true' } else { '' }
           Write-Output "have_cert=$hasCert" >> $env:GITHUB_OUTPUT
           Write-Output "have_gpg=$hasGpg" >> $env:GITHUB_OUTPUT
+          Write-Output "have_root=$hasRoot" >> $env:GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -108,6 +110,67 @@ jobs:
         run: |
           Write-Error 'CERT_PFX secret present but signtool.exe was not found on the runner. Cannot perform Authenticode signing.'
           exit 1
+
+      - name: Install signing root certificate (optional)
+        if: ${{ steps.secrets_check.outputs.have_root == 'true' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Installing signing root certificate (from secret CERT_ROOT) into the certificate store"
+          $certRaw = '${{ secrets.CERT_ROOT }}'
+          if (-not $certRaw -or $certRaw -eq '') {
+            Write-Host "CERT_ROOT appears empty, skipping"
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP 'codesign_root.cer'
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($certRaw))
+          # Try adding to the LocalMachine Root store first; fallback to CurrentUser if that fails
+          try {
+            Write-Host "Adding certificate to LocalMachine\\Root"
+            certutil -addstore -f Root $certPath
+          } catch {
+            Write-Host "Failed to add to LocalMachine store, trying CurrentUser store"
+            certutil -user -addstore -f Root $certPath
+          }
+          Remove-Item $certPath -Force
+
+      - name: Install cert chain from provided PFX (fallback when CERT_ROOT not provided)
+        if: ${{ steps.secrets_check.outputs.have_cert == 'true' && steps.secrets_check.outputs.have_root != 'true' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host 'No separate CERT_ROOT provided; extracting certificates from CERT_PFX and installing into CurrentUser stores'
+          $pfxRaw = '${{ secrets.CERT_PFX }}'
+          if (-not $pfxRaw -or $pfxRaw -eq '') {
+            Write-Host 'CERT_PFX appears empty, skipping'
+            exit 0
+          }
+          $pwd = '${{ secrets.CERT_PASSWORD }}'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign_from_pfx.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($pfxRaw))
+
+          # Load all certificates from PFX
+          $secure = ConvertTo-SecureString $pwd -AsPlainText -Force
+          $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+          $collection.Import($pfxPath, $secure, 'Exportable,PersistKeySet')
+
+          foreach ($c in $collection) {
+            $subject = $c.Subject
+            $issuer = $c.Issuer
+            $thumb = $c.Thumbprint
+            $tmp = Join-Path $env:RUNNER_TEMP ($thumb + '.cer')
+            [IO.File]::WriteAllBytes($tmp, $c.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            if ($subject -eq $issuer) {
+              Write-Host "Adding self-signed cert to CurrentUser\\Root: $subject"
+              certutil -user -addstore -f Root $tmp
+            } else {
+              Write-Host "Adding intermediate/other cert to CurrentUser\\CA: $subject"
+              certutil -user -addstore -f CA $tmp
+            }
+            Remove-Item $tmp -Force
+          }
+
+          Remove-Item $pfxPath -Force
 
       - name: Remove .gitkeep files in src-tauri
         shell: pwsh
