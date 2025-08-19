@@ -52,6 +52,7 @@ runs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
+
         $filesRaw = '${{ inputs.files }}'
         $files = $filesRaw -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
 
@@ -60,21 +61,54 @@ runs:
           exit 1
         }
 
+        # Create isolated GPG home for the runner
         $gnupghome = Join-Path $env:RUNNER_TEMP 'gnupghome'
         New-Item -ItemType Directory -Path $gnupghome -Force | Out-Null
         $env:GNUPGHOME = $gnupghome
 
         $keyPath = Join-Path $gnupghome 'private.key'
         [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
-        gpg --batch --import $keyPath
+
+        # Kill any leftover gpg-agent and restart via gpgconf to ensure sockets are created inside our GNUPGHOME
+        try { Get-Process gpg-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
+        & gpgconf --kill gpg-agent 2>$null || $true
+        Start-Sleep -Milliseconds 200
+        & gpgconf --launch gpg-agent 2>$null || $true
+
+        # Try to import the private key. If a passphrase is provided, request loopback pinentry so operations don't require an external pinentry GUI.
+        if ($env:GPG_PASSPHRASE) {
+          Write-Host "Importing private key (using loopback pinentry)"
+          & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --import $keyPath
+        } else {
+          Write-Host "Importing private key"
+          & gpg --homedir $gnupghome --batch --yes --import $keyPath
+        }
+
+        # Determine the secret key id that was imported (long keyid / fingerprint)
+        $secretKey = & gpg --homedir $gnupghome --list-secret-keys --with-colons | Select-String -Pattern '^sec' | ForEach-Object { $_.ToString().Split(':')[4] } | Select-Object -First 1
+        if (-not $secretKey) {
+          Write-Host "No secret key found after import; listing keys for debugging"
+          & gpg --homedir $gnupghome --list-secret-keys --keyid-format LONG
+        } else {
+          Write-Host "Using secret key: $secretKey"
+        }
 
         foreach ($file in $files) {
           if (Test-Path $file) {
             Write-Host "Signing $file"
-            if ($env:GPG_PASSPHRASE) {
-              gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
+            if ($secretKey) {
+              if ($env:GPG_PASSPHRASE) {
+                & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --default-key $secretKey --armor --detach-sign -o "$file.asc" $file
+              } else {
+                & gpg --homedir $gnupghome --batch --yes --default-key $secretKey --armor --detach-sign -o "$file.asc" $file
+              }
             } else {
-              gpg --batch --yes --armor --detach-sign -o "$file.asc" $file
+              # Fallback: attempt to sign without specifying key (may fail if no default)
+              if ($env:GPG_PASSPHRASE) {
+                & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
+              } else {
+                & gpg --homedir $gnupghome --batch --yes --armor --detach-sign -o "$file.asc" $file
+              }
             }
           } else {
             Write-Host "Not found, skipping: $file"
