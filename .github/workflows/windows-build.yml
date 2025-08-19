@@ -37,7 +37,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -152,7 +152,14 @@ jobs:
           # Load all certificates from PFX
           $secure = ConvertTo-SecureString $pwd -AsPlainText -Force
           $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-          $collection.Import($pfxPath, $secure, 'Exportable,PersistKeySet')
+          # Use the X509KeyStorageFlags enum (not a string) so the correct overload is called
+          $keyFlags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet
+          try {
+            $collection.Import($pfxPath, $secure, $keyFlags)
+          } catch {
+            Write-Error "Failed to import PFX: $($_.Exception.Message)"
+            throw
+          }
 
           foreach ($c in $collection) {
             $subject = $c.Subject
