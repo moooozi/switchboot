@@ -68,10 +68,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Install mold linker
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold
+          sudo apt-get install -y mold libglib2.0-dev pkg-config
 
       - name: Setup Rust (stable)
         uses: actions-rs/toolchain@v1

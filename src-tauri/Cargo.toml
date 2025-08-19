@@ -39,7 +39,7 @@ windows = "0.61"
 libc = "0.2"
 
 
-[target.'cfg(linux)'.build]
+[target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [[bin]]
