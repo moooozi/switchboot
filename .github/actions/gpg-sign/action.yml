@@ -60,51 +60,58 @@ runs:
           exit 1
         }
 
-        # Install a known-good GnuPG on the Windows runner. The preinstalled gpg can be unreliable.
-        Write-Host 'Installing gnupg via Chocolatey (if not already present)'
-        choco feature disable -n showDownloadProgress | Out-Null
-        choco install gnupg -y --no-progress
-
         $gnupghome = Join-Path $env:RUNNER_TEMP 'gnupghome'
         New-Item -ItemType Directory -Path $gnupghome -Force | Out-Null
         $env:GNUPGHOME = $gnupghome
 
-        $keyPath = Join-Path $gnupghome 'private.key'
-        [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
-
-        # Ensure gpg-agent is not holding old state and allow loopback pinentry for scripted passphrases
-        Write-Host 'Configuring gpg-agent to allow loopback pinentry'
-        $gpgAgentConf = Join-Path $gnupghome 'gpg-agent.conf'
-        "allow-loopback-pinentry" | Out-File -FilePath $gpgAgentConf -Encoding ascii
-        # Kill any running agent so new config is picked up
-        & gpgconf --kill gpg-agent 2>$null || Write-Host 'No gpg-agent to kill or gpgconf missing; continuing'
-
-        # Launch gpg-agent so subsequent operations can talk to it. Prefer gpgconf, fallback to gpg-agent --daemon.
-        try {
-          Write-Host 'Launching gpg-agent via gpgconf --launch gpg-agent'
-          & gpgconf --launch gpg-agent
-          Write-Host 'gpg-agent launched'
-        } catch {
-          Write-Host 'gpgconf launch failed; attempting gpg-agent --daemon'
+        # Print GPG version and a few debug lines up-front
+        Write-Host 'GPG debug info:'
+        if (Get-Command gpg -ErrorAction SilentlyContinue) {
           try {
-            Start-Process -NoNewWindow -FilePath 'gpg-agent' -ArgumentList '--daemon' -PassThru | Out-Null
-            Write-Host 'gpg-agent started via gpg-agent --daemon'
+            gpg --version | ForEach-Object { Write-Host "  $_" }
+            gpgconf --list-dirs | ForEach-Object { Write-Host "  $($_)" }
+            gpgconf --list-options gpg-agent | ForEach-Object { Write-Host "  $($_)" }
           } catch {
-            Write-Host 'Failed to start gpg-agent; import/sign may still fail'
+            Write-Warning "Failed to collect GPG debug info: $_"
           }
+        } else {
+          Write-Warning 'gpg not found'
         }
 
-        Write-Host 'Importing private key'
-        # Use --pinentry-mode loopback for import to avoid external pinentry
-        & gpg --batch --yes --pinentry-mode loopback --import $keyPath
+        # Attempt to reload agent and kill it with delays; always continue and log outcome
+        Write-Host 'Attempting: gpg-connect-agent reloadagent /bye'
+        if (Get-Command gpg-connect-agent -ErrorAction SilentlyContinue) {
+          try {
+            gpg-connect-agent reloadagent /bye
+            Write-Host 'gpg-connect-agent reloadagent succeeded'
+          } catch {
+            Write-Warning "gpg-connect-agent reloadagent failed: $_"
+          }
+        } else {
+          Write-Warning 'gpg-connect-agent not found'
+        }
+        Start-Sleep -Seconds 2
+
+        Write-Host 'Attempting: gpgconf --kill gpg-agent'
+        try {
+          gpgconf --kill gpg-agent
+          Write-Host 'gpgconf --kill gpg-agent succeeded'
+        } catch {
+          Write-Warning "gpgconf --kill gpg-agent failed: $_"
+        }
+        Start-Sleep -Seconds 2
+
+        $keyPath = Join-Path $gnupghome 'private.key'
+        [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
+        gpg --batch --import $keyPath
 
         foreach ($file in $files) {
           if (Test-Path $file) {
             Write-Host "Signing $file"
             if ($env:GPG_PASSPHRASE) {
-              & gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
+              gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
             } else {
-              & gpg --batch --yes --pinentry-mode loopback --armor --detach-sign -o "$file.asc" $file
+              gpg --batch --yes --armor --detach-sign -o "$file.asc" $file
             }
           } else {
             Write-Host "Not found, skipping: $file"
