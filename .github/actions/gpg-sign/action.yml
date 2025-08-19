@@ -52,7 +52,6 @@ runs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-
         $filesRaw = '${{ inputs.files }}'
         $files = $filesRaw -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
 
@@ -61,7 +60,11 @@ runs:
           exit 1
         }
 
-        # Create isolated GPG home for the runner
+        # Install a known-good GnuPG on the Windows runner. The preinstalled gpg can be unreliable.
+        Write-Host 'Installing gnupg via Chocolatey (if not already present)'
+        choco feature disable -n showDownloadProgress | Out-Null
+        choco install gnupg -y --no-progress
+
         $gnupghome = Join-Path $env:RUNNER_TEMP 'gnupghome'
         New-Item -ItemType Directory -Path $gnupghome -Force | Out-Null
         $env:GNUPGHOME = $gnupghome
@@ -69,46 +72,39 @@ runs:
         $keyPath = Join-Path $gnupghome 'private.key'
         [System.IO.File]::WriteAllText($keyPath, $env:GPG_PRIVATE_KEY)
 
-        # Kill any leftover gpg-agent and restart via gpgconf to ensure sockets are created inside our GNUPGHOME
-        try { Get-Process gpg-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
-        & gpgconf --kill gpg-agent 2>$null || $true
-        Start-Sleep -Milliseconds 200
-        & gpgconf --launch gpg-agent 2>$null || $true
+        # Ensure gpg-agent is not holding old state and allow loopback pinentry for scripted passphrases
+        Write-Host 'Configuring gpg-agent to allow loopback pinentry'
+        $gpgAgentConf = Join-Path $gnupghome 'gpg-agent.conf'
+        "allow-loopback-pinentry" | Out-File -FilePath $gpgAgentConf -Encoding ascii
+        # Kill any running agent so new config is picked up
+        & gpgconf --kill gpg-agent 2>$null || Write-Host 'No gpg-agent to kill or gpgconf missing; continuing'
 
-        # Try to import the private key. If a passphrase is provided, request loopback pinentry so operations don't require an external pinentry GUI.
-        if ($env:GPG_PASSPHRASE) {
-          Write-Host "Importing private key (using loopback pinentry)"
-          & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --import $keyPath
-        } else {
-          Write-Host "Importing private key"
-          & gpg --homedir $gnupghome --batch --yes --import $keyPath
+        # Launch gpg-agent so subsequent operations can talk to it. Prefer gpgconf, fallback to gpg-agent --daemon.
+        try {
+          Write-Host 'Launching gpg-agent via gpgconf --launch gpg-agent'
+          & gpgconf --launch gpg-agent
+          Write-Host 'gpg-agent launched'
+        } catch {
+          Write-Host 'gpgconf launch failed; attempting gpg-agent --daemon'
+          try {
+            Start-Process -NoNewWindow -FilePath 'gpg-agent' -ArgumentList '--daemon' -PassThru | Out-Null
+            Write-Host 'gpg-agent started via gpg-agent --daemon'
+          } catch {
+            Write-Host 'Failed to start gpg-agent; import/sign may still fail'
+          }
         }
 
-        # Determine the secret key id that was imported (long keyid / fingerprint)
-        $secretKey = & gpg --homedir $gnupghome --list-secret-keys --with-colons | Select-String -Pattern '^sec' | ForEach-Object { $_.ToString().Split(':')[4] } | Select-Object -First 1
-        if (-not $secretKey) {
-          Write-Host "No secret key found after import; listing keys for debugging"
-          & gpg --homedir $gnupghome --list-secret-keys --keyid-format LONG
-        } else {
-          Write-Host "Using secret key: $secretKey"
-        }
+        Write-Host 'Importing private key'
+        # Use --pinentry-mode loopback for import to avoid external pinentry
+        & gpg --batch --yes --pinentry-mode loopback --import $keyPath
 
         foreach ($file in $files) {
           if (Test-Path $file) {
             Write-Host "Signing $file"
-            if ($secretKey) {
-              if ($env:GPG_PASSPHRASE) {
-                & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --default-key $secretKey --armor --detach-sign -o "$file.asc" $file
-              } else {
-                & gpg --homedir $gnupghome --batch --yes --default-key $secretKey --armor --detach-sign -o "$file.asc" $file
-              }
+            if ($env:GPG_PASSPHRASE) {
+              & gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
             } else {
-              # Fallback: attempt to sign without specifying key (may fail if no default)
-              if ($env:GPG_PASSPHRASE) {
-                & gpg --homedir $gnupghome --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --armor --detach-sign -o "$file.asc" $file
-              } else {
-                & gpg --homedir $gnupghome --batch --yes --armor --detach-sign -o "$file.asc" $file
-              }
+              & gpg --batch --yes --pinentry-mode loopback --armor --detach-sign -o "$file.asc" $file
             }
           } else {
             Write-Host "Not found, skipping: $file"
