@@ -98,6 +98,17 @@ jobs:
           $ver = $ref -replace '^refs/tags/v', ''
           Write-Output "version=$ver" >> $env:GITHUB_OUTPUT
 
+      - name: Locate signtool (Windows SDK) and add to PATH
+        id: find_signtool
+        uses: ./.github/actions/ensure-signtool
+
+      - name: Fail early if signing is requested but signtool not found
+        if: ${{ steps.secrets_check.outputs.have_cert == 'true' && steps.find_signtool.outputs.signtool_path == '' }}
+        shell: pwsh
+        run: |
+          Write-Error 'CERT_PFX secret present but signtool.exe was not found on the runner. Cannot perform Authenticode signing.'
+          exit 1
+
       - name: Remove .gitkeep files in src-tauri
         shell: pwsh
         run: |

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build-linux:
     name: Build Linux App
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout repository
@@ -48,7 +48,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -71,13 +71,49 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold libglib2.0-dev pkg-config
+          sudo apt-get install -y build-essential wget libssl-dev libglib2.0-dev pkg-config libwebkit2gtk-4.0-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Setup Rust (stable)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
+      - name: Install mold v2.40.4
+        run: |
+          set -e
+          echo "Installing mold v2.40.4 (pinned)..."
+          # Query the GitHub release for tag v2.40.4 and pick an x86_64 tarball asset
+          MOLD_URL=$(curl -s https://api.github.com/repos/rui314/mold/releases/tags/v2.40.4 \
+            | grep "browser_download_url" | grep -E "x86_64.*tar.gz" | head -n1 | cut -d '"' -f4 || true)
+          if [ -n "$MOLD_URL" ]; then
+            echo "Found mold release: $MOLD_URL"
+            curl -L "$MOLD_URL" -o /tmp/mold.tar.gz
+            mkdir -p /tmp/moldtmp
+            tar -xzf /tmp/mold.tar.gz -C /tmp/moldtmp
+            # copy any bin files from the extracted archive into /usr/local/bin
+            if [ -d /tmp/moldtmp/bin ]; then
+              sudo cp /tmp/moldtmp/bin/* /usr/local/bin/ || true
+              sudo chmod +x /usr/local/bin/* || true
+            else
+              # try to locate mold binary anywhere in the extracted tree
+              MOLD_BIN=$(find /tmp/moldtmp -type f -name mold -print -quit || true)
+              if [ -n "$MOLD_BIN" ]; then
+                sudo cp "$MOLD_BIN" /usr/local/bin/mold || true
+                sudo chmod +x /usr/local/bin/mold || true
+              else
+                echo "mold binary not found in archive; skipping copy"
+              fi
+            fi
+          else
+            echo "Could not locate a mold release for x86_64; skipping mold install"
+          fi
+
+      - name: Install Rust (rustup)
+        shell: bash
+        run: |
+          # Install rustup and set stable toolchain as default
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          source $HOME/.cargo/env
+          rustup default stable
+          # add commonly useful components
+          rustup component add rust-src || true
+          # persist cargo bin in subsequent steps
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache Cargo registry and git
         uses: actions/cache@v4

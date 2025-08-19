@@ -1,0 +1,131 @@
+name: "Ensure Signtool"
+description: "Locate signtool.exe on Windows runners or attempt to install Windows SDK via winget/choco. Exposes output `signtool_path` when found."
+outputs:
+  signtool_path:
+    description: "Directory containing signtool.exe (empty if not found)"
+    value: "${{ steps.find.outputs.signtool_path }}"
+runs:
+  using: "composite"
+  steps:
+    - id: find
+      name: Find or install signtool
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        Write-Host "Searching for signtool.exe in common Windows Kits locations"
+
+        function Add-SigntoolIfFound($candidate) {
+          if (Test-Path (Join-Path $candidate 'signtool.exe')) {
+            Write-Host "Found signtool at: $candidate"
+            Add-Content -Path $env:GITHUB_PATH -Value $candidate
+            Write-Output "signtool_path=$candidate" >> $env:GITHUB_OUTPUT
+            return $true
+          }
+          return $false
+        }
+
+        $found = $false
+
+        # Check expected Windows Kits location first
+        $kitsRoot = 'C:\Program Files (x86)\Windows Kits\10\bin'
+        if (Test-Path $kitsRoot) {
+          $versions = Get-ChildItem -Path $kitsRoot -Directory | Sort-Object Name -Descending
+          foreach ($v in $versions) {
+            $candidate = Join-Path $v.FullName 'x64'
+            if (Add-SigntoolIfFound $candidate) { $found = $true; break }
+          }
+        }
+
+        # Try Visual Studio/MSVC locations
+        if (-not $found) {
+          $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path $vswhere) {
+            $instPath = & $vswhere -latest -products * -property installationPath
+            if ($instPath) {
+              $possible = Join-Path $instPath 'VC\Tools\MSVC'
+              if (Test-Path $possible) {
+                $msvcs = Get-ChildItem -Path $possible -Directory | Sort-Object Name -Descending
+                foreach ($m in $msvcs) {
+                  $candidate = Join-Path $m.FullName 'bin\Hostx64\x64'
+                  if (Add-SigntoolIfFound $candidate) { $found = $true; break }
+                }
+              }
+            }
+          }
+        }
+
+        # If not found, attempt to install a Windows SDK via winget or Chocolatey, then re-check
+        if (-not $found) {
+          Write-Host "signtool.exe not found; attempting to install Windows SDK via winget or choco"
+
+          $installed = $false
+
+          if (Get-Command winget -ErrorAction SilentlyContinue) {
+            try {
+              $raw = winget search --source winget 'Windows SDK' --accept-source-agreements --accept-package-agreements --output json 2>$null | Out-String
+              $json = $null
+              if ($raw) { $json = $raw | ConvertFrom-Json }
+              if ($json -and $json.Count -gt 0) {
+                $id = $json[0].Id
+                Write-Host "Attempting winget install of: $id"
+                winget install --id $id --silent --accept-source-agreements --accept-package-agreements || Write-Host "winget install failed"
+                $installed = $true
+              } else {
+                Write-Host "winget search returned no usable Windows SDK package"
+              }
+            } catch {
+              Write-Host "winget install attempt failed: $_"
+            }
+          }
+
+          if (-not $installed -and (Get-Command choco -ErrorAction SilentlyContinue)) {
+            try {
+              $list = choco search windows-sdk -r 2>$null | Out-String
+              if ($list) {
+                $first = ($list -split "\n" | Select-Object -First 1).Trim()
+                if ($first) {
+                  Write-Host "Attempting choco install of: $first"
+                  choco install $first -y || Write-Host "choco install failed"
+                  $installed = $true
+                }
+              }
+            } catch {
+              Write-Host "choco install attempt failed: $_"
+            }
+          }
+
+          # Re-check common locations after attempted install
+          if ($installed) {
+            Write-Host "Re-checking for signtool after install"
+            if (Test-Path $kitsRoot) {
+              $versions = Get-ChildItem -Path $kitsRoot -Directory | Sort-Object Name -Descending
+              foreach ($v in $versions) {
+                $candidate = Join-Path $v.FullName 'x64'
+                if (Add-SigntoolIfFound $candidate) { $found = $true; break }
+              }
+            }
+
+            if (-not $found) {
+              $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+              if (Test-Path $vswhere) {
+                $instPath = & $vswhere -latest -products * -property installationPath
+                if ($instPath) {
+                  $possible = Join-Path $instPath 'VC\Tools\MSVC'
+                  if (Test-Path $possible) {
+                    $msvcs = Get-ChildItem -Path $possible -Directory | Sort-Object Name -Descending
+                    foreach ($m in $msvcs) {
+                      $candidate = Join-Path $m.FullName 'bin\Hostx64\x64'
+                      if (Add-SigntoolIfFound $candidate) { $found = $true; break }
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            Write-Host "No package manager available or installation attempts did not run; cannot install Windows SDK automatically."
+          }
+        }
+
+        if (-not $found) {
+          Write-Host "signtool.exe not found on runner; signing steps may fail."
+        }
