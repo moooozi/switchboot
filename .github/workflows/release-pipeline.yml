@@ -38,22 +38,30 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-artifacts-${{ github.ref_name }}
-          path: artifacts/linux
+          path: artifacts
 
       - name: Download windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: windows-artifacts-${{ github.ref_name }}
-          path: artifacts/windows
+          path: artifacts
 
       - name: Show artifacts
         run: ls -la artifacts || true
 
+      - name: Collect files to sign
+        id: collect_files
+        shell: bash
+        run: |
+          files=$(find artifacts -type f -name "*.deb" -o -name "*.rpm" -o -name "*.exe" | tr '\n' ';' | sed 's/;$//')
+          echo "files=$files" >> $GITHUB_OUTPUT
+          echo "Files to sign: $files"
+
       - name: Sign artifacts with GPG
+        if: steps.collect_files.outputs.files != ''
         uses: ./.github/actions/gpg-sign
         with:
-          files: |
-            artifacts/**/*
+          files: ${{ steps.collect_files.outputs.files }}
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -71,7 +79,6 @@ jobs:
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/**/*
+          files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
