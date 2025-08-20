@@ -4,11 +4,7 @@ permissions:
   contents: write
 
 on:
-  workflow_run:
-    workflows:
-      - "Linux Build"
-    types:
-      - completed
+  workflow_dispatch: {}
 
 concurrency:
   group: sign-and-release
@@ -28,36 +24,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq unzip
 
-      - name: Wait for Windows Build workflow to succeed for this commit
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          sha="${{ github.event.workflow_run.head_sha }}"
-          repo="${{ github.repository }}"
-          echo "Waiting for Windows Build workflow to succeed for commit $sha in $repo..."
-          deadline=$((SECONDS + 900))
-          while [ $SECONDS -lt $deadline ]; do
-            runs=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
-              "https://api.github.com/repos/$repo/actions/runs?event=push&branch=${{ github.event.workflow_run.head_branch }}")
-            win_run_id=$(echo "$runs" | jq -r '.workflow_runs[] | select(.name=="Windows Build" and .head_sha=="'$sha'") | .id' | head -n1)
-            if [ -n "$win_run_id" ]; then
-              status=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
-                "https://api.github.com/repos/$repo/actions/runs/$win_run_id" | jq -r '.conclusion')
-              if [ "$status" = "success" ]; then
-                echo "Windows Build succeeded."
-                break
-              elif [ "$status" = "failure" ] || [ "$status" = "cancelled" ]; then
-                echo "Windows Build failed or was cancelled. Exiting."
-                exit 1
-              fi
-            fi
-            sleep 10
-          done
-          if [ -z "$win_run_id" ]; then
-            echo "Timed out waiting for Windows Build workflow run for commit $sha."
-            exit 1
-          fi
+      # Windows Build wait removed - ordering is handled by the `release-pipeline.yml` meta workflow
 
       - name: Compute release version and tag
         id: ver
