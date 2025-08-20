@@ -38,13 +38,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-artifacts-${{ github.ref_name }}
-          path: artifacts/linux || true
+          path: artifacts/linux
 
       - name: Download windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: windows-artifacts-${{ github.ref_name }}
-          path: artifacts/windows || true
+          path: artifacts/windows
 
       - name: Show artifacts
         run: ls -la artifacts || true

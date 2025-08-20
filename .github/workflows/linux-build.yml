@@ -193,5 +193,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts-${{ steps.ver.outputs.version }}
+          # Use the tag output (includes leading 'v') so the release pipeline
+          # can download artifacts using the tag name (e.g. linux-artifacts-v0.1.1)
+          name: linux-artifacts-${{ steps.ver.outputs.tag }}
           path: artifacts/*

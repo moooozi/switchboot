@@ -118,6 +118,8 @@ jobs:
           }
           $ver = $v
           Write-Output "version=$ver" >> $env:GITHUB_OUTPUT
+          # Also emit a tag output that includes the leading 'v' for artifact naming consistency
+          Write-Output "tag=v$ver" >> $env:GITHUB_OUTPUT
 
       - name: Locate signtool (Windows SDK) and add to PATH
         id: find_signtool
@@ -298,5 +300,6 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-artifacts-${{ steps.ver.outputs.version }}
+          # Use tag (includes leading 'v') so the release pipeline can download windows-artifacts-vX.Y.Z
+          name: windows-artifacts-${{ steps.ver.outputs.tag }}
           path: artifacts/*
