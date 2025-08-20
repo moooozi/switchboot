@@ -84,8 +84,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-repository:
-    uses: ./.github/workflows/update-repository.yml
     needs: create-release
+    uses: ./.github/workflows/update-repository.yml
     with:
       tag: ${{ github.ref_name }}
     secrets: inherit

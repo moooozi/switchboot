@@ -4,12 +4,13 @@ on:
   workflow_call:
     inputs:
       tag:
+        description: "Git tag to update repository for (e.g. v0.1.1)"
         required: true
         type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to update repository for'
+        description: "Git tag to update repository for (e.g. v0.1.1)"
         required: true
         type: string
 
@@ -18,14 +19,28 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: update-repository
+  cancel-in-progress: true
+
 jobs:
   update-repository:
     name: Update Package Repository
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check for GPG secrets
+        id: secrets_check
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "have_gpg=true" >> $GITHUB_OUTPUT
+          else
+            echo "have_gpg=" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download linux artifacts
         uses: actions/download-artifact@v4
@@ -34,37 +49,80 @@ jobs:
           path: artifacts
 
       - name: Setup repository structure
+        shell: bash
         run: |
+          set -e
+          echo "Setting up repository directory structure..."
           mkdir -p repo/rpm/x86_64
           mkdir -p repo/deb/pool/main/s/switchboot
           mkdir -p repo/deb/dists/stable/main/binary-amd64
-          cp artifacts/*.rpm repo/rpm/x86_64/ || true
-          cp artifacts/*.deb repo/deb/pool/main/s/switchboot/ || true
+
+          echo "Copying artifacts to repository structure..."
+          if ls artifacts/*.rpm 1> /dev/null 2>&1; then
+            cp artifacts/*.rpm repo/rpm/x86_64/
+            echo "Copied RPM packages"
+          else
+            echo "No RPM packages found"
+          fi
+
+          if ls artifacts/*.deb 1> /dev/null 2>&1; then
+            cp artifacts/*.deb repo/deb/pool/main/s/switchboot/
+            echo "Copied DEB packages"
+          else
+            echo "No DEB packages found"
+          fi
+
+          echo "Copying repository configuration files..."
           cp repo-config/switchboot.repo repo/rpm/
           cp repo-config/switchboot.list repo/deb/
           cp repo-config/index.html repo/index.html
 
-      - name: Export GPG public key
-        if: env.GPG_PRIVATE_KEY != ''
+      - name: Install system dependencies
+        shell: bash
         run: |
+          set -e
+          echo "Installing repository management tools..."
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c dpkg-dev
+
+      - name: Export GPG public key
+        if: steps.secrets_check.outputs.have_gpg == 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Setting up GPG and exporting public key..."
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           gpg --armor --export > repo/rpm/RPM-GPG-KEY-switchboot
           gpg --armor --export > repo/deb/switchboot-archive-keyring.gpg
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          echo "GPG public key exported successfully"
 
       - name: Generate RPM repository metadata
+        shell: bash
         run: |
-          sudo apt-get update && sudo apt-get install -y createrepo-c dpkg-dev
-          createrepo_c repo/rpm/x86_64/
-          
+          set -e
+          echo "Generating RPM repository metadata..."
+          if ls repo/rpm/x86_64/*.rpm 1> /dev/null 2>&1; then
+            createrepo_c repo/rpm/x86_64/
+            echo "RPM repository metadata generated successfully"
+          else
+            echo "No RPM packages found, skipping metadata generation"
+          fi
+
       - name: Generate DEB repository metadata
+        shell: bash
         run: |
+          set -e
+          if ! ls repo/deb/pool/main/s/switchboot/*.deb 1> /dev/null 2>&1; then
+            echo "No DEB packages found, skipping metadata generation"
+            exit 0
+          fi
+
+          echo "Generating DEB repository metadata..."
           cd repo/deb
           dpkg-scanpackages pool/ > dists/stable/main/binary-amd64/Packages
           gzip -k dists/stable/main/binary-amd64/Packages
-          
-          # Create Release file
+
+          echo "Creating Release file..."
           cat > dists/stable/Release << EOF
           Origin: Switchboot Repository
           Label: Switchboot
@@ -75,8 +133,8 @@ jobs:
           Components: main
           Description: Switchboot Package Repository
           EOF
-          
-          # Add checksums to Release file
+
+          echo "Adding checksums to Release file..."
           cd dists/stable
           echo "MD5Sum:" >> Release
           find . -name "Packages*" -exec md5sum {} \; | sed 's/\.\///g' >> Release
@@ -84,18 +142,38 @@ jobs:
           find . -name "Packages*" -exec sha1sum {} \; | sed 's/\.\///g' >> Release
           echo "SHA256:" >> Release
           find . -name "Packages*" -exec sha256sum {} \; | sed 's/\.\///g' >> Release
-          
+
+          echo "DEB repository metadata generated successfully"
+
       - name: Sign repository metadata
-        if: env.GPG_PRIVATE_KEY != ''
+        if: steps.secrets_check.outputs.have_gpg == 'true'
+        shell: bash
         run: |
+          set -e
+          echo "Setting up GPG for signing..."
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          
-          # Sign RPM repository
-          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor repo/rpm/x86_64/repodata/repomd.xml
-          
-          # Sign DEB repository Release file
-          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign --output repo/deb/dists/stable/InRelease repo/deb/dists/stable/Release
-          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor --output repo/deb/dists/stable/Release.gpg repo/deb/dists/stable/Release
+
+          # Sign RPM repository if it exists
+          if [ -f "repo/rpm/x86_64/repodata/repomd.xml" ]; then
+            echo "Signing RPM repository metadata..."
+            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --detach-sign --armor repo/rpm/x86_64/repodata/repomd.xml
+            echo "RPM repository signed successfully"
+          else
+            echo "No RPM repository metadata found, skipping RPM signing"
+          fi
+
+          # Sign DEB repository if it exists
+          if [ -f "repo/deb/dists/stable/Release" ]; then
+            echo "Signing DEB repository metadata..."
+            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --clearsign --output repo/deb/dists/stable/InRelease repo/deb/dists/stable/Release
+            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --detach-sign --armor --output repo/deb/dists/stable/Release.gpg repo/deb/dists/stable/Release
+            echo "DEB repository signed successfully"
+          else
+            echo "No DEB repository metadata found, skipping DEB signing"
+          fi
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
