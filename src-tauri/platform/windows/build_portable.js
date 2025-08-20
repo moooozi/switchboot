@@ -1,10 +1,8 @@
 import { spawnSync } from "child_process";
-import crypto from "crypto";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-
 
 function escapeForNSIS(s) {
   if (!s) return "";
@@ -24,14 +22,8 @@ async function main() {
 
   const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
   const product = tauri.productName || "";
-  const fileTauriVersion = tauri.version || "";
-  // Allow CI to override version via env var (workflow sets VERSION)
-  const envVersion =
-    process.env.VERSION ||
-    process.env.GITHUB_REF_NAME ||
-    process.env.GITHUB_SHA;
-  const version = envVersion || fileTauriVersion;
-  if (envVersion) console.log("Using version from environment:", envVersion);
+  const version = tauri.version || "";
+
   const publisher = (tauri.bundle && tauri.bundle.publisher) || "";
   const copyright = (tauri.bundle && tauri.bundle.copyright) || "";
   const identifier = tauri.identifier || "";
@@ -135,10 +127,7 @@ async function main() {
     const replaced = template
       .split("..\\..\\target\\release\\")
       .join("..\\..\\target\\x86_64-pc-windows-msvc\\release\\");
-    generatedNsisPath = path.join(
-      scriptDir,
-      `nsis-portable.generated.nsi`
-    );
+    generatedNsisPath = path.join(scriptDir, `nsis-portable.generated.nsi`);
     await fsPromises.writeFile(generatedNsisPath, replaced, {
       encoding: "utf8",
     });

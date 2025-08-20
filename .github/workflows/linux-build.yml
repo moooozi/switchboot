@@ -170,21 +170,31 @@ jobs:
         id: collect
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p artifacts
-          # prefer the standard subfolders produced by Tauri
-          deb=$(ls src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | tail -n 1 || true)
-          rpm=$(ls src-tauri/target/release/bundle/rpm/*.rpm 2>/dev/null | tail -n 1 || true)
-          if [ -n "$deb" ]; then
+          echo "Looking for bundles under src-tauri/target/release/bundle"
+          ls -la src-tauri/target/release/bundle || true
+          # enable nullglob so globs that match nothing expand to nothing
+          shopt -s nullglob
+          deb_files=(src-tauri/target/release/bundle/deb/*.deb)
+          rpm_files=(src-tauri/target/release/bundle/rpm/*.rpm)
+          if [ ${#deb_files[@]} -gt 0 ]; then
+            deb="${deb_files[@]: -1}"
+            echo "Found deb: $deb"
             cp "$deb" artifacts/
             debname=$(basename "$deb")
             echo "deb_artifact=$debname" >> $GITHUB_OUTPUT
           fi
-          if [ -n "$rpm" ]; then
+          if [ ${#rpm_files[@]} -gt 0 ]; then
+            rpm="${rpm_files[@]: -1}"
+            echo "Found rpm: $rpm"
             cp "$rpm" artifacts/
             rpmname=$(basename "$rpm")
             echo "rpm_artifact=$rpmname" >> $GITHUB_OUTPUT
           fi
-          if [ -z "$deb" -a -z "$rpm" ]; then
+          echo "Artifacts dir contents after copy:"
+          ls -la artifacts || true
+          if [ ${#deb_files[@]} -eq 0 ] && [ ${#rpm_files[@]} -eq 0 ]; then
             echo "No deb or rpm artifact found under src-tauri/target/release/bundle"
             ls -R src-tauri/target/release/bundle || true
             exit 1
@@ -206,7 +216,16 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          set -e
+          set -euxo pipefail
+          echo "Listing artifacts before signing:"
+          ls -la artifacts || true
+          shopt -s nullglob
+          rpm_files=(artifacts/*.rpm)
+          if [ ${#rpm_files[@]} -eq 0 ]; then
+            echo "No RPMs to sign in artifacts/; aborting."
+            exit 1
+          fi
+          echo "RPMs to sign: ${rpm_files[*]}"
           echo "Importing GPG private key for RPM signing..."
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
 
@@ -226,10 +245,12 @@ jobs:
           echo "%_gpg_name $GPG_KEY_NAME" >> ~/.rpmmacros
 
           # Sign each rpm in-place using expect to provide passphrase
-          for rpm in artifacts/*.rpm; do
+          for rpm in "${rpm_files[@]}"; do
             if [ -f "$rpm" ]; then
               echo "Signing $rpm"
-              expect -c "spawn rpm --addsign '$rpm'; expect \"Enter pass phrase:\"; send \"$GPG_PASSPHRASE\\r\"; expect eof"
+              expect -c "log_user 1; spawn rpm --addsign '$rpm'; expect -re \"Enter pass phrase:\"; send -- \"$GPG_PASSPHRASE\r\"; expect eof"
+            else
+              echo "Skipping missing file $rpm"
             fi
           done
 

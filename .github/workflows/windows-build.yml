@@ -277,15 +277,16 @@ jobs:
 
           $nsis = Get-ChildItem -Path 'src-tauri\target\release\bundle\nsis' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
           if (-not $nsis) { Write-Error "NSIS installer not found in src-tauri\target\release\bundle\nsis"; exit 1 }
-          $nsisDest = Join-Path $PWD $nsis.Name
-          Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $nsis.Name)
+          $setupName = "Switchboot_x64-setup.exe"
+          Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $setupName)
 
           $portable = Get-ChildItem -Path 'src-tauri\target\release\bundle\portable_win' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -Last 1
           if (-not $portable) { Write-Error "Portable exe not found in src-tauri\target\release\bundle\portable_win"; exit 1 }
-          Copy-Item $portable.FullName -Destination (Join-Path $PWD 'artifacts' $portable.Name)
+          $portableName = "Switchboot_x64-portable.exe"
+          Copy-Item $portable.FullName -Destination (Join-Path $PWD 'artifacts' $portableName)
 
-          Write-Output "nsis_artifact=$($nsis.Name)" >> $env:GITHUB_OUTPUT
-          Write-Output "portable_artifact=$($portable.Name)" >> $env:GITHUB_OUTPUT
+          Write-Output "nsis_artifact=$setupName" >> $env:GITHUB_OUTPUT
+          Write-Output "portable_artifact=$portableName" >> $env:GITHUB_OUTPUT
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
