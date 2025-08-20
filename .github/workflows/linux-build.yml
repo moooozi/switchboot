@@ -235,16 +235,29 @@ jobs:
           gpgconf --kill gpg-agent || true
           echo "%_signature gpg" > ~/.rpmmacros
           echo "%_gpg_name $GPG_KEY_NAME" >> ~/.rpmmacros
+          # Force RPM to use gpg with loopback pinentry and supply passphrase non-interactively
+          echo "%__gpg /usr/bin/gpg" >> ~/.rpmmacros
+          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase \"$GPG_PASSPHRASE\" -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
 
-          # Use absolute path for RPM files
+          # Use absolute path for RPM files and sign directly (no expect)
           for rpm in $(ls -1 "$(pwd)/artifacts"/*.rpm 2>/dev/null); do
             if [ -f "$rpm" ]; then
               echo "Signing $rpm"
-              expect -c "spawn rpm --addsign '$rpm'; expect \"Enter pass phrase:\"; send \"$GPG_PASSPHRASE\\r\"; expect eof"
+              rpm --addsign "$rpm"
             else
               echo "RPM not found: $rpm"
             fi
           done
+
+          # Cleanup sensitive signing artifacts and environment
+          echo "Cleaning up signing artifacts"
+          # securely remove rpmmacros which contains the passphrase
+          if [ -f "$HOME/.rpmmacros" ]; then
+            shred -u -z "$HOME/.rpmmacros" 2>/dev/null || rm -f "$HOME/.rpmmacros" || true
+          fi
+          # clear passphrase from environment
+          unset GPG_PASSPHRASE || true
+          export GPG_PASSPHRASE=''
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
