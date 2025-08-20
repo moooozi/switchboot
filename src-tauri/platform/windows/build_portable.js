@@ -5,16 +5,6 @@ import fsPromises from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
-function randomSuffix(len = 6) {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  const bytes = crypto.randomBytes(len);
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[bytes[i] % chars.length];
-  }
-  return out;
-}
 
 function escapeForNSIS(s) {
   if (!s) return "";
@@ -58,11 +48,7 @@ async function main() {
     return parts.join(".");
   }
   const viProductVersion = normalizeToFour(productVersion);
-  // User requested FileVersion always '1.0'
   const fileVersion = "1.0";
-
-  const suffix = randomSuffix(6);
-  console.log("Using suffix:", suffix);
 
   const metaLines = [];
   metaLines.push(`!define PRODUCTNAME "${escapeForNSIS(product)} Portable"`);
@@ -75,8 +61,6 @@ async function main() {
   metaLines.push(`!define PUBLISHER "${escapeForNSIS(publisher)}"`);
   metaLines.push(`!define COPYRIGHT "${escapeForNSIS(copyright)}"`);
   metaLines.push(`!define IDENTIFIER "${escapeForNSIS(identifier)}"`);
-  // Define SUFFIX so NSIS script can use it (avoids passing /DSUFFIX on command line)
-  metaLines.push(`!define SUFFIX "${escapeForNSIS(suffix)}"`);
 
   const metaPath = path.join(scriptDir, "metadata.nsh");
   await fsPromises.writeFile(metaPath, metaLines.join("\n"), {
@@ -153,7 +137,7 @@ async function main() {
       .join("..\\..\\target\\x86_64-pc-windows-msvc\\release\\");
     generatedNsisPath = path.join(
       scriptDir,
-      `nsis-portable.generated.${suffix}.nsi`
+      `nsis-portable.generated.nsi`
     );
     await fsPromises.writeFile(generatedNsisPath, replaced, {
       encoding: "utf8",

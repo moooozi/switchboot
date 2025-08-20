@@ -4,10 +4,7 @@
   !include "metadata.nsh"
 !endif
 Outfile "..\..\target\release\bundle\portable_win\Switchboot_${PRODUCT_VERSION}_x64-portable.exe"
-!ifndef SUFFIX
-  !define SUFFIX "DEV"
-!endif
-InstallDir "$TEMP\SwitchbootPortable-${SUFFIX}"
+InstallDir "$TEMP\${IDENTIFIER}-${PRODUCT_VERSION}"
 RequestExecutionLevel user
 SilentInstall silent
 SetOverwrite off
