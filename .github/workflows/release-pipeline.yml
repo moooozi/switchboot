@@ -19,6 +19,7 @@ jobs:
     uses: ./.github/workflows/linux-build.yml
     with:
       tag: ${{ github.ref_name }}
+    secrets: inherit
 
   build-windows:
     uses: ./.github/workflows/windows-build.yml

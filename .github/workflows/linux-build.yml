@@ -190,10 +190,51 @@ jobs:
             exit 1
           fi
 
+      - name: Install RPM signing tools (rpm, gnupg, expect)
+        if: steps.secrets_check.outputs.have_gpg == 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Installing packages required for signing RPMs..."
+          sudo apt-get update
+          sudo apt-get install -y rpm gnupg expect
+
+      - name: Sign RPM packages (embed signature)
+        if: steps.secrets_check.outputs.have_gpg == 'true'
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -e
+          echo "Importing GPG private key for RPM signing..."
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          # Determine GPG user name from the imported secret key
+          GPG_KEY_NAME=$(gpg --list-secret-keys --with-colons | awk -F: '/^uid:/ {print $10; exit}')
+          if [ -z "$GPG_KEY_NAME" ]; then
+            echo "Failed to determine GPG key name" >&2
+            exit 1
+          fi
+
+          echo "Configuring rpm macros for GPG: $GPG_KEY_NAME"
+          mkdir -p ~/.gnupg
+          # Ensure gpg uses loopback pinentry for non-interactive passphrase
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf || true
+          gpgconf --kill gpg-agent || true
+          echo "%_signature gpg" > ~/.rpmmacros
+          echo "%_gpg_name $GPG_KEY_NAME" >> ~/.rpmmacros
+
+          # Sign each rpm in-place using expect to provide passphrase
+          for rpm in artifacts/*.rpm; do
+            if [ -f "$rpm" ]; then
+              echo "Signing $rpm"
+              expect -c "spawn rpm --addsign '$rpm'; expect \"Enter pass phrase:\"; send \"$GPG_PASSPHRASE\\r\"; expect eof"
+            fi
+          done
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Use the tag output (includes leading 'v') so the release pipeline
-          # can download artifacts using the tag name (e.g. linux-artifacts-v0.1.1)
           name: linux-artifacts-${{ steps.ver.outputs.tag }}
           path: artifacts/*
