@@ -23,7 +23,6 @@
     }
   },
   "bundle": {
-    "resources": ["resources/icons"],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",

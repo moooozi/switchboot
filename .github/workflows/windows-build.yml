@@ -246,63 +246,8 @@ jobs:
           Write-Output "nsis_artifact=$($nsis.Name)" >> $env:GITHUB_OUTPUT
           Write-Output "portable_artifact=$($portable.Name)" >> $env:GITHUB_OUTPUT
 
-      - name: Sign artifacts with GPG
-        if: ${{ steps.secrets_check.outputs.have_gpg == 'true' }}
-        uses: ./.github/actions/gpg-sign
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            artifacts/${{ steps.collect.outputs.nsis_artifact }};artifacts/${{ steps.collect.outputs.portable_artifact }}
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-      - name: Sign bundled artifacts (Authenticode)
-        if: ${{ steps.secrets_check.outputs.have_cert == 'true' }}
-        uses: ./.github/actions/authenticode-sign
-        with:
-          files: |
-            artifacts/${{ steps.collect.outputs.nsis_artifact }};artifacts/${{ steps.collect.outputs.portable_artifact }}
-        env:
-          CERT_PFX: ${{ secrets.CERT_PFX }}
-          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-
-      - name: Verify Authenticode signatures on artifacts
-        if: ${{ steps.secrets_check.outputs.have_cert == 'true' }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $nsis = Join-Path $PWD "artifacts/${{ steps.collect.outputs.nsis_artifact }}"
-          $portable = Join-Path $PWD "artifacts/${{ steps.collect.outputs.portable_artifact }}"
-
-          $files = @($nsis, $portable)
-          foreach ($f in $files) {
-            if (Test-Path $f) {
-              Write-Host "Running signtool verify on: $f"
-              & signtool verify /pa /v $f
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "signtool verification failed for $f"
-                exit 1
-              }
-            } else {
-              Write-Host "Not found, skipping verification: $f"
-            }
-          }
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Switchboot ${{ steps.ver.outputs.version }}
-          body: |
-            Switchboot ${{ steps.ver.outputs.version }} released
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts to release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/${{ steps.collect.outputs.nsis_artifact }}
-            artifacts/${{ steps.collect.outputs.portable_artifact }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: windows-artifacts-${{ steps.ver.outputs.version }}
+          path: artifacts/*

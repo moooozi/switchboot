@@ -1,0 +1,6 @@
+{
+  "identifier": "com.switchboot.app",
+  "bundle": {
+    "resources": ["resources/icons"]
+  }
+}

@@ -1,0 +1,140 @@
+name: Sign and Release
+
+permissions:
+  contents: write
+
+on:
+  workflow_run:
+    workflows:
+      - "Linux Build"
+      - "Windows Build"
+    types:
+      - completed
+
+concurrency:
+  group: sign-and-release
+  cancel-in-progress: true
+
+jobs:
+  gather-sign-release:
+    name: Gather, Sign, and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure tools (jq, unzip)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+
+      - name: Compute release version and tag
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" =~ refs/tags/v(.+) ]]; then
+            ver="${BASH_REMATCH[1]}"
+          else
+            ver=$(python -c "import json,sys;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          fi
+          echo "version=$ver" >> $GITHUB_OUTPUT
+          echo "tag=v$ver" >> $GITHUB_OUTPUT
+
+      - name: Wait for build artifact jobs to finish
+        # rely on uploading artifacts in build pipelines; give a reasonable timeout loop
+        shell: bash
+        run: |
+          echo "Event name: $GITHUB_EVENT_NAME"
+          echo "Waiting up to 15 minutes for build artifacts to appear in the repository artifacts..."
+          deadline=$((SECONDS + 900))
+          found=0
+          while [ $SECONDS -lt $deadline ]; do
+            # use GitHub REST API to list workflow run artifacts for this repo
+            artifacts=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts")
+            # prefer artifacts that contain the version string
+            ver="${{ steps.ver.outputs.version }}"
+            echo "$artifacts" | jq -r '.artifacts[]?.name' | grep -E "linux-artifacts-$ver|windows-artifacts-$ver" >/dev/null 2>&1 && { found=1; break; }
+            # fallback: any linux/windows artifact
+            echo "$artifacts" | jq -r '.artifacts[]?.name' | grep -E "linux-artifacts-|windows-artifacts-" >/dev/null 2>&1 && { found=1; break; }
+            sleep 10
+          done
+          if [ $found -ne 1 ]; then
+            echo "Timed out waiting for artifacts; continuing and attempting to download what exists."
+          else
+            echo "Artifacts appear available."
+          fi
+
+      - name: List available artifacts (debug)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts" | jq -r '.artifacts[] | "- \(.name) (id:\(.id))"'
+
+      - name: Create artifacts dir
+        run: mkdir -p artifacts
+
+      - name: Download linux artifacts
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # download latest artifact with name starting linux-artifacts-
+          ver="${{ steps.ver.outputs.version }}"
+          art=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts" | jq -r ".artifacts[] | select(.name|test(\"^linux-artifacts-.*$ver.*\")) | .archive_download_url" | head -n1)
+          if [ -n "$art" ]; then
+            echo "Found linux artifact: $art"
+            curl -L -H "Authorization: Bearer $GITHUB_TOKEN" -o /tmp/linux-artifacts.zip "$art"
+            unzip -o /tmp/linux-artifacts.zip -d artifacts || true
+          else
+            echo "No linux artifact found"
+          fi
+
+      - name: Download windows artifacts
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          art=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts" | jq -r ".artifacts[] | select(.name|test(\"^windows-artifacts-.*$ver.*\")) | .archive_download_url" | head -n1)
+          if [ -n "$art" ]; then
+            echo "Found windows artifact: $art"
+            curl -L -H "Authorization: Bearer $GITHUB_TOKEN" -o /tmp/windows-artifacts.zip "$art"
+            unzip -o /tmp/windows-artifacts.zip -d artifacts || true
+          else
+            echo "No windows artifact found"
+          fi
+
+      - name: Show artifacts folder
+        run: ls -la artifacts || true
+
+      - name: Sign artifacts with GPG
+        uses: ./.github/actions/gpg-sign
+        with:
+          files: |
+            artifacts/*
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Switchboot ${{ steps.ver.outputs.version }}
+          body: |
+            Switchboot ${{ steps.ver.outputs.version }} released
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
