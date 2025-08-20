@@ -148,6 +148,15 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
+      # Optional: cache the Rust build target directory to speed up repeated CI runs.
+      - name: Cache Cargo build target (optional)
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-
+
       - name: Build frontend and Tauri (no bundle)
         run: |
           pnpm tauri icon ./app-icon.svg
