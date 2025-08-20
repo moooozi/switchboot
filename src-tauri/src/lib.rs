@@ -2,6 +2,7 @@ use std::process::Command;
 mod cli_user;
 pub mod config;
 pub mod types;
+pub mod build_info;
 #[cfg(target_os = "linux")]
 use cli_user::call_cli;
 #[cfg(target_os = "windows")]
@@ -9,7 +10,9 @@ use cli_user::get_cli;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutConfig, APP_IDENTIFIER};
+pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutConfig};
+// Re-export build metadata from top-level module
+pub use build_info::APP_IDENTIFIER;
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]

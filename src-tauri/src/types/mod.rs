@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 mod cli_args;
 
-#[allow(dead_code)] // Currently unused on Windows
-pub const APP_IDENTIFIER: &str = "com.switchboot.app";
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShortcutConfig {
     pub name: String,

@@ -1,9 +1,10 @@
+use crate::build_info;
 use named_pipe_ipc::{NamedPipeClientStruct, NamedPipeServerStruct};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
-pub const PIPE_NAME: &str = "ca9ba1f9-4aaa-486f-8ce4-f69453af0c6c";
+pub const PIPE_NAME: &str = build_info::APP_IDENTIFIER_VERSION;
 
 /// Synchronous wrapper for backwards compatibility - maintains connection but uses sync stdin
 #[cfg(windows)]
@@ -11,7 +12,7 @@ pub fn run_pipe_client() {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
     // Create client once and maintain connection
-    let mut client = rt
+    let mut client: NamedPipeClientStruct = rt
         .block_on(async {
             let mut client = NamedPipeClientStruct::new_encrypted(PIPE_NAME, None);
             match client.connect().await {

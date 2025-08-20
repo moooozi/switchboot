@@ -1,5 +1,6 @@
 mod cli;
 pub use cli::logic;
+mod build_info;
 mod types;
 
 #[cfg(windows)]
