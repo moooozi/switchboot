@@ -1,0 +1,6 @@
+[switchboot]
+name=Switchboot Repository
+baseurl=https://moooozi.github.io/switchboot/rpm/x86_64/
+enabled=1
+gpgcheck=1
+gpgkey=https://moooozi.github.io/switchboot/rpm/RPM-GPG-KEY-switchboot

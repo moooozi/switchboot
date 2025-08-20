@@ -23,8 +23,8 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
 
-  sign-and-release:
-    name: Sign and Release
+  create-release:
+    name: Create Release
     runs-on: ubuntu-latest
     needs:
       - build-linux
@@ -82,3 +82,10 @@ jobs:
           files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-repository:
+    uses: ./.github/workflows/update-repository.yml
+    needs: create-release
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

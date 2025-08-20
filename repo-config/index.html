@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Switchboot Package Repository</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .code {
+        background-color: #f4f4f4;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+      }
+      pre {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Switchboot Package Repository</h1>
+
+    <h2>APT Repository (Debian/Ubuntu)</h2>
+    <p>To add this repository to your system:</p>
+
+    <div class="code">
+      <pre>
+# Add GPG key
+wget -qO- https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg | sudo apt-key add -
+
+# Add repository
+echo "deb https://moooozi.github.io/switchboot/deb stable main" | sudo tee /etc/apt/sources.list.d/switchboot.list
+
+# Update and install
+sudo apt update
+sudo apt install switchboot</pre
+      >
+    </div>
+
+    <h2>RPM Repository (Fedora/RHEL/CentOS)</h2>
+    <p>To add this repository to your system:</p>
+
+    <div class="code">
+      <pre>
+sudo wget -O /etc/yum.repos.d/switchboot.repo https://moooozi.github.io/switchboot/rpm/switchboot.repo</pre
+      >
+    </div>
+
+    <p>Then install Switchboot:</p>
+    <div class="code">
+      <pre>sudo dnf install switchboot</pre>
+    </div>
+
+    <p>Or for older systems:</p>
+    <div class="code">
+      <pre>sudo yum install switchboot</pre>
+    </div>
+
+    <h3>Manual Installation</h3>
+    <p>
+      You can also download packages directly from the
+      <a href="https://github.com/moooozi/switchboot/releases"
+        >GitHub releases page</a
+      >.
+    </p>
+
+    <h3>Repository Contents</h3>
+    <ul>
+      <li><a href="rpm/">RPM Repository</a></li>
+      <li><a href="rpm/RPM-GPG-KEY-switchboot">RPM GPG Public Key</a></li>
+      <li>
+        <a href="rpm/switchboot.repo">RPM Repository Configuration File</a>
+      </li>
+      <li><a href="deb/">DEB Repository</a></li>
+      <li>
+        <a href="deb/switchboot-archive-keyring.gpg">DEB GPG Public Key</a>
+      </li>
+      <li><a href="deb/switchboot.list">DEB Sources List Entry</a></li>
+    </ul>
+  </body>
+</html>

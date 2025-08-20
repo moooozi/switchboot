@@ -1,0 +1,113 @@
+name: Update Package Repository
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to update repository for'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  update-repository:
+    name: Update Package Repository
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifacts-${{ inputs.tag }}
+          path: artifacts
+
+      - name: Setup repository structure
+        run: |
+          mkdir -p repo/rpm/x86_64
+          mkdir -p repo/deb/pool/main/s/switchboot
+          mkdir -p repo/deb/dists/stable/main/binary-amd64
+          cp artifacts/*.rpm repo/rpm/x86_64/ || true
+          cp artifacts/*.deb repo/deb/pool/main/s/switchboot/ || true
+          cp repo-config/switchboot.repo repo/rpm/
+          cp repo-config/switchboot.list repo/deb/
+          cp repo-config/index.html repo/index.html
+
+      - name: Export GPG public key
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --armor --export > repo/rpm/RPM-GPG-KEY-switchboot
+          gpg --armor --export > repo/deb/switchboot-archive-keyring.gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Generate RPM repository metadata
+        run: |
+          sudo apt-get update && sudo apt-get install -y createrepo-c dpkg-dev
+          createrepo_c repo/rpm/x86_64/
+          
+      - name: Generate DEB repository metadata
+        run: |
+          cd repo/deb
+          dpkg-scanpackages pool/ > dists/stable/main/binary-amd64/Packages
+          gzip -k dists/stable/main/binary-amd64/Packages
+          
+          # Create Release file
+          cat > dists/stable/Release << EOF
+          Origin: Switchboot Repository
+          Label: Switchboot
+          Suite: stable
+          Codename: stable
+          Date: $(date -Ru)
+          Architectures: amd64
+          Components: main
+          Description: Switchboot Package Repository
+          EOF
+          
+          # Add checksums to Release file
+          cd dists/stable
+          echo "MD5Sum:" >> Release
+          find . -name "Packages*" -exec md5sum {} \; | sed 's/\.\///g' >> Release
+          echo "SHA1:" >> Release
+          find . -name "Packages*" -exec sha1sum {} \; | sed 's/\.\///g' >> Release
+          echo "SHA256:" >> Release
+          find . -name "Packages*" -exec sha256sum {} \; | sed 's/\.\///g' >> Release
+          
+      - name: Sign repository metadata
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          
+          # Sign RPM repository
+          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor repo/rpm/x86_64/repodata/repomd.xml
+          
+          # Sign DEB repository Release file
+          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --clearsign --output repo/deb/dists/stable/InRelease repo/deb/dists/stable/Release
+          gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor --output repo/deb/dists/stable/Release.gpg repo/deb/dists/stable/Release
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload repository to Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./repo
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
