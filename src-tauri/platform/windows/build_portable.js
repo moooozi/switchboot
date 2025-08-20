@@ -85,16 +85,47 @@ async function main() {
   console.log("Wrote", metaPath);
   console.log(await fsPromises.readFile(metaPath, "utf8"));
 
-  // Try to find makensis in PATH first
+  // Try to find makensis in PATH first. On Windows CI runners `which` may
+  // return MSYS-style paths like `/c/Program Files (x86)/NSIS/makensis` which
+  // cannot be directly spawned by Node. Prefer `where` on Windows and
+  // normalize MSYS paths to native Windows paths.
   let makensisPath = "makensis";
   let foundInPath = false;
   try {
-    const which = spawnSync("which", ["makensis"]);
-    if (which.status === 0) {
-      makensisPath = which.stdout.toString().trim();
-      foundInPath = true;
+    if (process.platform === "win32") {
+      const whereRes = spawnSync("where", ["makensis"]);
+      if (whereRes.status === 0) {
+        makensisPath = whereRes.stdout.toString().split(/\r?\n/)[0].trim();
+        foundInPath = true;
+      } else {
+        // fallback to which if where isn't available (rare)
+        const which = spawnSync("which", ["makensis"]);
+        if (which.status === 0) {
+          makensisPath = which.stdout.toString().trim();
+          foundInPath = true;
+        }
+      }
+    } else {
+      const which = spawnSync("which", ["makensis"]);
+      if (which.status === 0) {
+        makensisPath = which.stdout.toString().trim();
+        foundInPath = true;
+      }
     }
   } catch {}
+
+  // If we found an MSYS-style path on Windows (/c/...), convert it to a
+  // proper Windows path and ensure it has an .exe extension so spawnSync can
+  // locate it.
+  if (foundInPath && process.platform === "win32") {
+    let p = makensisPath;
+    const msysMatch = p.match(/^\/([a-zA-Z])\/(.*)/);
+    if (msysMatch) {
+      p = msysMatch[1] + ":\\" + msysMatch[2].split("/").join("\\");
+    }
+    if (!/\.exe$/i.test(p)) p = p + ".exe";
+    makensisPath = p;
+  }
 
   // If not found in PATH, use the hardcoded Windows path
   if (!foundInPath) {
