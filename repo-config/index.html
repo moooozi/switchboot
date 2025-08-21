@@ -3,84 +3,413 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Switchboot Package Repository</title>
+    <title>Switchboot - Installation Guide</title>
     <style>
+      :root {
+        --bg-color: #ffffff;
+        --text-color: #333333;
+        --code-bg: #f5f5f5;
+        --code-border: #e1e1e1;
+        --link-color: #0066cc;
+        --link-hover: #0052a3;
+        --button-bg: #0066cc;
+        --button-hover: #0052a3;
+        --button-text: #ffffff;
+        --border-color: #e1e1e1;
+        --section-bg: #f9f9f9;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #1a1a1a;
+          --text-color: #e1e1e1;
+          --code-bg: #2d2d2d;
+          --code-border: #404040;
+          --link-color: #66b3ff;
+          --link-hover: #4da6ff;
+          --button-bg: #66b3ff;
+          --button-hover: #4da6ff;
+          --button-text: #1a1a1a;
+          --border-color: #404040;
+          --section-bg: #252525;
+        }
+
+        /* Dark scrollbar */
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: #555 #2d2d2d;
+        }
+
+        *::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        *::-webkit-scrollbar-track {
+          background: #2d2d2d;
+        }
+
+        *::-webkit-scrollbar-thumb {
+          background-color: #555;
+          border-radius: 4px;
+        }
+
+        *::-webkit-scrollbar-thumb:hover {
+          background-color: #666;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        font-family: Arial, sans-serif;
-        max-width: 800px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, sans-serif;
+        max-width: 900px;
         margin: 0 auto;
         padding: 20px;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        line-height: 1.6;
+        transition: background-color 0.3s ease, color 0.3s ease;
       }
-      .code {
-        background-color: #f4f4f4;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 10px 0;
+
+      h1 {
+        text-align: center;
+        margin-bottom: 2rem;
+        font-size: 2.5rem;
+        font-weight: 300;
       }
+
+      h2 {
+        color: var(--text-color);
+        border-bottom: 2px solid var(--border-color);
+        padding-bottom: 0.5rem;
+        margin-top: 2.5rem;
+        margin-bottom: 1rem;
+        font-size: 1.8rem;
+      }
+
+      h3 {
+        color: var(--text-color);
+        margin-top: 2rem;
+        margin-bottom: 0.5rem;
+        font-size: 1.3rem;
+      }
+
+      p {
+        margin-bottom: 1rem;
+      }
+
+      a {
+        color: var(--link-color);
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+
+      a:hover {
+        color: var(--link-hover);
+        text-decoration: underline;
+      }
+
+      .code-block {
+        position: relative;
+        background-color: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        margin: 1rem 0;
+        overflow: hidden;
+      }
+
+      .code-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background-color: var(--section-bg);
+        border-bottom: 1px solid var(--code-border);
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .copy-button {
+        background-color: var(--button-bg);
+        color: var(--button-text);
+        border: none;
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
+      }
+
+      .copy-button:hover {
+        background-color: var(--button-hover);
+      }
+
+      .copy-button.copied {
+        background-color: #28a745;
+      }
+
       pre {
         margin: 0;
+        padding: 1rem;
+        overflow-x: auto;
+        font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+
+      code {
+        font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+        background-color: var(--code-bg);
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+
+      .installation-section {
+        background-color: var(--section-bg);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        border: 1px solid var(--border-color);
+      }
+
+      .quick-links {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      .download-button {
+        background-color: var(--button-bg);
+        color: var(--button-text);
+        border: none;
+        padding: 0.8rem 1.2rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+        transition: background-color 0.3s ease, transform 0.2s ease;
+        margin: 0.5rem 0.5rem 0.5rem 0;
+      }
+
+      .download-button:hover {
+        background-color: var(--button-hover);
+        transform: translateY(-1px);
+        text-decoration: none;
+        color: var(--button-text);
+      }
+
+      .download-button.secondary {
+        background-color: var(--section-bg);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+      }
+
+      .download-button.secondary:hover {
+        background-color: var(--code-bg);
+        color: var(--text-color);
+      }
+
+      .repo-links {
+        margin-top: 2rem;
+      }
+
+      .repo-links ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .repo-links li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .repo-links li:last-child {
+        border-bottom: none;
+      }
+
+      @media (max-width: 768px) {
+        body {
+          padding: 1rem;
+        }
+
+        h1 {
+          font-size: 2rem;
+        }
+
+        h2 {
+          font-size: 1.5rem;
+        }
+
+        .quick-links {
+          grid-template-columns: 1fr;
+        }
+
+        .download-button {
+          display: block;
+          margin: 0.5rem 0;
+        }
       }
     </style>
   </head>
   <body>
-    <h1>Switchboot Package Repository</h1>
+    <h1>Switchboot</h1>
 
-    <h2>APT Repository (Debian/Ubuntu)</h2>
-    <p>To add this repository to your system:</p>
+    <h2>Installation</h2>
 
-    <div class="code">
-      <pre>
-# Add GPG key
-wget -qO- https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg | sudo apt-key add -
+    <div class="installation-section">
+      <h3>Debian / Ubuntu & derivatives (APT)</h3>
+      <p>Add the repository and key, then install:</p>
 
-# Add repository
-echo "deb https://moooozi.github.io/switchboot/deb stable main" | sudo tee /etc/apt/sources.list.d/switchboot.list
+      <div class="code-block">
+        <div class="code-header">
+          <span>Bash</span>
+          <button
+            class="copy-button"
+            onclick="copyToClipboard(this, 'apt-install')"
+          >
+            Copy
+          </button>
+        </div>
+        <pre id="apt-install"># Download the repository keyring into the system keyrings directory
+sudo wget -qO /usr/share/keyrings/switchboot-archive-keyring.gpg \
+   https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg
+
+# Add the repository
+echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] \
+https://moooozi.github.io/switchboot/deb stable main" | \
+sudo tee /etc/apt/sources.list.d/switchboot.list
 
 # Update and install
 sudo apt update
-sudo apt install switchboot</pre
-      >
+sudo apt install -y switchboot</pre>
+      </div>
+
+      <p>
+        Or get the latest <code>.deb</code> package from the
+        <a href="https://github.com/moooozi/switchboot/releases/latest"
+          >releases page</a
+        >
+        (no automatic updates).
+      </p>
     </div>
 
-    <h2>RPM Repository (Fedora/RHEL/CentOS)</h2>
-    <p>To add this repository to your system:</p>
+    <div class="installation-section">
+      <h3>Fedora / OpenSUSE & derivatives (RPM)</h3>
 
-    <div class="code">
-      <pre>
-sudo wget -O /etc/yum.repos.d/switchboot.repo https://moooozi.github.io/switchboot/rpm/switchboot.repo</pre
-      >
+      <div class="code-block">
+        <div class="code-header">
+          <span>Bash</span>
+          <button
+            class="copy-button"
+            onclick="copyToClipboard(this, 'rpm-install')"
+          >
+            Copy
+          </button>
+        </div>
+        <pre id="rpm-install"># Add repo
+sudo wget -O /etc/yum.repos.d/switchboot.repo \
+https://moooozi.github.io/switchboot/rpm/switchboot.repo
+
+# Install
+sudo dnf install switchboot
+# or on older systems
+sudo yum install switchboot</pre>
+      </div>
+
+      <p>
+        Or get the latest <code>.rpm</code> package from the
+        <a href="https://github.com/moooozi/switchboot/releases/latest"
+          >releases page</a
+        >
+        (no automatic updates).
+      </p>
     </div>
 
-    <p>Then install Switchboot:</p>
-    <div class="code">
-      <pre>sudo dnf install switchboot</pre>
+    <div class="installation-section">
+      <h3>Windows (installer / portable)</h3>
+      <p>
+        Download the latest version for Windows:
+      </p>
+      
+      <div class="quick-links">
+        <a
+          href="https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe"
+          class="download-button"
+          >Windows Installer</a
+        >
+        <a
+          href="https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe"
+          class="download-button secondary"
+          >Portable Version</a
+        >
+        <a 
+          href="https://github.com/moooozi/switchboot/releases/latest"
+          class="download-button secondary"
+          >All Releases</a
+        >
+      </div>
     </div>
 
-    <p>Or for older systems:</p>
-    <div class="code">
-      <pre>sudo yum install switchboot</pre>
+    <div class="repo-links">
+      <h3>Repository Contents</h3>
+      <ul>
+        <li><a href="rpm/RPM-GPG-KEY-switchboot">RPM GPG Public Key</a></li>
+        <li>
+          <a href="rpm/switchboot.repo">RPM Repository Configuration File</a>
+        </li>
+        <li>
+          <a href="deb/switchboot-archive-keyring.gpg">DEB GPG Public Key</a>
+        </li>
+        <li><a href="deb/switchboot.list">DEB Sources List Entry</a></li>
+      </ul>
     </div>
 
-    <h3>Manual Installation</h3>
-    <p>
-      You can also download packages directly from the
-      <a href="https://github.com/moooozi/switchboot/releases"
-        >GitHub releases page</a
-      >.
-    </p>
+    <script>
+      function copyToClipboard(button, elementId) {
+        const element = document.getElementById(elementId);
+        const text = element.textContent;
 
-    <h3>Repository Contents</h3>
-    <ul>
-      <li><a href="rpm/">RPM Repository</a></li>
-      <li><a href="rpm/RPM-GPG-KEY-switchboot">RPM GPG Public Key</a></li>
-      <li>
-        <a href="rpm/switchboot.repo">RPM Repository Configuration File</a>
-      </li>
-      <li><a href="deb/">DEB Repository</a></li>
-      <li>
-        <a href="deb/switchboot-archive-keyring.gpg">DEB GPG Public Key</a>
-      </li>
-      <li><a href="deb/switchboot.list">DEB Sources List Entry</a></li>
-    </ul>
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            const originalText = button.textContent;
+            button.textContent = "Copied!";
+            button.classList.add("copied");
+
+            setTimeout(() => {
+              button.textContent = originalText;
+              button.classList.remove("copied");
+            }, 2000);
+          })
+          .catch(() => {
+            // Fallback for older browsers
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+
+            const originalText = button.textContent;
+            button.textContent = "Copied!";
+            button.classList.add("copied");
+
+            setTimeout(() => {
+              button.textContent = originalText;
+              button.classList.remove("copied");
+            }, 2000);
+          });
+      }
+    </script>
   </body>
 </html>
