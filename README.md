@@ -6,6 +6,7 @@
 </div>
 
 <a id="quick-links"></a>
+
 ## Quick links
 
 - [Latest Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe)
@@ -35,6 +36,7 @@ echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] https:/
 sudo apt update
 sudo apt install -y switchboot
 ```
+
 Or get the latest `.deb` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
 ### Fedora / OpenSUSE & derivatives (RPM)
@@ -48,9 +50,10 @@ sudo dnf install switchboot
 # or on older systems
 sudo yum install switchboot
 ```
+
 Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
-## How to self-compile
+## How to compile
 
 Prerequisites:
 
