@@ -2,7 +2,7 @@
 
 <div style="display:flex;align-items:flex-start;gap:12px">
    <img src="./app-icon.svg" alt="Switchboot app icon" width="64" height="64" />
-   <p style="margin:0">Switchboot is a tiny cross-platform tool for managing and switching boot entries with a Svelte + Tauri UI and native helpers packaged for Windows, DEB, and RPM.</p>
+   <p style="margin:0">SwitchBoot is a tiny tool that lets you manage EFI boot entries on your machine.</p>
 </div>
 
 <a id="quick-links"></a>
@@ -12,10 +12,6 @@
 - [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe)(See [limitations](#portable-limitations))
 - [Set up APT repository (Debian/Ubuntu)](#deb)
 - [Set up RPM repository (Fedora/OpenSUSE)](#rpm)
-
-## Introduction
-
-This repository contains the Switchboot web UI (Svelte), Tauri native code (`src-tauri/`), and packaging/helpers to produce Windows installers, DEB, and RPM packages. Releases publish packaged artifacts and a small GitHub Pages site that hosts APT/RPM repository metadata and keys.
 
 ## Install
 
@@ -78,16 +74,16 @@ pnpm tauri build
 pnpm bundle:portable
 ```
 
-## Repo layout
+## Software stack
+
+This repository contains the Switchboot web UI (Svelte), Tauri code, and packaging/helpers to produce Windows installers, DEB, and RPM packages. All release and repository files are built automatically by GitHub Actions, using open-source [workflow scripts](https://github.com/moooozi/switchboot/tree/main/.github/workflows).
+
+### Repo layout
 
 - `src/` — Svelte frontend
 - `src-tauri/` — Rust + Tauri code
 - `repo-config/` — static content published to Pages to host APT/RPM repo
 - `.github/workflows/` — CI and release pipelines
-
-## License
-
-Please see `LICENSE` in the repository root if present, or contact the project owner for licensing details.
 
 ## Support
 

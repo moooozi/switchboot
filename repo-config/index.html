@@ -280,7 +280,8 @@
             Copy
           </button>
         </div>
-        <pre id="apt-install"># Download the repository keyring into the system keyrings directory
+        <pre id="apt-install">
+# Download the repository keyring into the system keyrings directory
 sudo wget -qO /usr/share/keyrings/switchboot-archive-keyring.gpg \
    https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg
 
@@ -291,7 +292,8 @@ sudo tee /etc/apt/sources.list.d/switchboot.list
 
 # Update and install
 sudo apt update
-sudo apt install -y switchboot</pre>
+sudo apt install -y switchboot</pre
+        >
       </div>
 
       <p>
@@ -316,14 +318,16 @@ sudo apt install -y switchboot</pre>
             Copy
           </button>
         </div>
-        <pre id="rpm-install"># Add repo
+        <pre id="rpm-install">
+# Add repo
 sudo wget -O /etc/yum.repos.d/switchboot.repo \
 https://moooozi.github.io/switchboot/rpm/switchboot.repo
 
 # Install
 sudo dnf install switchboot
 # or on older systems
-sudo yum install switchboot</pre>
+sudo yum install switchboot</pre
+        >
       </div>
 
       <p>
@@ -337,10 +341,8 @@ sudo yum install switchboot</pre>
 
     <div class="installation-section">
       <h3>Windows (installer / portable)</h3>
-      <p>
-        Download the latest version for Windows:
-      </p>
-      
+      <p>Download the latest version for Windows:</p>
+
       <div class="quick-links">
         <a
           href="https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe"
@@ -352,7 +354,7 @@ sudo yum install switchboot</pre>
           class="download-button secondary"
           >Portable Version</a
         >
-        <a 
+        <a
           href="https://github.com/moooozi/switchboot/releases/latest"
           class="download-button secondary"
           >All Releases</a
