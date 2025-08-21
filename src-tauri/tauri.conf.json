@@ -33,7 +33,7 @@
     },
     "linux": {
       "deb": {
-        "depends": ["policykit-1"],
+        "depends": ["polkitd"],
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
           "/usr/share/icons/hicolor": "icons-linux/hicolor",

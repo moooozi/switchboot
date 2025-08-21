@@ -83,7 +83,7 @@ jobs:
           set -e
           echo "Installing repository management tools..."
           sudo apt-get update
-          sudo apt-get install -y createrepo-c dpkg-dev
+          sudo apt-get install -y createrepo-c dpkg-dev apt-utils
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
@@ -91,9 +91,18 @@ jobs:
         run: |
           set -e
           echo "Setting up GPG and exporting public key..."
+          # import private key so we can export the public part
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+          # Export RPM-style ASCII public key for RPM consumers
           gpg --armor --export > repo/rpm/RPM-GPG-KEY-switchboot
-          gpg --armor --export > repo/deb/switchboot-archive-keyring.gpg
+
+          # Export an ASCII-armored public key and also produce a dearmored binary keyring
+          # suitable for apt's signed-by usage
+          gpg --armor --export > repo/deb/switchboot-archive-keyring.asc
+          gpg --dearmor repo/deb/switchboot-archive-keyring.asc > repo/deb/switchboot-archive-keyring.gpg
+          rm -f repo/deb/switchboot-archive-keyring.asc
+
           echo "GPG public key exported successfully"
 
       - name: Generate RPM repository metadata
@@ -119,29 +128,13 @@ jobs:
 
           echo "Generating DEB repository metadata..."
           cd repo/deb
-          dpkg-scanpackages pool/ > dists/stable/main/binary-amd64/Packages
-          gzip -k dists/stable/main/binary-amd64/Packages
 
-          echo "Creating Release file..."
-          cat > dists/stable/Release << EOF
-          Origin: Switchboot Repository
-          Label: Switchboot
-          Suite: stable
-          Codename: stable
-          Date: $(date -Ru)
-          Architectures: amd64
-          Components: main
-          Description: Switchboot Package Repository
-          EOF
+          # Use apt-ftparchive to generate Packages and Release files with correct formatting
+          apt-ftparchive packages pool/main/s/switchboot > dists/stable/main/binary-amd64/Packages
+          gzip -kf dists/stable/main/binary-amd64/Packages
 
-          echo "Adding checksums to Release file..."
-          cd dists/stable
-          echo "MD5Sum:" >> Release
-          find . -name "Packages*" -exec md5sum {} \; | sed 's/\.\///g' >> Release
-          echo "SHA1:" >> Release
-          find . -name "Packages*" -exec sha1sum {} \; | sed 's/\.\///g' >> Release
-          echo "SHA256:" >> Release
-          find . -name "Packages*" -exec sha256sum {} \; | sed 's/\.\///g' >> Release
+          # Generate a Release file with proper checksums and sizes
+          apt-ftparchive release dists/stable > dists/stable/Release
 
           echo "DEB repository metadata generated successfully"
 
