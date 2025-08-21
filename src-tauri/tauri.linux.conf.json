@@ -1,6 +1,0 @@
-{
-  "identifier": "dev.zidane.switchboot",
-  "build": {
-    "beforeBuildCommand": "pnpm build && chmod +x platform/linux/links/switchboot-cli-nopass"
-  }
-}
