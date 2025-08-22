@@ -162,41 +162,28 @@ def main():
 
     rpm_files = list_packages(rpm_dir, '.rpm')
     deb_files = list_packages(deb_dir, '.deb')
+    rpm_map = {}
+    # If RPM files exist, require the `rpm` tool to be present. Do not fall back to filename parsing.
+    if rpm_files and not shutil.which('rpm'):
+        print('rpm tool not found but RPM packages are present in repo; install `rpm` and re-run.')
+        return 4
 
     rpm_map = {}
     for p in rpm_files:
-        bn = os.path.basename(p)
-        name = None
-        v = None
-        # Prefer using rpm -qp for accurate metadata when available
-        if shutil.which('rpm'):
-            try:
-                out = subprocess.check_output([
-                    'rpm', '-qp', '--qf', '%{NAME}|%{VERSION}-%{RELEASE}\n', p
-                ], stderr=subprocess.DEVNULL, text=True)
-                out = out.strip()
-                if '|' in out:
-                    name, ver_str = out.split('|', 1)
-                    v = Version.parse(ver_str)
-            except Exception:
-                # fall back to filename parsing below
-                name = None
-
-        if name is None:
-            # extract package name: attempt to find the first '-' before a digit (start of version)
-            # strip .rpm if present
-            bn_noext = bn
-            if bn_noext.endswith('.rpm'):
-                bn_noext = bn_noext[:-4]
-            m = re.match(r"^(.+?)-(?=\d)", bn_noext)
-            if m:
-                name = m.group(1)
-            else:
-                # fallback: take prefix before first '-'
-                name = bn_noext.split('-')[0]
-            # try to parse version from filename as fallback
-            if v is None:
-                v = extract_ver_from_rpm(bn_noext)
+        try:
+            out = subprocess.check_output([
+                'rpm', '-qp', '--qf', '%{NAME}|%{VERSION}-%{RELEASE}\n', p
+            ], stderr=subprocess.DEVNULL, text=True)
+        except subprocess.CalledProcessError:
+            # unable to query this rpm, skip with warning
+            print(f'Warning: failed to read RPM metadata for {p}; skipping')
+            continue
+        out = out.strip()
+        if '|' not in out:
+            print(f'Warning: rpm metadata unexpected for {p}: {out}; skipping')
+            continue
+        name, ver_str = out.split('|', 1)
+        v = Version.parse(ver_str)
 
         # only process packages that match the specified app name
         if name != app_name:
@@ -204,34 +191,31 @@ def main():
 
         rpm_map.setdefault(name, []).append((v, p))
 
+    # If DEB files exist, require the `dpkg-deb` tool to be present. Do not fall back to filename parsing.
+    if deb_files and not shutil.which('dpkg-deb'):
+        print('dpkg-deb tool not found but DEB packages are present in repo; install `dpkg-deb` and re-run.')
+        return 5
+
     deb_map = {}
     for p in deb_files:
-        bn = os.path.basename(p)
-        name = None
-        v = None
-        # Prefer using dpkg-deb to read package metadata when available
-        if shutil.which('dpkg-deb'):
-            try:
-                pkg = subprocess.check_output(['dpkg-deb', '-f', p, 'Package'], stderr=subprocess.DEVNULL, text=True).strip()
-                ver_str = subprocess.check_output(['dpkg-deb', '-f', p, 'Version'], stderr=subprocess.DEVNULL, text=True).strip()
-                if pkg:
-                    name = pkg
-                if ver_str:
-                    v = Version.parse(ver_str)
-            except Exception:
-                name = None
-
-        if name is None:
-            # fallback to filename parsing: name_version_arch.deb
-            name = bn.split('_')[0]
-            if v is None:
-                v = extract_ver_from_deb(bn)
-
-        # only process packages that match the specified app name
-        if name != app_name:
+        try:
+            pkg = subprocess.check_output(['dpkg-deb', '-f', p, 'Package'], stderr=subprocess.DEVNULL, text=True).strip()
+            ver_str = subprocess.check_output(['dpkg-deb', '-f', p, 'Version'], stderr=subprocess.DEVNULL, text=True).strip()
+        except subprocess.CalledProcessError:
+            print(f'Warning: failed to read DEB metadata for {p}; skipping')
             continue
 
-        deb_map.setdefault(name, []).append((v, p))
+        if not pkg:
+            print(f'Warning: dpkg-deb produced empty Package for {p}; skipping')
+            continue
+
+        v = Version.parse(ver_str)
+
+        # only process packages that match the specified app name
+        if pkg != app_name:
+            continue
+
+        deb_map.setdefault(pkg, []).append((v, p))
 
     kept = set()
     deleted = set()
