@@ -97,6 +97,11 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+      - name: Set git user for CI tagging
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Ensure tag exists (delete existing tag only)
         shell: bash
         env:
@@ -126,10 +131,8 @@ jobs:
             git tag -d "$TAG" || true
           fi
 
-          # Create annotated tag at current HEAD and push
-          echo "Creating annotated tag $TAG at HEAD"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "refs/tags/$TAG"
+          # No new tag will be created or pushed
+          echo "Tag deletion complete; not creating a new tag."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
