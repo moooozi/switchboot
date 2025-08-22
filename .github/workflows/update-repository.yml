@@ -182,6 +182,9 @@ jobs:
           echo "Generating DEB repository metadata..."
           cd repo/deb
 
+          # Ensure dists directories exist (prune may have removed empty dirs)
+          mkdir -p dists/stable/main/binary-amd64
+
           # Use apt-ftparchive to generate Packages and Release files with correct formatting
           apt-ftparchive packages pool/main/s/switchboot > dists/stable/main/binary-amd64/Packages
           gzip -kf dists/stable/main/binary-amd64/Packages
