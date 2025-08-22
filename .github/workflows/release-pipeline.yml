@@ -38,6 +38,27 @@ jobs:
           echo "version=$ver" >> $GITHUB_OUTPUT
           echo "tag=v$ver" >> $GITHUB_OUTPUT
 
+      - name: Check repository tags for existing or greater versions
+        id: check_repo_tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_version.outputs.tag }}"
+
+          # If FORCE_REPO_UPDATE exists in repo-config, emit a visible warning and skip the check
+          if [ -f repo-config/FORCE_REPO_UPDATE ]; then
+            echo "::warning::FORCE_REPO_UPDATE present in repo-config/ — forcing repo update. Consider removing this file after use."
+            exit 0
+          fi
+
+          echo "Checking existing git tags for versions >= $TAG"
+          if ! python3 scripts/check_tag_against_repo.py "$TAG"; then
+            rc=$?
+            echo "::error::Tag check failed with exit code ${rc}. An equal or higher tag may already exist in the repository."
+            echo "To override and force the repository update, create the file 'repo-config/FORCE_REPO_UPDATE' in the repository root and re-run the workflow (use with caution)."
+            exit $rc
+          fi
+
   build-linux:
     needs: prepare
     uses: ./.github/workflows/linux-build.yml

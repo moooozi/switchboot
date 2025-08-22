@@ -53,6 +53,12 @@ jobs:
         run: |
           set -e
           echo "Downloading existing repository from GitHub Pages..."
+          # Construct GitHub Pages base URL dynamically so forks/workflows don't need hardcoded owner/repo
+          # GITHUB_REPOSITORY is provided by the runner in the form 'owner/repo'
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          PAGES_BASE_URL="https://${OWNER}.github.io/${REPO}"
+          echo "Using Pages base URL: ${PAGES_BASE_URL}"
           mkdir -p repo/rpm/x86_64
           mkdir -p repo/deb/pool/main/s/switchboot
           mkdir -p repo/deb/dists/stable/main/binary-amd64
@@ -62,11 +68,11 @@ jobs:
           # NOTE: Do NOT exclude repodata here. We need existing repodata when present
           # so we can update/merge repository metadata instead of replacing it.
           wget -r -np -nH --cut-dirs=1 -R "index.html*" \
-            https://moooozi.github.io/switchboot/rpm/x86_64/ -P repo || echo "No existing RPM packages found (this is OK for first release)"
+            ${PAGES_BASE_URL}/rpm/x86_64/ -P repo || echo "No existing RPM packages found (this is OK for first release)"
 
           echo "Attempting to download existing DEB packages..."
           wget -r -np -nH --cut-dirs=1 -R "index.html*" -A "*.deb" \
-            https://moooozi.github.io/switchboot/deb/pool/main/s/switchboot/ -P repo || echo "No existing DEB packages found (this is OK for first release)"
+            ${PAGES_BASE_URL}/deb/pool/main/s/switchboot/ -P repo || echo "No existing DEB packages found (this is OK for first release)"
 
       - name: Setup repository structure
         shell: bash
@@ -131,12 +137,23 @@ jobs:
 
           echo "GPG public key exported successfully"
 
-      - name: Prune to keep last two versions
+      - name: Prune repository (new logic)
         shell: bash
         run: |
-          set -e
-          chmod +x scripts/prune_keep_two.sh
-          ./scripts/prune_keep_two.sh repo || true
+          set -euo pipefail
+          # Determine prune flags
+          PRUNE_ALLOW_GREATER=0
+          if [ -f repo-config/PRUNE_ALLOW_GREATER_VERSION ]; then
+            PRUNE_ALLOW_GREATER=1
+            echo "PRUNE_ALLOW_GREATER_VERSION present: newer-than-current versions will be preserved during prune"
+          fi
+
+          if [ -f repo-config/FORCE_DISABLE_PRUNE ]; then
+            echo "FORCE_DISABLE_PRUNE present: skipping pruning step"
+          else
+            echo "Running prune script with current tag: ${INPUTS_TAG:-${{ inputs.tag }}}"
+            python3 scripts/prune_repo.py repo "switchboot" "${{ inputs.tag }}" $PRUNE_ALLOW_GREATER || true
+          fi
 
       - name: Generate RPM repository metadata
         shell: bash
