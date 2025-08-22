@@ -53,6 +53,3 @@ path = "src/cli_bin.rs"
 lto = "fat"
 opt-level = 3
 codegen-units = 1
-
-[target.x86_64-pc-windows-msvc]
-linker = "rust-lld"
