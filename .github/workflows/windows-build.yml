@@ -92,9 +92,6 @@ jobs:
           path: src-tauri/target
           # Include rustc version in the key to avoid restoring incompatible builds
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rustc }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-
-            cargo-target-
 
       - name: Compute release version from tag
         id: ver
