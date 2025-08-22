@@ -20,6 +20,7 @@
 
 See [Quick links](#quick-links) above or visit the [Releases page](https://github.com/moooozi/switchboot/releases/latest):
 
+<a id="deb"></a>
 ### Debian / Ubuntu & derivatives (APT)
 
 Add the repository and key, then install:
@@ -39,6 +40,7 @@ sudo apt install -y switchboot
 
 Or get the latest `.deb` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
+<a id="rpm"></a>
 ### Fedora / OpenSUSE & derivatives (RPM)
 
 ```bash
