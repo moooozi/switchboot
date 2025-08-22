@@ -10,6 +10,8 @@ Usage: prune_repo.py <repo_root> <app_name> <tag> <allow_greater_flag>
 import os
 import re
 import sys
+import subprocess
+import shutil
 from functools import total_ordering
 
 
@@ -163,33 +165,72 @@ def main():
 
     rpm_map = {}
     for p in rpm_files:
-        # extract package name: attempt to find the first '-' before a digit (start of version)
         bn = os.path.basename(p)
-        # try to match name-version... pattern
-        m = re.match(r"^(.+?)-(?=\d)", bn)
-        if m:
-            name = m.group(1)
-        else:
-            # fallback: take prefix before first '-'
-            name = bn.split('-')[0]
-        
+        name = None
+        v = None
+        # Prefer using rpm -qp for accurate metadata when available
+        if shutil.which('rpm'):
+            try:
+                out = subprocess.check_output([
+                    'rpm', '-qp', '--qf', '%{NAME}|%{VERSION}-%{RELEASE}\n', p
+                ], stderr=subprocess.DEVNULL, text=True)
+                out = out.strip()
+                if '|' in out:
+                    name, ver_str = out.split('|', 1)
+                    v = Version.parse(ver_str)
+            except Exception:
+                # fall back to filename parsing below
+                name = None
+
+        if name is None:
+            # extract package name: attempt to find the first '-' before a digit (start of version)
+            # strip .rpm if present
+            bn_noext = bn
+            if bn_noext.endswith('.rpm'):
+                bn_noext = bn_noext[:-4]
+            m = re.match(r"^(.+?)-(?=\d)", bn_noext)
+            if m:
+                name = m.group(1)
+            else:
+                # fallback: take prefix before first '-'
+                name = bn_noext.split('-')[0]
+            # try to parse version from filename as fallback
+            if v is None:
+                v = extract_ver_from_rpm(bn_noext)
+
         # only process packages that match the specified app name
         if name != app_name:
             continue
-            
-        v = extract_ver_from_rpm(bn)
+
         rpm_map.setdefault(name, []).append((v, p))
 
     deb_map = {}
     for p in deb_files:
         bn = os.path.basename(p)
-        name = bn.split('_')[0]
-        
+        name = None
+        v = None
+        # Prefer using dpkg-deb to read package metadata when available
+        if shutil.which('dpkg-deb'):
+            try:
+                pkg = subprocess.check_output(['dpkg-deb', '-f', p, 'Package'], stderr=subprocess.DEVNULL, text=True).strip()
+                ver_str = subprocess.check_output(['dpkg-deb', '-f', p, 'Version'], stderr=subprocess.DEVNULL, text=True).strip()
+                if pkg:
+                    name = pkg
+                if ver_str:
+                    v = Version.parse(ver_str)
+            except Exception:
+                name = None
+
+        if name is None:
+            # fallback to filename parsing: name_version_arch.deb
+            name = bn.split('_')[0]
+            if v is None:
+                v = extract_ver_from_deb(bn)
+
         # only process packages that match the specified app name
         if name != app_name:
             continue
-            
-        v = extract_ver_from_deb(bn)
+
         deb_map.setdefault(name, []).append((v, p))
 
     kept = set()
