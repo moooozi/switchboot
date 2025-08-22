@@ -62,11 +62,11 @@ jobs:
           # NOTE: Do NOT exclude repodata here. We need existing repodata when present
           # so we can update/merge repository metadata instead of replacing it.
           wget -r -np -nH --cut-dirs=1 -R "index.html*" \
-            https://moooozi.github.io/switchboot/rpm/x86_64/ -P repo/rpm/ || echo "No existing RPM packages found (this is OK for first release)"
+            https://moooozi.github.io/switchboot/rpm/x86_64/ -P repo || echo "No existing RPM packages found (this is OK for first release)"
 
           echo "Attempting to download existing DEB packages..."
           wget -r -np -nH --cut-dirs=1 -R "index.html*" -A "*.deb" \
-            https://moooozi.github.io/switchboot/deb/pool/main/s/switchboot/ -P repo/deb/pool/main/s/ || echo "No existing DEB packages found (this is OK for first release)"
+            https://moooozi.github.io/switchboot/deb/pool/main/s/switchboot/ -P repo || echo "No existing DEB packages found (this is OK for first release)"
 
       - name: Setup repository structure
         shell: bash
