@@ -138,13 +138,25 @@ jobs:
           # persist cargo bin in subsequent steps
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
+      - name: Capture Rust toolchain version
+        id: rustver
+        shell: bash
+        run: |
+          # capture a concise rust toolchain string (e.g. 1.76.0)
+          if command -v rustc >/dev/null 2>&1; then
+            rv=$(rustc --version | awk '{print $2}') || rv="unknown"
+          else
+            rv="unknown"
+          fi
+          echo "rust_version=$rv" >> $GITHUB_OUTPUT
+
       - name: Cache Cargo registry and git
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
@@ -153,7 +165,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: src-tauri/target
-          key: cargo-target-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
           restore-keys: |
             cargo-target-${{ runner.os }}-
 

@@ -48,28 +48,48 @@ jobs:
           name: linux-artifacts-${{ inputs.tag }}
           path: artifacts
 
-      - name: Setup repository structure
+      - name: Download existing repository
         shell: bash
         run: |
           set -e
-          echo "Setting up repository directory structure..."
+          echo "Downloading existing repository from GitHub Pages..."
           mkdir -p repo/rpm/x86_64
           mkdir -p repo/deb/pool/main/s/switchboot
           mkdir -p repo/deb/dists/stable/main/binary-amd64
 
-          echo "Copying artifacts to repository structure..."
+          # Try to download existing packages (ignore failures for first release)
+          echo "Attempting to download existing RPM packages..."
+          # NOTE: Do NOT exclude repodata here. We need existing repodata when present
+          # so we can update/merge repository metadata instead of replacing it.
+          wget -r -np -nH --cut-dirs=1 -R "index.html*" \
+            https://moooozi.github.io/switchboot/rpm/x86_64/ -P repo/rpm/ || echo "No existing RPM packages found (this is OK for first release)"
+
+          echo "Attempting to download existing DEB packages..."
+          wget -r -np -nH --cut-dirs=1 -R "index.html*" -A "*.deb" \
+            https://moooozi.github.io/switchboot/deb/pool/main/s/switchboot/ -P repo/deb/pool/main/s/ || echo "No existing DEB packages found (this is OK for first release)"
+
+      - name: Setup repository structure
+        shell: bash
+        run: |
+          set -e
+          echo "Adding new artifacts to repository structure..."
+
+          echo "Copying new RPM packages..."
           if ls artifacts/*.rpm 1> /dev/null 2>&1; then
             cp artifacts/*.rpm repo/rpm/x86_64/
-            echo "Copied RPM packages"
+            echo "Added new RPM packages"
+            ls -la repo/rpm/x86_64/*.rpm
           else
-            echo "No RPM packages found"
+            echo "No new RPM packages found"
           fi
 
+          echo "Copying new DEB packages..."
           if ls artifacts/*.deb 1> /dev/null 2>&1; then
             cp artifacts/*.deb repo/deb/pool/main/s/switchboot/
-            echo "Copied DEB packages"
+            echo "Added new DEB packages"
+            ls -la repo/deb/pool/main/s/switchboot/*.deb
           else
-            echo "No DEB packages found"
+            echo "No new DEB packages found"
           fi
 
           echo "Copying repository configuration files..."
@@ -77,13 +97,19 @@ jobs:
           cp repo-config/switchboot.list repo/deb/
           cp repo-config/index.html repo/index.html
 
+          echo "Repository contents summary:"
+          echo "RPM packages:"
+          ls -la repo/rpm/x86_64/ || echo "No RPM directory"
+          echo "DEB packages:"
+          ls -la repo/deb/pool/main/s/switchboot/ || echo "No DEB directory"
+
       - name: Install system dependencies
         shell: bash
         run: |
           set -e
           echo "Installing repository management tools..."
           sudo apt-get update
-          sudo apt-get install -y createrepo-c dpkg-dev apt-utils
+          sudo apt-get install -y createrepo-c dpkg-dev apt-utils rpm
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
@@ -105,13 +131,40 @@ jobs:
 
           echo "GPG public key exported successfully"
 
+      - name: Prune to keep last two versions
+        shell: bash
+        run: |
+          set -e
+          chmod +x scripts/prune_keep_two.sh
+          ./scripts/prune_keep_two.sh repo || true
+
       - name: Generate RPM repository metadata
         shell: bash
         run: |
           set -e
           echo "Generating RPM repository metadata..."
           if ls repo/rpm/x86_64/*.rpm 1> /dev/null 2>&1; then
-            createrepo_c repo/rpm/x86_64/
+            # If repodata already exists (from previous published site) use --update
+            # to merge new packages into existing metadata. Otherwise create fresh metadata.
+            if [ -d "repo/rpm/x86_64/repodata" ]; then
+              echo "Existing repodata found, updating repository metadata..."
+              echo "--- repodata before update ---"
+              ls -la repo/rpm/x86_64/repodata || true
+              echo "--- repomd.xml (head) ---"
+              head -n 40 repo/rpm/x86_64/repodata/repomd.xml || true
+              createrepo_c --update repo/rpm/x86_64/
+              echo "--- repodata after update ---"
+              ls -la repo/rpm/x86_64/repodata || true
+              echo "--- repomd.xml (head) after update ---"
+              head -n 40 repo/rpm/x86_64/repodata/repomd.xml || true
+            else
+              echo "No existing repodata found, generating repository metadata..."
+              createrepo_c repo/rpm/x86_64/
+              echo "--- repodata after generation ---"
+              ls -la repo/rpm/x86_64/repodata || true
+              echo "--- repomd.xml (head) ---"
+              head -n 40 repo/rpm/x86_64/repodata/repomd.xml || true
+            fi
             echo "RPM repository metadata generated successfully"
           else
             echo "No RPM packages found, skipping metadata generation"
@@ -170,6 +223,15 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Generate directory indexes
+        shell: bash
+        run: |
+          set -e
+          echo "Generating final index.html files for repo/"
+          node --version || true
+          chmod +x scripts/generate_indexes.js || true
+          node scripts/generate_indexes.js repo || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
