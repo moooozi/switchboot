@@ -205,6 +205,8 @@ jobs:
           # Sign RPM repository if it exists
           if [ -f "repo/rpm/x86_64/repodata/repomd.xml" ]; then
             echo "Signing RPM repository metadata..."
+            # Remove old signature if it exists
+            rm -f repo/rpm/x86_64/repodata/repomd.xml.asc repo/rpm/x86_64/repodata/repomd.xml.gpg
             gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
               --detach-sign --armor repo/rpm/x86_64/repodata/repomd.xml
             echo "RPM repository signed successfully"
