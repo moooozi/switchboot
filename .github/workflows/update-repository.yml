@@ -231,10 +231,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          echo "Generating final index.html files for repo/"
+          echo "Generating final index.html files for repo/rpm and repo/deb only (not root repo/)"
           node --version || true
           chmod +x scripts/generate_indexes.js || true
-          node scripts/generate_indexes.js repo || true
+          node scripts/generate_indexes.js repo/rpm repo/deb || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
