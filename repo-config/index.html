@@ -306,7 +306,7 @@ sudo apt install switchboot</pre
     </div>
 
     <div class="installation-section">
-      <h3>Fedora & derivatives (RPM)</h3>
+      <h3>Fedora & derivatives</h3>
 
       <div class="code-block">
         <div class="code-header">
@@ -320,11 +320,33 @@ sudo apt install switchboot</pre
         </div>
         <pre id="rpm-install">
 # Add repo
-sudo wget -O /etc/yum.repos.d/switchboot.repo \
-https://moooozi.github.io/switchboot/rpm/switchboot.repo
+sudo dnf install dnf-plugins-core
+sudo dnf config-manager --add-repo https://moooozi.github.io/switchboot/rpm/switchboot.repo
 
 # Install
 sudo dnf install switchboot</pre
+        >
+      </div>
+      <h3>openSUSE & derivatives</h3>
+      <p>Add the repository, refresh, and install:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>Bash</span>
+          <button
+            class="copy-button"
+            onclick="copyToClipboard(this, 'zypper-install')"
+          >
+            Copy
+          </button>
+        </div>
+        <pre id="zypper-install">
+# Add repo
+sudo zypper addrepo https://moooozi.github.io/switchboot/rpm/switchboot.repo
+
+# Refresh and install
+sudo zypper refresh
+sudo zypper install switchboot</pre
         >
       </div>
 

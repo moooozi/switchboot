@@ -49,7 +49,8 @@ On Fedora & derivatives:
 
 ```bash
 # Add repo
-sudo wget -O /etc/yum.repos.d/switchboot.repo https://moooozi.github.io/switchboot/rpm/switchboot.repo
+sudo dnf install dnf-plugins-core
+sudo dnf config-manager --add-repo https://moooozi.github.io/switchboot/rpm/switchboot.repo
 
 # Install
 sudo dnf install switchboot
@@ -59,7 +60,7 @@ On openSUSE & derivatives:
 
 ```bash
 # Add repo
-sudo zypper ar https://moooozi.github.io/switchboot/rpm/switchboot.repo
+sudo zypper addrepo https://moooozi.github.io/switchboot/rpm/switchboot.repo
 
 # Refresh and install
 sudo zypper refresh
