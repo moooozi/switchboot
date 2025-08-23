@@ -187,8 +187,14 @@ jobs:
       - name: Generate DEB repository metadata
         shell: bash
         run: |
+
           set -e
-          if ! ls repo/deb/pool/main/s/switchboot/*.deb 1> /dev/null 2>&1; then
+
+          DIST_NAME=stable
+          PKG_NAME=switchboot
+          PKG_LETTER=${PKG_NAME:0:1}
+
+          if ! ls repo/deb/pool/main/$PKG_LETTER/$PKG_NAME/*.deb 1> /dev/null 2>&1; then
             echo "No DEB packages found, skipping metadata generation"
             exit 0
           fi
@@ -197,14 +203,17 @@ jobs:
           cd repo/deb
 
           # Ensure dists directories exist (prune may have removed empty dirs)
-          mkdir -p dists/stable/main/binary-amd64
+          mkdir -p dists/$DIST_NAME/main/binary-amd64
 
           # Use apt-ftparchive to generate Packages and Release files with correct formatting
-          apt-ftparchive packages pool/main/s/switchboot > dists/stable/main/binary-amd64/Packages
-          gzip -kf dists/stable/main/binary-amd64/Packages
+          apt-ftparchive packages pool/main/$PKG_LETTER/$PKG_NAME > dists/$DIST_NAME/main/binary-amd64/Packages
+          gzip -kf dists/$DIST_NAME/main/binary-amd64/Packages
 
-          # Generate a Release file with proper checksums and sizes
-          apt-ftparchive release dists/stable > dists/stable/Release
+          # Generate a Release file with proper checksums and sizes, and set Codename and Suite for compatibility
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Codename=$DIST_NAME \
+            -o APT::FTPArchive::Release::Suite=$DIST_NAME \
+            release dists/$DIST_NAME > dists/$DIST_NAME/Release
 
           echo "DEB repository metadata generated successfully"
 
