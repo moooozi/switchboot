@@ -21,6 +21,7 @@
 See [Quick links](#quick-links) above or visit the [Releases page](https://github.com/moooozi/switchboot/releases/latest):
 
 <a id="deb"></a>
+
 ### Debian / Ubuntu & derivatives (APT)
 
 Add the repository and key, then install:
@@ -35,12 +36,13 @@ echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] https:/
 
 # Update and install
 sudo apt update
-sudo apt install -y switchboot
+sudo apt install switchboot
 ```
 
 Or get the latest `.deb` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
 <a id="rpm"></a>
+
 ### Fedora / OpenSUSE & derivatives (RPM)
 
 ```bash
@@ -49,8 +51,6 @@ sudo wget -O /etc/yum.repos.d/switchboot.repo https://moooozi.github.io/switchbo
 
 # Install
 sudo dnf install switchboot
-# or on older systems
-sudo yum install switchboot
 ```
 
 Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
