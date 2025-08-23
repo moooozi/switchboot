@@ -43,7 +43,9 @@ Or get the latest `.deb` package from the [Releases page](https://github.com/moo
 
 <a id="rpm"></a>
 
-### Fedora / OpenSUSE & derivatives (RPM)
+### Fedora & openSUSE (RPM)
+
+On Fedora & derivatives:
 
 ```bash
 # Add repo
@@ -52,6 +54,18 @@ sudo wget -O /etc/yum.repos.d/switchboot.repo https://moooozi.github.io/switchbo
 # Install
 sudo dnf install switchboot
 ```
+
+On openSUSE & derivatives:
+
+```bash
+# Add repo
+sudo zypper ar https://moooozi.github.io/switchboot/rpm/switchboot.repo
+
+# Refresh and install
+sudo zypper refresh
+sudo zypper install switchboot
+```
+
 
 Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
