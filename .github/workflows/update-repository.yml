@@ -129,11 +129,8 @@ jobs:
           # Export RPM-style ASCII public key for RPM consumers
           gpg --armor --export > repo/rpm/RPM-GPG-KEY-switchboot
 
-          # Export an ASCII-armored public key and also produce a dearmored binary keyring
-          # suitable for apt's signed-by usage
-          gpg --armor --export > repo/deb/switchboot-archive-keyring.asc
-          gpg --dearmor repo/deb/switchboot-archive-keyring.asc > repo/deb/switchboot-archive-keyring.gpg
-          rm -f repo/deb/switchboot-archive-keyring.asc
+          # Export a dearmored binary keyring suitable for apt's signed-by usage
+          gpg --export | gpg --dearmor > repo/deb/switchboot-archive-keyring.gpg
 
           echo "GPG public key exported successfully"
 
