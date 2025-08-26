@@ -3,14 +3,14 @@ name: Update Package Repository
 on:
   workflow_call:
     inputs:
-      tag:
-        description: "Git tag to update repository for (e.g. v0.1.1)"
+      version:
+        description: "Version to update repository for (e.g. v0.1.1)"
         required: true
         type: string
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Git tag to update repository for (e.g. v0.1.1)"
+      version:
+        description: "Version to update repository for (e.g. v0.1.1)"
         required: true
         type: string
 
@@ -45,7 +45,7 @@ jobs:
       - name: Download linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-artifacts-${{ inputs.tag }}
+          name: linux-artifacts-${{ inputs.version }}
           path: artifacts
 
       - name: Download existing repository
@@ -148,8 +148,8 @@ jobs:
           if [ -f repo-config/FORCE_DISABLE_PRUNE ]; then
             echo "FORCE_DISABLE_PRUNE present: skipping pruning step"
           else
-            echo "Running prune script with current tag: ${INPUTS_TAG:-${{ inputs.tag }}}"
-            python3 scripts/prune_repo.py repo "switchboot" "${{ inputs.tag }}" $PRUNE_ALLOW_GREATER || true
+            echo "Running prune script with current version: ${INPUTS_VERSION:-${{ inputs.version }}}"
+            python3 scripts/prune_repo.py repo "switchboot" "${{ inputs.version }}" $PRUNE_ALLOW_GREATER || true
           fi
 
       - name: Generate RPM repository metadata

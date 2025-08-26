@@ -5,7 +5,7 @@ Prune repository packages according to rules:
 - Keep the latest previous series release (same major, lower minor) for rollback
 - Optionally remove versions > current unless PRUNE_ALLOW_GREATER is set (arg 4)
 
-Usage: prune_repo.py <repo_root> <app_name> <tag> <allow_greater_flag>
+Usage: prune_repo.py <repo_root> <app_name> <version> <allow_greater_flag>
 """
 import os
 import re
@@ -15,7 +15,7 @@ import shutil
 from functools import total_ordering
 
 
-semver_re = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+semver_re = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
 
 @total_ordering
@@ -46,7 +46,7 @@ class Version:
         return self.major == other.major and self.minor < other.minor
 
     def __repr__(self):
-        return f"v{self.major}.{self.minor}.{self.patch}"
+        return f"{self.major}.{self.minor}.{self.patch}"
 
 
 def list_packages(dirpath, pattern):
@@ -141,19 +141,19 @@ def prune_packages(pkg_map, current_ver, allow_greater):
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: prune_repo.py <repo_root> <app_name> <tag> <allow_greater_flag>")
+        print("Usage: prune_repo.py <repo_root> <app_name> <version> <allow_greater_flag>")
         return 2
 
     repo = sys.argv[1]
     app_name = sys.argv[2]
-    tag = sys.argv[3]
+    version_str = sys.argv[3]
     allow_greater = False
     if len(sys.argv) >= 5 and sys.argv[4] not in ("0", "", None):
         allow_greater = True
 
-    cur = Version.parse(tag)
+    cur = Version.parse(version_str)
     if cur is None:
-        print(f"Cannot parse current version from tag: {tag}")
+        print(f"Cannot parse current version from version string: {version_str}")
         return 3
 
     # collect RPMs and DEBs

@@ -6,9 +6,9 @@ permissions:
 on:
   workflow_call:
     inputs:
-      tag:
-        description: "Optional git tag (e.g. v0.1.1)"
-        required: false
+      version:
+        description: "version (e.g. 0.1.1)"
+        required: true
         type: string
 
 concurrency:
@@ -19,8 +19,6 @@ jobs:
   build-linux:
     name: Build Linux App
     runs-on: ubuntu-22.04
-    env:
-      CALL_TAG: ${{ inputs.tag }}
 
     steps:
       - name: Checkout repository
@@ -28,20 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute release version
-        id: ver
-        shell: bash
-        run: |
-          if [ -n "${CALL_TAG:-}" ]; then
-            # CALL_TAG is expected like 'v0.1.1' or '0.1.1'
-            ver="${CALL_TAG#v}"
-          elif [[ "$GITHUB_REF" =~ refs/tags/v(.+) ]]; then
-            ver="${BASH_REMATCH[1]}"
-          else
-            ver=$(python -c "import json,sys;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
-          fi
-          echo "version=$ver" >> $GITHUB_OUTPUT
-          echo "tag=v$ver" >> $GITHUB_OUTPUT
 
       - name: Check for GPG secret
         id: secrets_check
@@ -238,5 +222,5 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts-${{ steps.ver.outputs.tag }}
+          name: linux-artifacts-${{ inputs.version }}
           path: artifacts/*

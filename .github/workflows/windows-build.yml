@@ -6,9 +6,9 @@ permissions:
 on:
   workflow_call:
     inputs:
-      tag:
-        description: "Optional git tag (e.g. v0.1.1)"
-        required: false
+      version:
+        description: "version (e.g. 0.1.1)"
+        required: true
         type: string
 
 concurrency:
@@ -19,9 +19,6 @@ jobs:
   build-windows:
     name: Build Windows App
     runs-on: windows-latest
-    env:
-      CALL_TAG: ${{ inputs.tag }}
-    # do not map secrets at job-level to minimize blast radius; set them on steps that need them
 
     steps:
       - name: Checkout repository
@@ -93,21 +90,6 @@ jobs:
           # Include rustc version in the key to avoid restoring incompatible builds
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rustc }}
 
-      - name: Compute release version from tag
-        id: ver
-        shell: pwsh
-        run: |
-          # GITHUB_REF example: refs/tags/v0.1.1
-          if ($env:CALL_TAG) {
-            $v = $env:CALL_TAG -replace '^v', ''
-          } else {
-            $ref = $env:GITHUB_REF
-            $v = $ref -replace '^refs/tags/v', ''
-          }
-          $ver = $v
-          Write-Output "version=$ver" >> $env:GITHUB_OUTPUT
-          # Also emit a tag output that includes the leading 'v' for artifact naming consistency
-          Write-Output "tag=v$ver" >> $env:GITHUB_OUTPUT
 
       - name: Locate signtool (Windows SDK) and add to PATH
         id: find_signtool
@@ -229,36 +211,6 @@ jobs:
           CERT_PFX: ${{ secrets.CERT_PFX }}
           CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
 
-      - name: Install NSIS (required for tauri bundle)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "Installing NSIS via Chocolatey"
-          choco install nsis -y --no-progress
-          # Ensure Chocolatey bin is on PATH for subsequent steps
-          $chocoBin = 'C:\ProgramData\chocolatey\bin'
-          if (-not (Test-Path $chocoBin)) {
-            Write-Host "Chocolatey bin directory not found at $chocoBin"
-          } else {
-            Add-Content -Path $env:GITHUB_PATH -Value $chocoBin
-            Write-Host "Added $chocoBin to PATH for remaining steps"
-          }
-
-          # Try to locate makensis; do not fail the step if it's not found (some runners already have it)
-          $nsisCmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
-          if ($nsisCmd) {
-            Write-Host "NSIS found at: $($nsisCmd.Source)"
-          } else {
-            # Try common installation path as a fallback
-            $maybe = Join-Path $chocoBin 'makensis.exe'
-            if (Test-Path $maybe) {
-              Write-Host "NSIS executable found at $maybe (will be available via added PATH)"
-            } else {
-              Write-Host "Warning: makensis.exe was not found in PATH after installation. Proceeding anyway; tauri bundle may fail if makensis is required."
-            }
-          }
-
       - name: Bundle Tauri
         run: pnpm tauri bundle
 
@@ -268,8 +220,6 @@ jobs:
       - name: Collect artifacts
         id: collect
         shell: pwsh
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 
@@ -289,6 +239,5 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Use tag (includes leading 'v') so the release pipeline can download windows-artifacts-vX.Y.Z
-          name: windows-artifacts-${{ steps.ver.outputs.tag }}
+          name: windows-artifacts-${{ inputs.version }}
           path: artifacts/*

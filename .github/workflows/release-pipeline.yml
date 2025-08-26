@@ -63,14 +63,14 @@ jobs:
     needs: prepare
     uses: ./.github/workflows/linux-build.yml
     with:
-      tag: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
     secrets: inherit
 
   build-windows:
     needs: prepare
     uses: ./.github/workflows/windows-build.yml
     with:
-      tag: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
 
   create-release:
     name: Create Release
@@ -89,13 +89,13 @@ jobs:
       - name: Download linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-artifacts-${{ needs.prepare.outputs.tag }}
+          name: linux-artifacts-${{ needs.prepare.outputs.version }}
           path: artifacts
 
       - name: Download windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-artifacts-${{ needs.prepare.outputs.tag }}
+          name: windows-artifacts-${{ needs.prepare.outputs.version }}
           path: artifacts
 
       - name: Show artifacts
@@ -124,38 +124,12 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Ensure tag exists (delete existing tag only)
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="${{ needs.prepare.outputs.tag }}"
-
-          echo "Ensuring tag $TAG is created at current HEAD; if a remote tag exists it will be deleted first (release object will not be touched)"
-
-          git fetch --prune --unshallow 2>/dev/null || true
-          git fetch --prune origin
-
-          # Use the credentials configured by actions/checkout (persist-credentials: true)
-          # Avoid embedding tokens in remote URLs to reduce risk of accidental leakage
-
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
-            echo "Remote tag $TAG exists — deleting remote tag"
-            git push origin :refs/tags/$TAG
-          else
-            echo "No remote tag $TAG found"
-          fi
-
-          # Delete local tag if present
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "Local tag $TAG exists — deleting local tag"
-            git tag -d "$TAG" || true
-          fi
-
-          # Create annotated tag at current HEAD and push
-          echo "Creating annotated tag $TAG at HEAD"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "refs/tags/$TAG"
+        uses: ./.github/actions/create-tag
+        with:
+          tag: ${{ needs.prepare.outputs.tag }}
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -181,5 +155,5 @@ jobs:
       - create-release
     uses: ./.github/workflows/update-repository.yml
     with:
-      tag: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
     secrets: inherit

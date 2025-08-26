@@ -1,0 +1,95 @@
+name: "Create Tag"
+description: "Create (or recreate) an annotated git tag and sign it with a GPG private key passed via inputs, then push to origin. Falls back to unsigned annotated tag when no key provided."
+inputs:
+  tag:
+    description: "Tag name to create (e.g. v1.2.3)"
+    required: true
+  gpg_private_key:
+    description: "ASCII-armored GPG private key block (optional). If empty, tag will be unsigned."
+    required: false
+  gpg_passphrase:
+    description: "Passphrase for the private key if it is encrypted (optional)"
+    required: false
+  keyid:
+    description: "Optional explicit key id/fingerprint to use when multiple keys are present"
+    required: false
+  message:
+    description: 'Tag message (defaults to "Release <tag>")'
+    required: false
+  github_token:
+    description: "GitHub token for pushing tags (GITHUB_TOKEN)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure git fetch state
+      shell: bash
+      run: |
+        set -euo pipefail
+        git fetch --prune --unshallow 2>/dev/null || true
+        git fetch --prune origin
+
+    - name: Create (and sign) tag, push to origin
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        GPG_PRIVATE_KEY: ${{ inputs.gpg_private_key }}
+        GPG_PASSPHRASE: ${{ inputs.gpg_passphrase }}
+        KEYID_INPUT: ${{ inputs.keyid }}
+        MESSAGE: ${{ inputs.message }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+        TAG=${TAG}
+        echo "Ensuring tag $TAG is created at current HEAD; if a remote tag exists it will be deleted first"
+
+        # Delete remote tag if present
+        if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
+          echo "Remote tag $TAG exists — deleting remote tag"
+          git push origin :refs/tags/$TAG
+        else
+          echo "No remote tag $TAG found"
+        fi
+
+        # Delete local tag if present
+        if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+          echo "Local tag $TAG exists — deleting local tag"
+          git tag -d "$TAG" || true
+        fi
+
+        # If a GPG private key is provided, import and sign
+        if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+          echo "GPG key provided — importing and creating a signed tag"
+          export GNUPGHOME="$(mktemp -d)"
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+
+          if [ -n "${KEYID_INPUT:-}" ]; then
+            KEYID="$KEYID_INPUT"
+          else
+            KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
+          fi
+
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            GPG_WRAPPER="$(mktemp)"
+            printf '%s\n' '#!/bin/sh' 'exec gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" "$@"' > "$GPG_WRAPPER"
+            chmod +x "$GPG_WRAPPER"
+            git -c gpg.program="$GPG_WRAPPER" tag -a -s -u "$KEYID" -m "${MESSAGE:-Release $TAG}" "$TAG"
+            rm -f "$GPG_WRAPPER"
+          else
+            git tag -a -s -u "$KEYID" -m "${MESSAGE:-Release $TAG}" "$TAG"
+          fi
+
+          git push origin "refs/tags/$TAG"
+
+          # cleanup
+          if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
+            rm -rf "$GNUPGHOME" || true
+          fi
+        else
+          echo "No GPG key provided — creating unsigned annotated tag"
+          git tag -a "$TAG" -m "${MESSAGE:-Release $TAG}"
+          git push origin "refs/tags/$TAG"
+        fi
