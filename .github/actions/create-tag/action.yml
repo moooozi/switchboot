@@ -44,6 +44,34 @@ runs:
         TAG=${TAG}
         echo "Ensuring tag $TAG is created at current HEAD; if a remote tag exists it will be deleted first"
 
+        # If a GPG private key is provided, import it and configure git to sign commits
+        # before any tag deletion/creation so commits (and any new commits) are signed.
+        if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+          echo "GPG key provided — importing and configuring git to sign commits"
+          export GNUPGHOME="$(mktemp -d)"
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+
+          if [ -n "${KEYID_INPUT:-}" ]; then
+            KEYID="$KEYID_INPUT"
+          else
+            KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
+          fi
+
+          git config --global user.signingkey "$KEYID"
+          git config --global commit.gpgSign true
+
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            GPG_WRAPPER="$(mktemp)"
+            printf '%s\n' '#!/bin/sh' 'exec gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" "$@"' > "$GPG_WRAPPER"
+            chmod +x "$GPG_WRAPPER"
+            git config --global gpg.program "$GPG_WRAPPER"
+          else
+            git config --global gpg.program "gpg"
+          fi
+        fi
+
         # Delete remote tag if present
         if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
           echo "Remote tag $TAG exists — deleting remote tag"
@@ -58,38 +86,14 @@ runs:
           git tag -d "$TAG" || true
         fi
 
-        # If a GPG private key is provided, import and sign
-        if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
-          echo "GPG key provided — importing and creating a signed tag"
-          export GNUPGHOME="$(mktemp -d)"
-          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
-          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
-          gpgconf --kill gpg-agent || true
+        # Create lightweight tag (signed commits will be validated by GitHub)
+        git tag "$TAG"
+        git push origin "refs/tags/$TAG"
 
-          if [ -n "${KEYID_INPUT:-}" ]; then
-            KEYID="$KEYID_INPUT"
-          else
-            KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
-          fi
-
-          if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            GPG_WRAPPER="$(mktemp)"
-            printf '%s\n' '#!/bin/sh' 'exec gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" "$@"' > "$GPG_WRAPPER"
-            chmod +x "$GPG_WRAPPER"
-            git -c gpg.program="$GPG_WRAPPER" tag -a -s -u "$KEYID" -m "${MESSAGE:-Release $TAG}" "$TAG"
-            rm -f "$GPG_WRAPPER"
-          else
-            git tag -a -s -u "$KEYID" -m "${MESSAGE:-Release $TAG}" "$TAG"
-          fi
-
-          git push origin "refs/tags/$TAG"
-
-          # cleanup
-          if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
-            rm -rf "$GNUPGHOME" || true
-          fi
-        else
-          echo "No GPG key provided — creating unsigned annotated tag"
-          git tag -a "$TAG" -m "${MESSAGE:-Release $TAG}"
-          git push origin "refs/tags/$TAG"
+        # cleanup GPG artifacts if we created them
+        if [ -n "${GPG_WRAPPER:-}" ] && [ -f "$GPG_WRAPPER" ]; then
+          rm -f "$GPG_WRAPPER" || true
+        fi
+        if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
+          rm -rf "$GNUPGHOME" || true
         fi
