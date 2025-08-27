@@ -27,7 +27,8 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",
-        "installerHooks": "platform/windows/nsis-hooks.nsi"
+        "installerHooks": "platform/windows/nsis-hooks.nsi",
+        "sidebarImage": "platform/windows/nsis-sidebar-img.bmp"
       },
       "wix": {}
     },
