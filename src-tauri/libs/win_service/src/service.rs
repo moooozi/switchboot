@@ -6,6 +6,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Once};
+use tokio::runtime::Runtime;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{LocalFree, ERROR_CALL_NOT_IMPLEMENTED, HLOCAL};
 const NO_ERROR: u32 = 0;
@@ -21,10 +22,71 @@ use windows::Win32::System::Services::{StartServiceCtrlDispatcherW, SERVICE_TABL
 pub struct ServiceContext {
     pub ready_notify: Option<Arc<tokio::sync::Notify>>,
     pub stop_notify: Option<Arc<tokio::sync::Notify>>,
+    // Optional runtime handle so the service_main can spawn/tasks and
+    // so readiness can be awaited on the same runtime (no cross-runtime waker issues)
+    pub runtime_handle: Option<tokio::runtime::Handle>,
 }
 
 fn to_wide_string(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
+}
+
+// HandlerContext holds state shared with the Windows service control handler.
+// It is allocated as a Box and a raw pointer to it is passed to the OS.
+struct HandlerContext {
+    status_handle: SERVICE_STATUS_HANDLE,
+    stop_notify: Option<Arc<tokio::sync::Notify>>,
+    stop_flag: Arc<AtomicBool>,
+    // Pair of (stop_requested bool, condvar) used by the owning thread to wait
+    // for stop or finish without polling.
+    condvar_pair: Option<Arc<(Mutex<bool>, Condvar)>>,
+}
+
+// The service control handler runs on OS threads and must use the "system" ABI.
+// It receives the pointer to our HandlerContext as the context parameter.
+unsafe extern "system" fn service_handler(
+    control: u32,
+    _event_type: u32,
+    _event_data: *mut std::ffi::c_void,
+    context: *mut std::ffi::c_void,
+) -> u32 {
+    let ctx = &*(context as *const HandlerContext);
+    match control {
+        SERVICE_CONTROL_STOP => {
+            // Set status to STOP_PENDING
+            let status = SERVICE_STATUS {
+                dwServiceType: SERVICE_WIN32_OWN_PROCESS,
+                dwCurrentState: SERVICE_STOP_PENDING,
+                dwControlsAccepted: 0,
+                dwWin32ExitCode: NO_ERROR,
+                dwServiceSpecificExitCode: 0,
+                dwCheckPoint: 0,
+                dwWaitHint: 10000, // 10 seconds
+            };
+            // Only call SetServiceStatus if the status_handle has been initialized
+            if !ctx.status_handle.0.is_null() {
+                let _ = unsafe { SetServiceStatus(ctx.status_handle, &status) };
+            }
+            if let Some(notify) = &ctx.stop_notify {
+                notify.notify_waiters();
+            }
+            // Signal condvar pair if present so owner thread wakes immediately
+            if let Some(pair) = &ctx.condvar_pair {
+                let (lock, cvar) = &**pair;
+                if let Ok(mut guard) = lock.lock() {
+                    *guard = true;
+                }
+                cvar.notify_all();
+            }
+            // Set atomic flag so the main thread (which owns the service handle)
+            // can perform any required SetServiceStatus or shutdown logic.
+            ctx.stop_flag.store(true, Ordering::SeqCst);
+
+            NO_ERROR
+        }
+        SERVICE_CONTROL_INTERROGATE => NO_ERROR,
+        _ => ERROR_CALL_NOT_IMPLEMENTED.0,
+    }
 }
 
 /// Runs a Windows service, calling `service_main` in a new thread.
@@ -54,60 +116,23 @@ where
         None
     };
 
-    // Add a struct to hold both the stop flag and the status handle
-    struct HandlerContext {
-        status_handle: SERVICE_STATUS_HANDLE,
-        stop_notify: Option<Arc<tokio::sync::Notify>>,
-        stop_flag: Arc<AtomicBool>,
-        // Pair of (stop_requested bool, condvar) used by the owning thread to wait
-        // for stop or finish without polling.
-        condvar_pair: Option<Arc<(Mutex<bool>, Condvar)>>,
-    }
+    // Create a single runtime when waiting for readiness. This runtime will be
+    // used to await the readiness Notify so the Notify wakers are driven on
+    // the same runtime the service_main can spawn tasks onto via the Handle.
+    let maybe_runtime: Option<Runtime> = if wait_for_ready {
+        Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build tokio runtime for readiness wait"),
+        )
+    } else {
+        None
+    };
+    let runtime_handle = maybe_runtime.as_ref().map(|rt| rt.handle().clone());
 
-    unsafe extern "system" fn service_handler(
-        control: u32,
-        _event_type: u32,
-        _event_data: *mut std::ffi::c_void,
-        context: *mut std::ffi::c_void,
-    ) -> u32 {
-        let ctx = &*(context as *const HandlerContext);
-        match control {
-            SERVICE_CONTROL_STOP => {
-                // Set status to STOP_PENDING
-                let status = SERVICE_STATUS {
-                    dwServiceType: SERVICE_WIN32_OWN_PROCESS,
-                    dwCurrentState: SERVICE_STOP_PENDING,
-                    dwControlsAccepted: 0,
-                    dwWin32ExitCode: NO_ERROR,
-                    dwServiceSpecificExitCode: 0,
-                    dwCheckPoint: 0,
-                    dwWaitHint: 10000, // 10 seconds
-                };
-                // Only call SetServiceStatus if the status_handle has been initialized
-                if !ctx.status_handle.0.is_null() {
-                    let _ = unsafe { SetServiceStatus(ctx.status_handle, &status) };
-                }
-                if let Some(notify) = &ctx.stop_notify {
-                    notify.notify_waiters();
-                }
-                // Signal condvar pair if present so owner thread wakes immediately
-                if let Some(pair) = &ctx.condvar_pair {
-                    let (lock, cvar) = &**pair;
-                    if let Ok(mut guard) = lock.lock() {
-                        *guard = true;
-                    }
-                    cvar.notify_all();
-                }
-                // Set atomic flag so the main thread (which owns the service handle)
-                // can perform any required SetServiceStatus or shutdown logic.
-                ctx.stop_flag.store(true, Ordering::SeqCst);
-
-                NO_ERROR
-            }
-            SERVICE_CONTROL_INTERROGATE => NO_ERROR,
-            _ => ERROR_CALL_NOT_IMPLEMENTED.0,
-        }
-    }
+    // HandlerContext and service_handler are defined at top-level to keep this
+    // function focused on the high-level control flow.
 
     let service_name_wide = to_wide_string(service_name);
 
@@ -163,6 +188,7 @@ where
         let ctx = ServiceContext {
             ready_notify: ready_notify.clone(),
             stop_notify: Some(stop_notify.clone()),
+            runtime_handle: runtime_handle.clone(),
         };
 
         let ready_check = ready_notify.clone();
@@ -191,12 +217,9 @@ where
 
         // If waiting for readiness, monitor the ready signal
         if wait_for_ready {
-            if let Some(ready) = ready_notify {
-                // Block on readiness or stop notification using a small tokio runtime
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_time()
-                    .build()
-                    .expect("failed to build runtime for readiness wait");
+            if let (Some(ready), Some(rt)) = (ready_notify, maybe_runtime.as_ref()) {
+                // Use the created runtime to await readiness so all Notify wakeups
+                // happen on the same runtime.
                 rt.block_on(async {
                     tokio::select! {
                         _ = ready.notified() => {
@@ -209,8 +232,6 @@ where
                 });
 
                 // Update service status to RUNNING when ready (if stop wasn't triggered)
-                // We have no direct atomic stop flag now; assume if stop_notify fired, we should not proceed.
-                // For simplicity, set RUNNING unconditionally if readiness was signaled.
                 service_status.dwCurrentState = SERVICE_RUNNING;
                 service_status.dwWaitHint = 0;
                 SetServiceStatus(handle_copy, &service_status)?;

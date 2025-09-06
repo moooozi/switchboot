@@ -20,21 +20,22 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
     if let Err(e) = run_service_with_readiness(
         SERVICE_NAME,
         move |ctx| {
-            // Create tokio runtime for async operations
-            let rt =
-                tokio::runtime::Runtime::new().expect("Failed to create tokio runtime in service");
-
-            // Use the service's notify handles for shutdown and readiness when provided
+            // Use the runtime handle provided by the service supervisor so
+            // readiness signaling and task execution occur on the same runtime.
             let shutdown_notify = ctx
                 .stop_notify
                 .clone()
                 .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
             let ready_notify = ctx.ready_notify.clone();
 
-            println!("[SERVICE] Starting tokio-based pipe server...");
+            let rt_handle = ctx
+                .runtime_handle
+                .expect("runtime_handle must be provided when wait_for_ready=true");
 
-            // Run the async pipe server with Windows service shutdown integration and readiness signaling
-            let server_task = rt.spawn(run_pipe_server_async_with_ready(
+            println!("[SERVICE] Starting tokio-based pipe server (shared runtime)...");
+
+            // Spawn the async pipe server onto the shared runtime
+            let server_join = rt_handle.spawn(run_pipe_server_async_with_ready(
                 shutdown_notify,
                 Some(PIPE_SERVER_WAIT_TIMEOUT),
                 false, // Don't wait for new clients in service mode
@@ -43,10 +44,9 @@ pub fn my_service_main(arguments: Vec<std::ffi::OsString>) {
 
             println!("[SERVICE] Waiting for pipe server to complete...");
 
-            // Wait for the server task to complete
-            match rt.block_on(server_task) {
+            // Use the same runtime to await the server task so it actually runs
+            match rt_handle.block_on(server_join) {
                 Ok(Ok(())) => {
-                    // Success case
                     println!("[SERVICE] Pipe server completed successfully");
                 }
                 Ok(Err(server_error)) => {
