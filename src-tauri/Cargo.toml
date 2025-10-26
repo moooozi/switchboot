@@ -30,7 +30,6 @@ bincode = "1"
 rand = { version = "0.9", features = ["small_rng"] }
 
 [target.'cfg(windows)'.dependencies]
-win_service = { path = "./libs/win_service" }
 named_pipe_ipc = { path = "./libs/named_pipe_ipc" }
 tokio = "1"
 chacha20poly1305 = "0.10"
