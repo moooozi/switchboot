@@ -1,6 +1,7 @@
 use crate::build_info;
 use named_pipe_ipc::{NamedPipeClientStruct, NamedPipeServerStruct};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -184,7 +185,7 @@ pub async fn run_pipe_server_async_with_ready(
     shutdown_notify: Arc<Notify>,
     timeout: Option<u64>,
     wait_for_new_client: bool,
-    ready_signal: Option<Arc<tokio::sync::Notify>>,
+    ready_signal: Option<mpsc::Sender<()>>,
 ) -> Result<(), String> {
     use std::sync::atomic::AtomicUsize;
     use tokio::select;
@@ -264,7 +265,7 @@ pub async fn run_pipe_server_async_with_ready(
     let ready_signal_clone = ready_signal.clone();
     let server_task = tokio::spawn(async move {
         if let Some(ready) = ready_signal_clone {
-            ready.notify_waiters();
+            let _ = ready.send(());
             println!("[INFO] Pipe server is ready to accept connections");
         }
         server.start(move |mut connection| {

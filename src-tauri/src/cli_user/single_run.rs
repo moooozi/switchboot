@@ -4,11 +4,7 @@ use std::process::Command;
 pub fn call_cli(cmd: &CliCommand, needs_privilege: bool) -> Result<String, String> {
     let args = cmd.to_args();
 
-    let cli_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .parent()
-        .map(|p| p.join("switchboot-cli"))
-        .ok_or("Failed to find CLI binary")?;
+    let executable_path = std::env::current_exe().map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
     let mut cmd = {
@@ -16,23 +12,29 @@ pub fn call_cli(cmd: &CliCommand, needs_privilege: bool) -> Result<String, Strin
             let mut c = Command::new("pkexec");
             // if the command is allowed to run without interactive auth, prefer
             // the nopass wrapper. Otherwise use the regular CLI binary.
-            let exec_path = if cmd.allow_non_auth_exec() {
-                let mut p = cli_path.clone();
+            if cmd.allow_non_auth_exec() {
+                let mut p = executable_path.clone();
                 p.set_file_name("switchboot-cli-nopass");
-                p
+                c.arg(&p);
+                // nopass wrapper already adds --cli internally
             } else {
-                cli_path.clone()
-            };
-
-            c.arg(&exec_path);
+                c.arg(&executable_path);
+                c.arg("--cli");
+            }
             c
         } else {
-            Command::new(&cli_path)
+            let mut c = Command::new(&executable_path);
+            c.arg("--cli");
+            c
         }
     };
 
     #[cfg(not(target_os = "linux"))]
-    let mut cmd = Command::new(&cli_path);
+    let mut cmd = {
+        let mut c = Command::new(&cli_path);
+        c.arg("--cli");
+        c
+    };
 
     cmd.args(args);
 

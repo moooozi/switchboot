@@ -1,5 +1,5 @@
 #!/bin/bash
-# Symlink to switchboot-cli used by polkit without authentication.
+# Symlink to switchboot used by polkit without authentication.
 # Only allow the first argument to be one of the whitelisted subcommands.
 
 cmd="$1"
@@ -7,7 +7,7 @@ cmd="$1"
 case "$cmd" in
 	set-boot-next|unset-boot-next)
 		# forward the full argv to the real binary
-		exec /usr/bin/switchboot-cli "$@"
+		exec /usr/bin/switchboot --cli "$@"
 		;;
 	*)
 		printf 'Unauthorized subcommand: %s\n' "${cmd:-<empty>}" >&2

@@ -13,16 +13,13 @@ pub struct CliProcess {
 
 impl CliProcess {
     fn start() -> Result<Self, String> {
-        let cli_path = std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .parent()
-            .map(|p| p.join("switchboot-cli"))
-            .ok_or("Failed to find CLI binary")?;
+        let executable_path = std::env::current_exe().map_err(|e| e.to_string())?;
 
         #[cfg(target_os = "linux")]
         let mut cmd = {
             let mut c = Command::new("pkexec");
-            c.arg(&cli_path);
+            c.arg(&executable_path);
+            c.arg("--cli");
             c.arg("--daemon");
             c
         };
@@ -30,7 +27,8 @@ impl CliProcess {
         #[cfg(target_os = "windows")]
         let mut cmd = {
             use crate::windows::is_portable_mode;
-            let mut c = Command::new(&cli_path);
+            let mut c = Command::new(&executable_path);
+            c.arg("--cli");
             if is_portable_mode() {
                 c.arg("/pipe_client");
             } else {

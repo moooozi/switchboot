@@ -1,8 +1,7 @@
 use std::process::Command;
-mod cli_user;
-pub mod config;
-pub mod types;
 pub mod build_info;
+mod cli_user;
+pub mod types;
 #[cfg(target_os = "linux")]
 use cli_user::call_cli;
 #[cfg(target_os = "windows")]
@@ -246,7 +245,7 @@ fn restart_now() -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn is_portable() -> bool {
-    config::is_portable_mode()
+    windows::is_portable_mode()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -256,12 +255,7 @@ fn is_portable() -> bool {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(app_config: Option<config::AppConfig>) {
-    // Initialize configuration if provided
-    if let Some(cfg) = app_config {
-        config::init_config(cfg);
-    }
-
+pub fn run(_app_config: Option<()>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

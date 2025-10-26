@@ -7,7 +7,8 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--cli</annotate>
   </action>
   <action id="com.switchboot.cli.set-boot-next">
     <description>Switchboot: Set boot next without password</description>
