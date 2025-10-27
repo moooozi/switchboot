@@ -10,8 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "icons": "node ./tools/prerender-icons.js",
-    "bundle:portable": "node ./src-tauri/platform/windows/build_portable.js"
+    "icons": "node ./tools/prerender-icons.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
