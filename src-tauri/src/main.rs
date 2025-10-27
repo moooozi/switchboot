@@ -4,10 +4,11 @@
 mod args_parser;
 
 use switchboot_lib::cli::logic;
-use switchboot_lib::constants::PIPE_SERVER_WAIT_TIMEOUT;
 
 #[cfg(windows)]
 use switchboot_lib::cli::windows;
+#[cfg(windows)]
+use switchboot_lib::constants::PIPE_SERVER_WAIT_TIMEOUT;
 
 /// Entry point for the application.
 /// Handles both GUI and CLI modes.

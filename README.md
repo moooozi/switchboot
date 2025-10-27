@@ -67,7 +67,6 @@ sudo zypper refresh
 sudo zypper install switchboot
 ```
 
-
 Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
 
 <a id="portable-limitations"></a>
@@ -93,7 +92,7 @@ pnpm install
 
 # Generate icons
 pnpm icons
-pnpm tauri icon
+pnpm tauri icon ./app-icon.svg
 
 # Build native Tauri app
 pnpm tauri build
