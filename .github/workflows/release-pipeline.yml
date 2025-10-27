@@ -118,6 +118,22 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+      - name: Generate release body
+        id: release_body
+        shell: bash
+        run: |
+          # Construct GitHub Pages URL dynamically
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          PAGES_URL="https://${OWNER}.github.io/${REPO}"
+
+          echo "Generating release body..."
+          python3 scripts/generate_release_body.py artifacts "${{ needs.prepare.outputs.version }}" "$PAGES_URL" > release_body.md
+
+          # Save to output for use in release creation
+          echo "Release body generated successfully"
+          cat release_body.md
+
       - name: Set git user for CI tagging
         run: |
           git config --global user.name "github-actions[bot]"
@@ -136,18 +152,37 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: Switchboot ${{ needs.prepare.outputs.tag }}
-          body: |
-            Switchboot ${{ needs.prepare.outputs.tag }} released
+          body_path: release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare release artifacts (exclude .asc files)
+        id: prepare_release_files
+        shell: bash
+        run: |
+          # Generate newline-separated list of files excluding .asc
+          files=$(find artifacts -type f ! -name "*.asc" -printf '%p\n')
+          echo "Files to upload to release:"
+          echo "$files"
+          # Save to output (newline-separated)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          files: artifacts/*
+          files: ${{ steps.prepare_release_files.outputs.files }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts with signatures for repository update
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-artifacts-${{ needs.prepare.outputs.version }}
+          path: artifacts/*
+          retention-days: 7
 
   update-repository:
     needs:

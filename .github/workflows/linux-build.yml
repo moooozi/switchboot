@@ -26,7 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-
       - name: Check for GPG secret
         id: secrets_check
         shell: bash

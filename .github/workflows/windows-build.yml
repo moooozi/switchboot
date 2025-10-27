@@ -90,7 +90,6 @@ jobs:
           # Include rustc version in the key to avoid restoring incompatible builds
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rustc }}
 
-
       - name: Locate signtool (Windows SDK) and add to PATH
         id: find_signtool
         uses: ./.github/actions/ensure-signtool

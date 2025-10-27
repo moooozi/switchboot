@@ -42,11 +42,26 @@ jobs:
             echo "have_gpg=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download linux artifacts
+      - name: Download signed artifacts (includes .asc files)
         uses: actions/download-artifact@v4
         with:
-          name: linux-artifacts-${{ inputs.version }}
+          name: signed-artifacts-${{ inputs.version }}
           path: artifacts
+
+      - name: Setup signature hosting directory
+        shell: bash
+        run: |
+          echo "Setting up signatures directory..."
+          mkdir -p repo/signatures/${{ inputs.version }}
+
+          # Copy all .asc files to the signatures directory
+          if ls artifacts/*.asc 1> /dev/null 2>&1; then
+            cp artifacts/*.asc repo/signatures/${{ inputs.version }}/
+            echo "Copied signature files:"
+            ls -la repo/signatures/${{ inputs.version }}/
+          else
+            echo "No signature files found"
+          fi
 
       - name: Download existing repository
         shell: bash
@@ -73,6 +88,19 @@ jobs:
           echo "Attempting to download existing DEB packages..."
           wget -r -np -nH --cut-dirs=1 -R "index.html*" -A "*.deb" \
             ${PAGES_BASE_URL}/deb/pool/main/s/switchboot/ -P repo || echo "No existing DEB packages found (this is OK for first release)"
+
+          echo "Attempting to download existing signatures archive..."
+          if wget -q ${PAGES_BASE_URL}/signatures.tar.xz -O /tmp/signatures.tar.xz; then
+            echo "Signatures archive found, extracting..."
+            mkdir -p repo/signatures
+            tar -xJf /tmp/signatures.tar.xz -C repo/
+            rm /tmp/signatures.tar.xz
+            echo "Extracted existing signatures:"
+            find repo/signatures -type f | head -20
+          else
+            echo "No existing signatures archive found (this is OK for first release)"
+            mkdir -p repo/signatures
+          fi
 
       - name: Setup repository structure
         shell: bash
@@ -251,6 +279,23 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Create signatures archive
+        shell: bash
+        run: |
+          set -e
+          echo "Creating compressed archive of all signatures..."
+          if [ -d "repo/signatures" ] && [ "$(ls -A repo/signatures 2>/dev/null)" ]; then
+            cd repo
+            tar -cJf signatures.tar.xz signatures/
+            echo "Signatures archive created successfully:"
+            ls -lh signatures.tar.xz
+            echo "Archive contains:"
+            tar -tJf signatures.tar.xz | head -20
+            cd ..
+          else
+            echo "No signatures directory found or it's empty, skipping archive creation"
+          fi
 
       - name: Generate directory indexes
         shell: bash
