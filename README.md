@@ -10,7 +10,7 @@
 ## Quick links
 
 - [Latest Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe)
-- [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe)(See [limitations](#portable-limitations))
+- [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe) (See [limitations](#portable-limitations))
 - [Set up APT repository (Debian/Ubuntu)](#deb)
 - [Set up RPM repository (Fedora/OpenSUSE)](#rpm)
 
@@ -69,6 +69,14 @@ sudo zypper install switchboot
 
 
 Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
+
+<a id="portable-limitations"></a>
+
+## Portable Windows Limitations
+
+The portable Windows version has the following limitations:
+
+- **No shortcut creation**: The portable version does not support creating desktop shortcuts e.g. for rebooting to a specific EFI boot entry.
 
 ## How to compile
 

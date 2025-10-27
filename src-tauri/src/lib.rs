@@ -11,6 +11,7 @@ use cli_user::get_cli;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+use tauri::Manager;
 pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutConfig};
 // Re-export build metadata from top-level module
 pub use build_info::APP_IDENTIFIER;
@@ -259,6 +260,13 @@ fn is_portable() -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(_app_config: Option<()>) {
     tauri::Builder::default()
+        // Single instance plugin to focus existing window on second launch
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .expect("no main window")
+                .set_focus();
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_boot_order,

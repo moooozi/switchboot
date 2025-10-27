@@ -230,43 +230,11 @@ pub fn install_service() {
     match service_management::install_service(config) {
         Ok(_) => {
             println!("Service installed successfully.");
-            println!("\nVerifying permissions...");
-            if let Err(e) = verify_service_permissions() {
-                eprintln!("Warning: Could not verify permissions: {}", e);
-            }
         }
         Err(e) => {
             eprintln!("[ERROR] Failed to install service: {}", e);
             std::process::exit(1);
         }
-    }
-}
-
-/// Verify that the service has the correct permissions for non-elevated start
-fn verify_service_permissions() -> Result<(), String> {
-    use std::process::Command;
-
-    let output = Command::new("sc.exe")
-        .args(&["sdshow", SERVICE_NAME])
-        .output()
-        .map_err(|e| format!("Failed to run sc.exe: {}", e))?;
-
-    if !output.status.success() {
-        return Err("Failed to query service security descriptor".to_string());
-    }
-
-    let sddl = String::from_utf8_lossy(&output.stdout);
-    let sddl = sddl.trim();
-
-    println!("Service security descriptor: {}", sddl);
-
-    if sddl.contains(";;;WD)") {
-        println!("✓ Service has Everyone (WD) permissions - non-elevated start should work");
-        Ok(())
-    } else {
-        println!("✗ Service does NOT have Everyone (WD) permissions");
-        println!("  Non-elevated processes may not be able to start the service");
-        Err("Missing WD permissions".to_string())
     }
 }
 
