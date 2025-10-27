@@ -2,10 +2,8 @@ use std::os::windows::ffi::OsStrExt;
 
 #[cfg(target_os = "windows")]
 pub fn is_portable_mode() -> bool {
-    use win_service::service::get_service_binary_path;
-
-    // Get the service name from the cli module
-    let service_name = crate::cli::windows::service::SERVICE_NAME;
+    use crate::cli::windows::service_management::get_service_binary_path;
+    use crate::constants::SERVICE_NAME;
 
     // Get current executable path
     let current_exe = match std::env::current_exe() {
@@ -14,7 +12,7 @@ pub fn is_portable_mode() -> bool {
     };
 
     // Get the service binary path
-    let service_binary_path = match get_service_binary_path(service_name) {
+    let service_binary_path = match get_service_binary_path(SERVICE_NAME) {
         Some(path) => std::path::PathBuf::from(path),
         None => return true, // Service doesn't exist, so we're in portable mode
     };

@@ -97,11 +97,22 @@ pub fn install_service(config: ServiceConfig) -> Result<()> {
         account_password: None,
     };
 
-    let service = manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
+    // Need WRITE_DAC permission to modify the security descriptor
+    let service = manager.create_service(
+        &service_info,
+        ServiceAccess::CHANGE_CONFIG | ServiceAccess::WRITE_DAC | ServiceAccess::READ_CONTROL,
+    )?;
 
     // Grant Everyone permission to start the service if requested
     if config.grant_start_to_everyone {
-        grant_start_permission_to_everyone(&service)?;
+        eprintln!("[INSTALL] Granting Everyone permission to start the service...");
+        match grant_start_permission_to_everyone(&service) {
+            Ok(_) => eprintln!("[INSTALL] Successfully granted permissions to Everyone"),
+            Err(e) => {
+                eprintln!("[INSTALL ERROR] Failed to grant permissions: {}", e);
+                return Err(e);
+            }
+        }
     }
 
     Ok(())
@@ -121,31 +132,15 @@ pub fn install_service(config: ServiceConfig) -> Result<()> {
 ///
 /// Returns `Ok(())` if the service was successfully uninstalled, or an error if uninstallation failed.
 pub fn uninstall_service(service_name: &str, stop_if_running: bool) -> Result<()> {
+    // Stop the service first if requested (using separate function like old code)
+    if stop_if_running {
+        // Ignore errors from stop - service might already be stopped or stopping
+        let _ = stop_service(service_name);
+    }
+
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
 
-    let service = manager.open_service(
-        service_name,
-        ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE,
-    )?;
-
-    // Stop the service if requested and it's running
-    if stop_if_running {
-        let status = service.query_status()?;
-        if status.current_state != ServiceState::Stopped {
-            let _ = service.stop();
-
-            // Wait for the service to stop
-            let start = Instant::now();
-            while start.elapsed() < Duration::from_secs(10) {
-                if let Ok(status) = service.query_status() {
-                    if status.current_state == ServiceState::Stopped {
-                        break;
-                    }
-                }
-                sleep(Duration::from_millis(200));
-            }
-        }
-    }
+    let service = manager.open_service(service_name, ServiceAccess::DELETE)?;
 
     // Mark the service for deletion
     service.delete()?;
@@ -275,7 +270,11 @@ pub fn stop_service(service_name: &str) -> Result<()> {
 ///
 /// Returns the full path to the service executable if found, or None if the service doesn't exist
 /// or the path couldn't be retrieved.
-#[allow(dead_code)]
+///
+/// # Note
+///
+/// The Windows Service Control Manager stores the binary path with arguments as a single string.
+/// This function parses that string to extract just the executable path, handling quoted paths correctly.
 pub fn get_service_binary_path(service_name: &str) -> Option<PathBuf> {
     let manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).ok()?;
@@ -286,7 +285,24 @@ pub fn get_service_binary_path(service_name: &str) -> Option<PathBuf> {
 
     let config = service.query_config().ok()?;
 
-    Some(config.executable_path)
+    // The executable_path from windows-service may include arguments.
+    // We need to parse it properly to extract just the executable path.
+    let path_str = config.executable_path.to_string_lossy();
+    let path_str = path_str.trim();
+
+    // If the path starts with a quote, find the closing quote
+    if path_str.starts_with('"') {
+        // Find the closing quote
+        if let Some(end_quote_pos) = path_str[1..].find('"') {
+            let exe_path = &path_str[1..end_quote_pos + 1];
+            return Some(PathBuf::from(exe_path));
+        }
+    }
+
+    // If no quotes, take everything up to the first space
+    // (assuming no spaces in path, which is less reliable)
+    let exe_path = path_str.split_whitespace().next()?;
+    Some(PathBuf::from(exe_path))
 }
 
 /// Grant SERVICE_START permission to Everyone (DACL manipulation)
@@ -379,8 +395,17 @@ fn grant_start_permission_to_everyone(service: &windows_service::service::Servic
             String::from_utf16_lossy(slice)
         };
 
-        // Inject (A;;RPWPCR;;;WD) for Everyone
-        let inject = "(A;;RPWPCR;;;WD)";
+        // Inject permissions for Everyone (WD = World Domain)
+        // Service-specific SDDL rights for services:
+        // RP = SERVICE_START (0x0010) - This is the critical permission for starting
+        // WP = SERVICE_STOP (0x0020)
+        // CC = SERVICE_QUERY_CONFIG (0x0001)
+        // DC = SERVICE_CHANGE_CONFIG (0x0002)
+        // LC = SERVICE_QUERY_STATUS (0x0004)
+        // SW = SERVICE_ENUMERATE_DEPENDENTS (0x0008)
+        // RC = READ_CONTROL (0x00020000)
+        // Grant START, QUERY_STATUS, and READ_CONTROL to Everyone
+        let inject = "(A;;RPWPDTLOCRRC;;;WD)"; // RP=START, WP=STOP, DT=PAUSE/CONTINUE, LO=INTERROGATE, CR=USER_DEFINED_CONTROL, RC=READ_CONTROL
         let new_sddl = if let Some(idx) = sddl.find(")S:(") {
             let insert_at = idx + 1;
             let mut s = sddl.clone();

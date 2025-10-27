@@ -28,19 +28,18 @@ serde_json = "1"
 firmware_variables = { path = "./libs/firmware_variables" }
 bincode = "1"
 rand = { version = "0.9", features = ["small_rng"] }
+log = "0.4.28"
+chrono = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 named_pipe_ipc = { path = "./libs/named_pipe_ipc" }
 tokio = "1"
 chacha20poly1305 = "0.10"
-windows = "0.61"
+windows = { version = "0.61", features = ["Win32_System_Services"] }
+windows-service = "0.8.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[[bin]]
-name = "switchboot"
-path = "src/main.rs"
 
 # Optimization profile for release builds
 [profile.release]

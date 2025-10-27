@@ -2,16 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args_parser;
-mod build_info;
-mod cli;
-mod types;
+
+use switchboot_lib::cli::logic;
+use switchboot_lib::constants::PIPE_SERVER_WAIT_TIMEOUT;
 
 #[cfg(windows)]
-pub use cli::windows;
-
-pub use cli::logic;
-
-pub const PIPE_SERVER_WAIT_TIMEOUT: u64 = 5; // 5 seconds
+use switchboot_lib::cli::windows;
 
 /// Entry point for the application.
 /// Handles both GUI and CLI modes.
@@ -71,24 +67,30 @@ fn run_cli_mode(args: Vec<String>) {
     {
         if args.len() == 1 && args[0].starts_with('/') {
             match args[0].as_str() {
-                "/service" => {
-                    windows::service::launch_windows_service();
+                "/service_connector" => {
+                    windows::service::launch_windows_service_connector();
                     return;
                 }
                 "/pipe_server" => {
-                    windows::pipe::run_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false);
+                    // Unelevated instance creates the pipe server
+                    windows::pipe::run_unelevated_pipe_server(
+                        Some(PIPE_SERVER_WAIT_TIMEOUT),
+                        false,
+                    );
                     return;
                 }
                 "/pipe_server_test" => {
-                    windows::pipe::run_pipe_server(None, true);
+                    windows::pipe::run_unelevated_pipe_server(None, true);
                     return;
                 }
-                "/pipe_client" => {
-                    windows::pipe::run_pipe_client();
+                "/elevated_connector" => {
+                    // Elevated instance connects to the unelevated pipe server
+                    windows::pipe::run_elevated_connector();
                     return;
                 }
-                "/service_client" => {
-                    windows::service::run_service_client();
+                "/service_manager" => {
+                    // Unelevated instance that starts service and creates pipe server
+                    windows::service::run_service_manager();
                     return;
                 }
                 "/install_service" => {
@@ -99,7 +101,10 @@ fn run_cli_mode(args: Vec<String>) {
                     windows::service::uninstall_service();
                     return;
                 }
-                _ => {}
+                _ => {
+                    eprintln!("Error: Unrecognized command '{}'.", args[0]);
+                    std::process::exit(1);
+                }
             }
         }
     }

@@ -1,6 +1,8 @@
 use std::process::Command;
 pub mod build_info;
+pub mod cli;
 mod cli_user;
+pub mod constants;
 pub mod types;
 #[cfg(target_os = "linux")]
 use cli_user::call_cli;
