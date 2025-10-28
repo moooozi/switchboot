@@ -48,21 +48,6 @@ jobs:
           name: signed-artifacts-${{ inputs.version }}
           path: artifacts
 
-      - name: Setup signature hosting directory
-        shell: bash
-        run: |
-          echo "Setting up signatures directory..."
-          mkdir -p repo/signatures/${{ inputs.version }}
-
-          # Copy all .asc files to the signatures directory
-          if ls artifacts/*.asc 1> /dev/null 2>&1; then
-            cp artifacts/*.asc repo/signatures/${{ inputs.version }}/
-            echo "Copied signature files:"
-            ls -la repo/signatures/${{ inputs.version }}/
-          else
-            echo "No signature files found"
-          fi
-
       - name: Download existing repository
         shell: bash
         run: |
@@ -136,6 +121,21 @@ jobs:
           ls -la repo/rpm/x86_64/ || echo "No RPM directory"
           echo "DEB packages:"
           ls -la repo/deb/pool/main/s/switchboot/ || echo "No DEB directory"
+
+      - name: Setup signature hosting directory
+        shell: bash
+        run: |
+          echo "Setting up signatures directory..."
+          mkdir -p repo/signatures/${{ inputs.version }}
+
+          # Copy all new .asc files to the signatures directory
+          if ls artifacts/*.asc 1> /dev/null 2>&1; then
+            cp artifacts/*.asc repo/signatures/${{ inputs.version }}/
+            echo "Copied signature files:"
+            ls -la repo/signatures/${{ inputs.version }}/
+          else
+            echo "No signature files found"
+          fi
 
       - name: Install system dependencies
         shell: bash

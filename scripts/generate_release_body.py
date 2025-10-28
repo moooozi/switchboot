@@ -88,15 +88,16 @@ def generate_release_body(artifacts_dir, version, github_pages_url, github_repo_
         # Create a compact entry with clear separation
         body_parts.append("---")
         body_parts.append("")
-        body_parts.append(f"**[`{filename}`]({file_url})**")
-        body_parts.append(f"*{description}* • {file_size}")
+        body_parts.append(f"**[`{filename}`]({file_url})** • *{description}* • {file_size}")
         body_parts.append("")
-        body_parts.append(f"**SHA-256:** `{sha256}`")
+        
+        verify_part = f"**SHA-256:** `{sha256}`"
         
         if sig_exists:
             sig_url = f"{github_pages_url}/signatures/{version}/{filename}.asc"
-            body_parts.append(f"**[GPG Signature]({sig_url})**")
+            verify_part += f" • **[GPG Signature]({sig_url})**"
         
+        body_parts.append(verify_part)
         body_parts.append("")
     
     return "\n".join(body_parts)
