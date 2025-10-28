@@ -44,7 +44,7 @@ def get_file_description(filename):
     return "Package"
 
 
-def generate_release_body(artifacts_dir, version, github_pages_url):
+def generate_release_body(artifacts_dir, version, github_pages_url, github_repo_url):
     """
     Generate markdown release body with file information.
     
@@ -52,6 +52,7 @@ def generate_release_body(artifacts_dir, version, github_pages_url):
         artifacts_dir: Directory containing release artifacts
         version: Release version (e.g., "0.1.1")
         github_pages_url: Base URL for GitHub Pages (e.g., "https://moooozi.github.io/switchboot")
+        github_repo_url: GitHub repository URL (e.g., "https://github.com/moooozi/switchboot")
     """
     artifacts_path = Path(artifacts_dir)
     
@@ -67,9 +68,7 @@ def generate_release_body(artifacts_dir, version, github_pages_url):
     
     # Build the release body
     body_parts = [
-        f"## Switchboot v{version} released!",
-        "",
-        "### 📦 Downloads",
+        f"## Version {version} released!",
         ""
     ]
     
@@ -83,14 +82,20 @@ def generate_release_body(artifacts_dir, version, github_pages_url):
         sig_file = artifacts_path / f"{filename}.asc"
         sig_exists = sig_file.exists()
         
-        body_parts.append(f"#### {filename}")
-        body_parts.append(f"**{description}** ({file_size})")
+        # Create download URL for the file
+        file_url = f"{github_repo_url}/releases/download/v{version}/{filename}"
+        
+        # Create a compact entry with clear separation
+        body_parts.append("---")
+        body_parts.append("")
+        body_parts.append(f"**[`{filename}`]({file_url})**")
+        body_parts.append(f"*{description}* • {file_size}")
         body_parts.append("")
         body_parts.append(f"**SHA-256:** `{sha256}`")
         
         if sig_exists:
             sig_url = f"{github_pages_url}/signatures/{version}/{filename}.asc"
-            body_parts.append(f"**GPG Signature:** [📝 {filename}.asc]({sig_url})")
+            body_parts.append(f"**[GPG Signature]({sig_url})**")
         
         body_parts.append("")
     
@@ -98,20 +103,21 @@ def generate_release_body(artifacts_dir, version, github_pages_url):
 
  
 def main():
-    if len(sys.argv) < 4:
-        print(f"Usage: {sys.argv[0]} <artifacts_dir> <version> <github_pages_url>", file=sys.stderr)
-        print(f"Example: {sys.argv[0]} artifacts 0.1.1 https://moooozi.github.io/switchboot", file=sys.stderr)
+    if len(sys.argv) < 5:
+        print(f"Usage: {sys.argv[0]} <artifacts_dir> <version> <github_pages_url> <github_repo_url>", file=sys.stderr)
+        print(f"Example: {sys.argv[0]} artifacts 0.1.1 https://moooozi.github.io/switchboot https://github.com/moooozi/switchboot", file=sys.stderr)
         sys.exit(1)
     
     artifacts_dir = sys.argv[1]
     version = sys.argv[2]
     github_pages_url = sys.argv[3].rstrip('/')
+    github_repo_url = sys.argv[4].rstrip('/')
     
     if not os.path.isdir(artifacts_dir):
         print(f"Error: Artifacts directory not found: {artifacts_dir}", file=sys.stderr)
         sys.exit(1)
     
-    body = generate_release_body(artifacts_dir, version, github_pages_url)
+    body = generate_release_body(artifacts_dir, version, github_pages_url, github_repo_url)
     print(body)
 
 

@@ -122,13 +122,14 @@ jobs:
         id: release_body
         shell: bash
         run: |
-          # Construct GitHub Pages URL dynamically
+          # Construct GitHub Pages URL and repo URL dynamically
           OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO="${GITHUB_REPOSITORY#*/}"
           PAGES_URL="https://${OWNER}.github.io/${REPO}"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
 
           echo "Generating release body..."
-          python3 scripts/generate_release_body.py artifacts "${{ needs.prepare.outputs.version }}" "$PAGES_URL" > release_body.md
+          python3 scripts/generate_release_body.py artifacts "${{ needs.prepare.outputs.version }}" "$PAGES_URL" "$REPO_URL" > release_body.md
 
           # Save to output for use in release creation
           echo "Release body generated successfully"
