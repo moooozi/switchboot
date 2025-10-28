@@ -175,13 +175,7 @@ function composeSvg(sourceInner, sourceBox, overlayInner) {
   const overlayX = CANVAS_SIZE - overlaySizePx - OVERLAY_PADDING_X;
   const overlayY = CANVAS_SIZE - overlaySizePx - OVERLAY_PADDING_Y;
 
-  const needsXlink =
-    /xlink:/i.test(sourceInner) || /xlink:/i.test(overlayInner);
-  const xmlnsXlink = needsXlink
-    ? ' xmlns:xlink="http://www.w3.org/1999/xlink"'
-    : "";
-
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"${xmlnsXlink} width=\"${CANVAS_SIZE}\" height=\"${CANVAS_SIZE}\" viewBox=\"0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}\">\n  <svg x=\"${srcX}\" y=\"${srcY}\" width=\"${finalSrcW}\" height=\"${finalSrcH}\" viewBox=\"${minX} ${minY} ${srcW} ${srcH}\" preserveAspectRatio=\"xMidYMid meet\">\n    ${sourceInner}\n  </svg>\n  <g transform=\"translate(${overlayX}, ${overlayY}) scale(${overlaySizePx / overlayNatural})\">\n    ${overlayInner}\n  </g>\n</svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width=\"${CANVAS_SIZE}\" height=\"${CANVAS_SIZE}\" viewBox=\"0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}\">\n  <svg x=\"${srcX}\" y=\"${srcY}\" width=\"${finalSrcW}\" height=\"${finalSrcH}\" viewBox=\"${minX} ${minY} ${srcW} ${srcH}\" preserveAspectRatio=\"xMidYMid meet\">\n    ${sourceInner}\n  </svg>\n  <g transform=\"translate(${overlayX}, ${overlayY}) scale(${overlaySizePx / overlayNatural})\">\n    ${overlayInner}\n  </g>\n</svg>`;
 }
 
 async function run() {
