@@ -69,6 +69,8 @@ def generate_release_body(artifacts_dir, version, github_pages_url, github_repo_
     # Build the release body
     body_parts = [
         f"## Version {version} released!",
+        "",
+        f"🔐 **Verify downloads:** [GPG Public Key](https://github.com/moooozi.gpg)",
         ""
     ]
     
@@ -86,10 +88,8 @@ def generate_release_body(artifacts_dir, version, github_pages_url, github_repo_
         file_url = f"{github_repo_url}/releases/download/v{version}/{filename}"
         
         # Create a compact entry with clear separation
-        body_parts.append("---")
         body_parts.append("")
         body_parts.append(f"**[`{filename}`]({file_url})** • *{description}* • {file_size}")
-        body_parts.append("")
         
         verify_part = f"**SHA-256:** `{sha256}`"
         
