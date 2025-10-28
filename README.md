@@ -96,9 +96,6 @@ pnpm tauri icon ./app-icon.svg
 
 # Build native Tauri app
 pnpm tauri build
-
-# (optional) On Windows, create portable Windows bundle
-pnpm bundle:portable
 ```
 
 ## Software stack
