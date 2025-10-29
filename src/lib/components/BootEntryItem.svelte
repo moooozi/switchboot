@@ -8,13 +8,20 @@
   export let index: number;
   export let totalEntries: number;
   export let busy: boolean;
+  export let isInOthers = false;
 
   export let onmoveup: ((index: number) => void) | undefined = undefined;
   export let onmovedown: ((index: number) => void) | undefined = undefined;
   export let onsetbootnext: ((entry: BootEntry) => void) | undefined =
     undefined;
   export let onunsetbootnext: (() => void) | undefined = undefined;
+  export let onsetboottofirmwaresetup: (() => void) | undefined = undefined;
+  export let onunsetboottofirmwaresetup: (() => void) | undefined = undefined;
   export let onrestartnow: (() => void) | undefined = undefined;
+  export let onaddtobootorder: ((entry: BootEntry) => void) | undefined =
+    undefined;
+  export let onremovefrombootorder: ((entry: BootEntry) => void) | undefined =
+    undefined;
   export let oncontextmenu:
     | ((data: { entry: BootEntry; mouseEvent: MouseEvent }) => void)
     | undefined = undefined;
@@ -25,7 +32,7 @@
 </script>
 
 <div
-  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors cursor-grab
+  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers ? 'cursor-default' : 'cursor-grab'}
     ${
       entry.is_default
         ? "border-sky-500"
@@ -68,7 +75,13 @@
       size="small"
       disabled={busy}
       title="Unset BootNext (cancel one-time boot override)"
-      onclick={() => onunsetbootnext?.()}
+      onclick={() => {
+        if (entry.id === -200) {
+          onunsetboottofirmwaresetup?.();
+        } else {
+          onunsetbootnext?.();
+        }
+      }}
     >
       Undo
     </Button>
@@ -87,32 +100,69 @@
       size="small"
       disabled={busy}
       title="Set this entry as BootNext (one-time boot override)"
-      onclick={() => onsetbootnext?.(entry)}
+      onclick={() => {
+        if (entry.id === -200) {
+          onsetboottofirmwaresetup?.();
+        } else {
+          onsetbootnext?.(entry);
+        }
+      }}
     >
       BootNext
     </Button>
   {/if}
 
-  <Button
-    variant="neutral"
-    size="small"
-    rounded="circle"
-    disabled={index === 0 || busy}
-    ariaLabel="Move up"
-    title="Move entry up"
-    onclick={() => onmoveup?.(index)}
-  >
-    ↑
-  </Button>
-  <Button
-    variant="neutral"
-    size="small"
-    rounded="circle"
-    disabled={index === totalEntries - 1 || busy}
-    ariaLabel="Move down"
-    title="Move entry down"
-    onclick={() => onmovedown?.(index)}
-  >
-    ↓
-  </Button>
+  {#if isInOthers}
+    <Button
+      variant="neutral"
+      size="small"
+      rounded="circle"
+      disabled={busy || entry.id < 0}
+      ariaLabel="Add to boot order"
+      title="Add this entry to the boot order"
+      onclick={() => onaddtobootorder?.(entry)}
+    >
+      <span class="text-sm">
+        <!-- Custom "+" symbol using CSS - Unicode characters had centering issues due to font metrics -->
+        <div class="w-3 h-3 relative">
+          <div class="absolute inset-0 w-0.5 bg-current mx-auto"></div>
+          <div class="absolute inset-0 h-0.5 bg-current my-auto"></div>
+        </div>
+      </span>
+    </Button>
+  {:else}
+    <Button
+      variant="neutral"
+      size="small"
+      rounded="circle"
+      disabled={index === 0 || busy || entry.id < 0}
+      ariaLabel="Move up"
+      title="Move entry up"
+      onclick={() => onmoveup?.(index)}
+    >
+      ↑
+    </Button>
+    <Button
+      variant="neutral"
+      size="small"
+      rounded="circle"
+      disabled={index === totalEntries - 1 || busy || entry.id < 0}
+      ariaLabel="Move down"
+      title="Move entry down"
+      onclick={() => onmovedown?.(index)}
+    >
+      ↓
+    </Button>
+    <Button
+      variant="neutral"
+      size="small"
+      rounded="circle"
+      disabled={busy || entry.id < 0}
+      ariaLabel="Remove from boot order"
+      title="Remove this entry from the boot order"
+      onclick={() => onremovefrombootorder?.(entry)}
+    >
+      <span class="text-sm">✕</span>
+    </Button>
+  {/if}
 </div>

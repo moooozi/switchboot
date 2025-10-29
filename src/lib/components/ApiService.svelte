@@ -38,6 +38,20 @@
     }
   }
 
+  // Fetch discovered boot entries
+  export async function fetchDiscoveredEntries() {
+    busy = true;
+    try {
+      const entries = (await invoke("discover_entries")) as BootEntry[];
+      return entries;
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
   // Set BootNext
   export async function setBootNext(entryId: number) {
     busy = true;
@@ -119,6 +133,30 @@
     busy = true;
     try {
       await invoke("set_boot_fw");
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Get boot to firmware setup state
+  export async function getBootToFirmwareSetupState(): Promise<boolean> {
+    try {
+      const state = (await invoke("get_boot_fw")) as boolean;
+      return state;
+    } catch (e) {
+      onerror?.(String(e));
+      return false;
+    }
+  }
+
+  // Unset boot to firmware setup
+  export async function unsetBootToFirmwareSetup() {
+    busy = true;
+    try {
+      await invoke("unset_boot_fw");
     } catch (e) {
       onerror?.(String(e));
       throw e;

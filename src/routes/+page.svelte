@@ -9,16 +9,34 @@
   import { mockBootEntries } from "./mockBootEntries";
 
   let bootEntries: BootEntry[] = [];
+  let discoveredEntries: BootEntry[] = [];
   let originalOrder: number[] = [];
+  let originalEntries: BootEntry[] = [];
   let error = "";
   let changed = false;
   let busy = false;
   let isPortable: boolean | null = null;
   let apiService: ApiService;
+  let initialized = false;
+  let discoveredEntriesLoading = true;
+  let efiSetupState = false;
 
   // Shortcut dialog state
   let showShortcutDialog = false;
   let shortcutEntry: BootEntry | null = null;
+
+  $: others = [
+    {
+      id: -200,
+      description: "EFI Setup",
+      is_default: null,
+      is_bootnext: efiSetupState,
+      is_current: false,
+    },
+    ...discoveredEntries.filter(e => !bootEntries.some(b => b.id === e.id) && e.id !== -200)
+  ];
+  $: if (initialized) console.log(`Current Boot order: [${bootEntries.map(e => e.id).join(',')}]`);
+  $: changed = initialized && JSON.stringify(bootEntries.map(e => e.id)) !== JSON.stringify(originalOrder);
 
   // Move entry up/down
   function moveEntry(idx: number, dir: "up" | "down") {
@@ -29,40 +47,18 @@
       bootEntries[newIdx],
       bootEntries[idx],
     ];
-    validateBootOrderChanges();
-  }
-
-  function validateBootOrderChanges() {
-    // Helper: filter out any drag-and-drop placeholder IDs
-    const isRealId = (id: unknown) =>
-      typeof id === "number" && !String(id).startsWith("id:dnd-shadow-placeholder");
-
-    // Get current order, ignoring placeholders
-    const filteredIds = bootEntries
-      .map((e) => e.id)
-      .filter(isRealId);
-
-    // If the number of entries changed, do not mark as changed
-    if (filteredIds.length !== originalOrder.length) {
-      changed = false;
-      return;
-    }
-
-    // Compare current order to original order
-    changed = JSON.stringify(filteredIds) !== JSON.stringify(originalOrder);
   }
   // Save boot order
   async function saveOrder() {
     await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+    originalOrder = bootEntries.map((e) => e.id);
+    originalEntries = [...bootEntries];
   }
 
   // Discard changes
   function discardChanges() {
     if (busy) return;
-    bootEntries = originalOrder.map(
-      (id) => bootEntries.find((e) => e.id === id)!
-    );
-    changed = false;
+    bootEntries = [...originalEntries];
   }
 
   // Handle events from ApiService (now callback props)
@@ -72,8 +68,8 @@
 
   function handleBootEntriesFetched(entries: BootEntry[]) {
     bootEntries = entries;
+    originalEntries = [...entries];
     originalOrder = bootEntries.map((e) => e.id);
-    changed = false;
   }
 
   function handleError(errorMessage: string) {
@@ -83,7 +79,6 @@
   // Handle events from BootEntriesList (now callback props)
   function handleEntriesChanged(entries: BootEntry[]) {
     bootEntries = entries;
-    validateBootOrderChanges();
   }
 
   function handleMoveUp(index: number) {
@@ -96,10 +91,20 @@
 
   async function handleSetBootNext(entry: BootEntry) {
     await apiService.setBootNext(entry.id);
+    // Update discovered entries to reflect the new bootnext status
+    discoveredEntries = discoveredEntries.map(e => ({
+      ...e,
+      is_bootnext: e.id === entry.id
+    }));
   }
 
   async function handleUnsetBootNext() {
     await apiService.unsetBootNext();
+    // Update discovered entries to reflect the unset bootnext status
+    discoveredEntries = discoveredEntries.map(e => ({
+      ...e,
+      is_bootnext: false
+    }));
   }
 
   async function handleRestartNow() {
@@ -154,9 +159,25 @@
 
   async function handleRebootToFirmwareSetup() {
     await apiService.setBootToFirmwareSetup();
+    // Update EFI Setup entry status
+    efiSetupState = true;
   }
 
-  if (import.meta.env.DEV) {
+  async function handleUnsetBootToFirmwareSetup() {
+    await apiService.unsetBootToFirmwareSetup();
+    // Update EFI Setup entry status
+    efiSetupState = false;
+  }
+
+  async function handleAddToBootOrder(entry: BootEntry) {
+    bootEntries = [...bootEntries, entry];
+  }
+
+  async function handleRemoveFromBootOrder(entry: BootEntry) {
+    bootEntries = bootEntries.filter(e => e.id !== entry.id);
+  }
+
+  if (false) {
     bootEntries = mockBootEntries;
     originalOrder = bootEntries.map((e) => e.id);
 
@@ -167,7 +188,25 @@
   } else {
     onMount(async () => {
       await apiService.fetchPortableStatus();
+      
+      // Load boot entries first (fast)
       await apiService.fetchBootEntries();
+      
+      // Get EFI Setup state
+      efiSetupState = await apiService.getBootToFirmwareSetupState();
+      
+      initialized = true;
+      
+      // Load discovered entries asynchronously (slow)
+      (async () => {
+        try {
+          discoveredEntries = await apiService.fetchDiscoveredEntries();
+        } catch (e) {
+          onerror?.(String(e));
+        } finally {
+          discoveredEntriesLoading = false;
+        }
+      })();
     });
   }
 </script>
@@ -195,14 +234,20 @@
     {bootEntries}
     {busy}
     {isPortable}
+    {others}
+    {discoveredEntriesLoading}
     onentrieschanged={handleEntriesChanged}
     onmoveup={handleMoveUp}
     onmovedown={handleMoveDown}
     onsetbootnext={handleSetBootNext}
     onunsetbootnext={handleUnsetBootNext}
+    onsetboottofirmwaresetup={handleRebootToFirmwareSetup}
+    onunsetboottofirmwaresetup={handleUnsetBootToFirmwareSetup}
     onrestartnow={handleRestartNow}
     onmakedefault={handleMakeDefault}
     onaddshortcut={handleAddShortcut}
+    onaddtobootorder={handleAddToBootOrder}
+    onremovefrombootorder={handleRemoveFromBootOrder}
   />
 </main>
 

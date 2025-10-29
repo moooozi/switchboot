@@ -10,6 +10,8 @@
   export let bootEntries: BootEntry[];
   export let busy: boolean;
   export let isPortable: boolean | null;
+  export let others: BootEntry[] = [];
+  export let discoveredEntriesLoading = false;
 
   // Callback props instead of events
   export let onentrieschanged: ((entries: BootEntry[]) => void) | undefined =
@@ -19,10 +21,16 @@
   export let onsetbootnext: ((entry: BootEntry) => void) | undefined =
     undefined;
   export let onunsetbootnext: (() => void) | undefined = undefined;
+  export let onsetboottofirmwaresetup: (() => void) | undefined = undefined;
+  export let onunsetboottofirmwaresetup: (() => void) | undefined = undefined;
   export let onrestartnow: (() => void) | undefined = undefined;
   export let onmakedefault: ((entry: BootEntry) => void) | undefined =
     undefined;
   export let onaddshortcut: ((entry: BootEntry) => void) | undefined =
+    undefined;
+  export let onaddtobootorder: ((entry: BootEntry) => void) | undefined =
+    undefined;
+  export let onremovefrombootorder: ((entry: BootEntry) => void) | undefined =
     undefined;
 
   const flipDuration = 150;
@@ -114,34 +122,91 @@
 
 <svelte:document on:click={handleDocumentClick} />
 
-<div
-  class="flex-1 overflow-y-auto flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
-  use:dndzone={{
-    items: bootEntries,
-    flipDurationMs: flipDuration,
-    dropTargetStyle: {},
+<div class="flex-1 overflow-y-auto">
+  <div class="mb-4">
+    <h2 class="text-lg font-semibold p-2 max-w-2xl w-full mx-auto">Boot Order</h2>
+    <div
+      class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
+      use:dndzone={{
+        items: bootEntries,
+        flipDurationMs: flipDuration,
+        dropTargetStyle: {},
 
-    dragDisabled: busy,
-  }}
-  on:consider={handleDnd}
-  on:finalize={handleDnd}
->
-  {#each bootEntries as entry, idx (entry.id)}
-    <div animate:flip={{ duration: flipDuration }}>
-      <BootEntryItem
-        {entry}
-        index={idx}
-        totalEntries={bootEntries.length}
-        {busy}
-        onmoveup={handleMoveUp}
-        onmovedown={handleMoveDown}
-        onsetbootnext={handleSetBootNext}
-        onunsetbootnext={handleUnsetBootNext}
-        onrestartnow={handleRestartNow}
-        oncontextmenu={handleContextMenu}
-      />
+        dragDisabled: busy,
+      }}
+      on:consider={handleDnd}
+      on:finalize={handleDnd}
+    >
+      {#each bootEntries as entry, idx (entry.id)}
+        <div animate:flip={{ duration: flipDuration }}>
+          <BootEntryItem
+            {entry}
+            index={idx}
+            totalEntries={bootEntries.length}
+            {busy}
+            onmoveup={handleMoveUp}
+            onmovedown={handleMoveDown}
+            onsetbootnext={handleSetBootNext}
+            onunsetbootnext={handleUnsetBootNext}
+            onsetboottofirmwaresetup={onsetboottofirmwaresetup}
+            onunsetboottofirmwaresetup={onunsetboottofirmwaresetup}
+            onrestartnow={handleRestartNow}
+            onremovefrombootorder={onremovefrombootorder}
+            oncontextmenu={handleContextMenu}
+          />
+        </div>
+      {/each}
     </div>
-  {/each}
+  </div>
+
+  {#if others.length > 0}
+    <details class="mb-4">
+      <summary class="text-lg font-semibold cursor-pointer p-2 max-w-2xl w-full mx-auto">Others</summary>
+      <div class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto">
+        {#if discoveredEntriesLoading}
+          <!-- Show EFI Setup immediately -->
+          {#each others.filter(entry => entry.id === -200) as entry, idx}
+            <BootEntryItem
+              {entry}
+              index={idx}
+              totalEntries={others.length}
+              {busy}
+              isInOthers={true}
+              onaddtobootorder={onaddtobootorder}
+              onsetbootnext={onsetbootnext}
+              onunsetbootnext={onunsetbootnext}
+              onsetboottofirmwaresetup={onsetboottofirmwaresetup}
+              onunsetboottofirmwaresetup={onunsetboottofirmwaresetup}
+              onrestartnow={onrestartnow}
+              oncontextmenu={handleContextMenu}
+            />
+          {/each}
+          <!-- Show loading for other entries -->
+          <div class="flex items-center justify-center p-8 text-neutral-500 dark:text-neutral-400">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-500 mr-2"></div>
+            Loading boot entries...
+          </div>
+        {:else}
+          {#each others as entry, idx (entry.id)}
+            <BootEntryItem
+              {entry}
+              index={idx}
+              totalEntries={others.length}
+              {busy}
+              isInOthers={true}
+              onaddtobootorder={onaddtobootorder}
+              onsetbootnext={onsetbootnext}
+              onunsetbootnext={onunsetbootnext}
+              onsetboottofirmwaresetup={onsetboottofirmwaresetup}
+              onunsetboottofirmwaresetup={onunsetboottofirmwaresetup}
+              onrestartnow={onrestartnow}
+              oncontextmenu={handleContextMenu}
+            />
+          {/each}
+        {/if}
+      </div>
+    </details>
+  {/if}
 </div>
 
 <style>
