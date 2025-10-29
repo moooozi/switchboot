@@ -12,6 +12,9 @@ pub fn dispatch_command(command: CliCommand) -> CommandResponse {
         CliCommand::GetBootNext => get_boot_next_response(),
         CliCommand::GetBootEntries => get_boot_entries_response(),
         CliCommand::GetBootCurrent => get_boot_current_response(),
+        CliCommand::SetBootFirmware => set_boot_to_firmware_setup_response(),
+        CliCommand::UnsetBootFirmware => clear_boot_to_firmware_setup_response(),
+        CliCommand::GetBootFirmware => get_boot_to_firmware_setup_state_response(),
         CliCommand::Unknown => CommandResponse {
             code: 1,
             message: "Unknown command".to_string(),
@@ -209,6 +212,45 @@ fn get_boot_current_response() -> CommandResponse {
         Err(e) => CommandResponse {
             code: 1,
             message: format!("Error getting boot current: {}", e),
+        },
+    }
+}
+
+fn set_boot_to_firmware_setup_response() -> CommandResponse {
+    match with_privileges(boot::set_boot_to_firmware_setup) {
+        Ok(_) => CommandResponse {
+            code: 0,
+            message: "Boot to firmware setup set successfully".to_string(),
+        },
+        Err(e) => CommandResponse {
+            code: 1,
+            message: format!("Error setting boot to firmware setup: {}", e),
+        },
+    }
+}
+
+fn clear_boot_to_firmware_setup_response() -> CommandResponse {
+    match with_privileges(boot::clear_boot_to_firmware_setup) {
+        Ok(_) => CommandResponse {
+            code: 0,
+            message: "Boot to firmware setup cleared successfully".to_string(),
+        },
+        Err(e) => CommandResponse {
+            code: 1,
+            message: format!("Error clearing boot to firmware setup: {}", e),
+        },
+    }
+}
+
+fn get_boot_to_firmware_setup_state_response() -> CommandResponse {
+    match with_privileges(boot::get_boot_to_firmware_setup_state) {
+        Ok(state) => CommandResponse {
+            code: 0,
+            message: serde_json::to_string(&state).unwrap(),
+        },
+        Err(e) => CommandResponse {
+            code: 1,
+            message: format!("Error getting boot to firmware setup state: {}", e),
         },
     }
 }

@@ -19,6 +19,9 @@ pub enum CliCommand {
     SaveBootOrder(Vec<u16>),
     UnsetBootNext,
     GetBootCurrent,
+    SetBootFirmware,
+    UnsetBootFirmware,
+    GetBootFirmware,
     Unknown,
 }
 #[derive(Serialize, Deserialize)]

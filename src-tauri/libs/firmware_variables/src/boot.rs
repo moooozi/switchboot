@@ -1,6 +1,8 @@
 use crate::load_option::LoadOption;
 use crate::utils::{iter_unpack, verify_uefi_firmware};
-use crate::variables::{get_variable, set_variable, DEFAULT_ATTRIBUTES, GLOBAL_NAMESPACE};
+use crate::variables::{
+    get_variable, set_variable, OsIndications, DEFAULT_ATTRIBUTES, GLOBAL_NAMESPACE,
+};
 
 pub fn get_boot_order() -> Result<Vec<u16>, Box<dyn std::error::Error>> {
     verify_uefi_firmware()?;
@@ -88,5 +90,69 @@ pub fn get_boot_current() -> Result<Option<u16>, Box<dyn std::error::Error>> {
             Ok(Some(val))
         }
         _ => Ok(None),
+    }
+}
+
+/// Gets the current OsIndications variable value.
+pub fn get_os_indications() -> Result<Option<OsIndications>, Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+    match get_variable("OsIndications", GLOBAL_NAMESPACE) {
+        Ok((raw, _)) if raw.len() >= 8 => {
+            let val = u64::from_le_bytes(raw[0..8].try_into().unwrap());
+            Ok(Some(OsIndications::from_bits_truncate(val)))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Sets the OsIndications variable to request booting to firmware UI on next boot.
+/// This is equivalent to `shutdown /r /fw` on Windows or `systemctl reboot --firmware-setup` on Linux.
+pub fn set_boot_to_firmware_setup() -> Result<(), Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+
+    // Get current OsIndications or start with BOOT_TO_FW_UI
+    let current = get_os_indications()?.unwrap_or(OsIndications::empty());
+    let new_indications = current | OsIndications::BOOT_TO_FW_UI;
+
+    let raw = new_indications.bits().to_le_bytes();
+    set_variable("OsIndications", &raw, GLOBAL_NAMESPACE, DEFAULT_ATTRIBUTES)?;
+    Ok(())
+}
+
+/// Clears the BOOT_TO_FW_UI flag from OsIndications.
+pub fn clear_boot_to_firmware_setup() -> Result<(), Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+
+    match get_os_indications()? {
+        Some(current) => {
+            let new_indications = current & !OsIndications::BOOT_TO_FW_UI;
+            if new_indications.is_empty() {
+                // If no flags remain, delete the variable
+                match crate::variables::delete_variable(
+                    "OsIndications",
+                    GLOBAL_NAMESPACE,
+                    DEFAULT_ATTRIBUTES,
+                ) {
+                    Ok(_) => Ok(()),
+                    #[cfg(unix)]
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(Box::new(e)),
+                }
+            } else {
+                let raw = new_indications.bits().to_le_bytes();
+                set_variable("OsIndications", &raw, GLOBAL_NAMESPACE, DEFAULT_ATTRIBUTES)?;
+                Ok(())
+            }
+        }
+        None => Ok(()), // Already cleared
+    }
+}
+
+pub fn get_boot_to_firmware_setup_state() -> Result<bool, Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+
+    match get_os_indications()? {
+        Some(current) => Ok(current.contains(OsIndications::BOOT_TO_FW_UI)),
+        None => Ok(false),
     }
 }

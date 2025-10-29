@@ -9,11 +9,17 @@ impl CliCommand {
     pub const SAVE_BOOT_ORDER: &'static str = "save-boot-order";
     pub const UNSET_BOOT_NEXT: &'static str = "unset-boot-next";
     pub const GET_BOOT_CURRENT: &'static str = "get-boot-current";
+    pub const SET_BOOT_FW: &'static str = "set-boot-fw";
+    pub const UNSET_BOOT_FW: &'static str = "unset-boot-fw";
+    pub const GET_BOOT_FW: &'static str = "get-boot-fw";
 
     /// Returns true if this command can be executed in non-interactive mode via --exec
     pub fn allow_non_interactive_exec(&self) -> bool {
         match self {
             CliCommand::SetBootNext(_) => true,
+            CliCommand::SetBootFirmware => true,
+            CliCommand::UnsetBootFirmware => true,
+            CliCommand::GetBootFirmware => true,
             // Add other commands here in the future as needed
             _ => false,
         }
@@ -23,6 +29,9 @@ impl CliCommand {
         match self {
             CliCommand::SetBootNext(_) => true,
             CliCommand::UnsetBootNext => true,
+            CliCommand::SetBootFirmware => true,
+            CliCommand::UnsetBootFirmware => true,
+            CliCommand::GetBootFirmware => true,
             _ => false,
         }
     }
@@ -45,6 +54,9 @@ impl CliCommand {
             }
             CliCommand::UnsetBootNext => vec![Self::UNSET_BOOT_NEXT.into()],
             CliCommand::GetBootCurrent => vec![Self::GET_BOOT_CURRENT.into()],
+            CliCommand::SetBootFirmware => vec![Self::SET_BOOT_FW.into()],
+            CliCommand::UnsetBootFirmware => vec![Self::UNSET_BOOT_FW.into()],
+            CliCommand::GetBootFirmware => vec![Self::GET_BOOT_FW.into()],
             CliCommand::Unknown => vec![],
         }
     }
@@ -67,6 +79,9 @@ impl CliCommand {
             Self::SAVE_BOOT_ORDER => Ok(CliCommand::SaveBootOrder(parse_u16_vec(&args[1..])?)),
             Self::UNSET_BOOT_NEXT => Ok(CliCommand::UnsetBootNext),
             Self::GET_BOOT_CURRENT => Ok(CliCommand::GetBootCurrent),
+            Self::SET_BOOT_FW => Ok(CliCommand::SetBootFirmware),
+            Self::UNSET_BOOT_FW => Ok(CliCommand::UnsetBootFirmware),
+            Self::GET_BOOT_FW => Ok(CliCommand::GetBootFirmware),
             _ => Ok(CliCommand::Unknown),
         }
     }

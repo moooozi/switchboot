@@ -120,6 +120,45 @@ fn get_boot_current() -> Result<Option<u16>, String> {
     get_cli()?.send_command(&CliCommand::GetBootCurrent)
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn set_boot_fw() -> Result<(), String> {
+    call_cli(&CliCommand::SetBootFirmware, true)?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn set_boot_fw() -> Result<(), String> {
+    get_cli()?.send_command_unit(&CliCommand::SetBootFirmware)
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn unset_boot_fw() -> Result<(), String> {
+    call_cli(&CliCommand::UnsetBootFirmware, true)?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn unset_boot_fw() -> Result<(), String> {
+    get_cli()?.send_command_unit(&CliCommand::UnsetBootFirmware)
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn get_boot_fw() -> Result<bool, String> {
+    let out = call_cli(&CliCommand::GetBootFirmware, false)?;
+    serde_json::from_str(&out).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_boot_fw() -> Result<bool, String> {
+    get_cli()?.send_command(&CliCommand::GetBootFirmware)
+}
+
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
@@ -277,6 +316,9 @@ pub fn run(_app_config: Option<()>) {
             save_boot_order,
             unset_boot_next,
             get_boot_current,
+            set_boot_fw,
+            unset_boot_fw,
+            get_boot_fw,
             create_shortcut,
             restart_now,
             is_portable,
