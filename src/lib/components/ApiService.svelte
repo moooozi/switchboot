@@ -113,4 +113,17 @@
       busy = false;
     }
   }
+
+  // Set boot to firmware setup
+  export async function setBootToFirmwareSetup() {
+    busy = true;
+    try {
+      await invoke("set_boot_fw");
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
 </script>

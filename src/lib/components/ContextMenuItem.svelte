@@ -5,7 +5,7 @@
 </script>
 
 <button
-  class="w-auto text-left px-4 py-2 transition-colors
+  class="w-auto text-left px-4 py-2 text-neutral-900 dark:text-neutral-100 transition-colors
     hover:bg-neutral-100 dark:hover:bg-neutral-700
     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
   {disabled}

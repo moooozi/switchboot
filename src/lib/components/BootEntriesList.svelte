@@ -4,6 +4,8 @@
   import type { BootEntry } from "../types";
   import BootEntryItem from "./BootEntryItem.svelte";
   import ContextMenuItem from "./ContextMenuItem.svelte";
+  import ContextMenu from "./ContextMenu.svelte";
+  import { openContextMenu, toggleContextMenu } from "../stores/contextMenu";
 
   export let bootEntries: BootEntry[];
   export let busy: boolean;
@@ -24,12 +26,6 @@
     undefined;
 
   const flipDuration = 150;
-
-  // Centralized context menu state
-  let showContextMenu = false;
-  let contextMenuX = 0;
-  let contextMenuY = 0;
-  let contextMenuEntry: BootEntry | null = null;
 
   function handleDnd(event: CustomEvent<{ items: BootEntry[] }>) {
     if (busy) return;
@@ -65,65 +61,54 @@
     const { entry, mouseEvent } = data;
     mouseEvent.preventDefault();
 
-    // Close any existing context menu first
-    showContextMenu = false;
+    // Build context menu items
+    const items = [
+      {
+        label: "Make Default",
+        disabled: entry.is_default || busy,
+        onclick: () => onmakedefault?.(entry)
+      },
+      {
+        label: "Add Shortcut",
+        disabled: busy || isPortable !== false,
+        title: isPortable === true
+          ? "Shortcuts are not available in portable mode"
+          : isPortable === null
+            ? "Loading portable mode status..."
+            : "",
+        onclick: () => onaddshortcut?.(entry)
+      }
+    ];
 
-    // Calculate position with edge detection
-    const menuWidth = 200; // Approximate width of context menu
-    const menuHeight = 80; // Approximate height of context menu
-    const margin = 10; // Safety margin from edges
+    // Create a temporary element at mouse position for Floating UI
+    const tempTrigger = document.createElement('div');
+    tempTrigger.style.position = 'fixed';
+    tempTrigger.style.left = `${mouseEvent.clientX}px`;
+    tempTrigger.style.top = `${mouseEvent.clientY}px`;
+    tempTrigger.style.width = '1px';
+    tempTrigger.style.height = '1px';
+    tempTrigger.style.opacity = '0';
+    tempTrigger.style.pointerEvents = 'none';
+    document.body.appendChild(tempTrigger);
 
-    let x = mouseEvent.clientX;
-    let y = mouseEvent.clientY;
-
-    // Check right edge
-    if (x + menuWidth + margin > window.innerWidth) {
-      x = window.innerWidth - menuWidth - margin;
-    }
-
-    // Check bottom edge
-    if (y + menuHeight + margin > window.innerHeight) {
-      y = window.innerHeight - menuHeight - margin;
-    }
-
-    // Check left edge (shouldn't happen but just in case)
-    if (x < margin) {
-      x = margin;
-    }
-
-    // Check top edge
-    if (y < margin) {
-      y = margin;
-    }
-
-    contextMenuX = x;
-    contextMenuY = y;
-    contextMenuEntry = entry;
-    showContextMenu = true;
-  }
-
-  function closeContextMenu() {
-    showContextMenu = false;
-    contextMenuEntry = null;
-  }
-
-  function handleMakeDefaultFromMenu() {
-    if (contextMenuEntry) {
-      onmakedefault?.(contextMenuEntry);
-      closeContextMenu();
-    }
-  }
-
-  function handleAddShortcutFromMenu() {
-    if (contextMenuEntry) {
-      onaddshortcut?.(contextMenuEntry);
-      closeContextMenu();
-    }
+    // Toggle the global context menu
+    openContextMenu({
+      triggerElement: tempTrigger,
+      items,
+      preferredPlacement: 'right-start',
+      onclose: () => {
+        // Clean up temporary element when menu closes
+        if (document.body.contains(tempTrigger)) {
+          document.body.removeChild(tempTrigger);
+        }
+      },
+      owner: 'boot-entries-right-click'
+    });
   }
 
   // Close context menu when clicking elsewhere
   function handleDocumentClick() {
-    closeContextMenu();
+    // Context menu is now handled globally
   }
 </script>
 
@@ -158,32 +143,6 @@
     </div>
   {/each}
 </div>
-
-<!-- Centralized Context Menu -->
-{#if showContextMenu && contextMenuEntry}
-  <div
-    class="fixed w-max flex flex-col bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-600 rounded-lg shadow-lg py-2 z-50"
-    style="left: {contextMenuX}px; top: {contextMenuY}px;"
-  >
-    <ContextMenuItem
-      disabled={contextMenuEntry.is_default || busy}
-      onclick={handleMakeDefaultFromMenu}
-    >
-      Make Default
-    </ContextMenuItem>
-    <ContextMenuItem
-      disabled={busy || isPortable !== false}
-      title={isPortable === true
-        ? "Shortcuts are not available in portable mode"
-        : isPortable === null
-          ? "Loading portable mode status..."
-          : ""}
-      onclick={handleAddShortcutFromMenu}
-    >
-      Add Shortcut
-    </ContextMenuItem>
-  </div>
-{/if}
 
 <style>
   /* Remove white border/background from dragged element */

@@ -11,10 +11,11 @@ export type BootEntry = {
 export const mockBootEntries: BootEntry[] = [
   {
     id: 1,
-    description: "Windows Boot Manager",
+    description: "Fedora 43",
     is_default: true,
     is_bootnext: false,
     is_current: false
+
   },
   {
     id: 2,
@@ -25,9 +26,30 @@ export const mockBootEntries: BootEntry[] = [
   },
   {
     id: 3,
-    description: "Fedora 40",
+    description: "Windows Boot Manager",
     is_default: false,
     is_bootnext: false,
-    is_current: true
+    is_current: true,
+  },
+  {
+    id: 5,
+    description: "Arch Linux",
+    is_default: false,
+    is_bootnext: false,
+    is_current: false
+  },
+  {
+    id: 7,
+    description: "EFI: Network Boot",
+    is_default: false,
+    is_bootnext: false,
+    is_current: false
+  },
+  {
+    id: 8,
+    description: "EFI: USB Drive",
+    is_default: false,
+    is_bootnext: false,
+    is_current: false
   }
 ];

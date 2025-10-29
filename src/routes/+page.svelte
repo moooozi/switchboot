@@ -147,9 +147,13 @@
     shortcutEntry = null;
   }
 
-  function handleShortcutCancel() {
+  async function handleShortcutCancel() {
     showShortcutDialog = false;
     shortcutEntry = null;
+  }
+
+  async function handleRebootToFirmwareSetup() {
+    await apiService.setBootToFirmwareSetup();
   }
 
   if (import.meta.env.DEV) {
@@ -179,7 +183,7 @@
   class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
-  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} />
+  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onreboottofirmwaresetup={handleRebootToFirmwareSetup} />
 
   {#if error}
     <p class="text-red-600 dark:text-red-400 max-w-2xl mx-auto px-2 mb-4">

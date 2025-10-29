@@ -13,6 +13,7 @@
     "icons": "node ./tools/prerender-icons.js"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.7.4",
     "@tailwindcss/vite": "^4.1.11",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-opener": "^2",
