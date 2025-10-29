@@ -6,6 +6,7 @@ impl CliCommand {
     pub const GET_BOOT_NEXT: &'static str = "get-boot-next";
     pub const SET_BOOT_NEXT: &'static str = "set-boot-next";
     pub const GET_BOOT_ENTRIES: &'static str = "get-boot-entries";
+    pub const DISCOVER_ENTRIES: &'static str = "discover-entries";
     pub const SAVE_BOOT_ORDER: &'static str = "save-boot-order";
     pub const UNSET_BOOT_NEXT: &'static str = "unset-boot-next";
     pub const GET_BOOT_CURRENT: &'static str = "get-boot-current";
@@ -32,6 +33,7 @@ impl CliCommand {
             CliCommand::SetBootFirmware => true,
             CliCommand::UnsetBootFirmware => true,
             CliCommand::GetBootFirmware => true,
+            CliCommand::DiscoverEntries => true,
             _ => false,
         }
     }
@@ -47,6 +49,7 @@ impl CliCommand {
             CliCommand::GetBootNext => vec![Self::GET_BOOT_NEXT.into()],
             CliCommand::SetBootNext(id) => vec![Self::SET_BOOT_NEXT.into(), id.to_string()],
             CliCommand::GetBootEntries => vec![Self::GET_BOOT_ENTRIES.into()],
+            CliCommand::DiscoverEntries => vec![Self::DISCOVER_ENTRIES.into()],
             CliCommand::SaveBootOrder(order) => {
                 let mut args = vec![Self::SAVE_BOOT_ORDER.into()];
                 args.extend(order.iter().map(u16::to_string));
@@ -76,6 +79,7 @@ impl CliCommand {
                 None => Err("set-boot-next requires exactly one argument".to_string()),
             },
             Self::GET_BOOT_ENTRIES => Ok(CliCommand::GetBootEntries),
+            Self::DISCOVER_ENTRIES => Ok(CliCommand::DiscoverEntries),
             Self::SAVE_BOOT_ORDER => Ok(CliCommand::SaveBootOrder(parse_u16_vec(&args[1..])?)),
             Self::UNSET_BOOT_NEXT => Ok(CliCommand::UnsetBootNext),
             Self::GET_BOOT_CURRENT => Ok(CliCommand::GetBootCurrent),

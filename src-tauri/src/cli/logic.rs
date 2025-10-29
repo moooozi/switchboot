@@ -11,6 +11,7 @@ pub fn dispatch_command(command: CliCommand) -> CommandResponse {
         CliCommand::GetBootOrder => get_boot_order_response(),
         CliCommand::GetBootNext => get_boot_next_response(),
         CliCommand::GetBootEntries => get_boot_entries_response(),
+        CliCommand::DiscoverEntries => discover_entries_response(),
         CliCommand::GetBootCurrent => get_boot_current_response(),
         CliCommand::SetBootFirmware => set_boot_to_firmware_setup_response(),
         CliCommand::UnsetBootFirmware => clear_boot_to_firmware_setup_response(),
@@ -185,7 +186,7 @@ fn get_boot_entries_response() -> CommandResponse {
             entries.push(BootEntry {
                 id: entry_id,
                 description: parsed.description,
-                is_default: idx == 0,
+                is_default: Some(idx == 0),
                 is_bootnext: boot_next == Some(entry_id) && idx != 0,
                 is_current: boot_current == Some(entry_id),
             });
@@ -199,6 +200,36 @@ fn get_boot_entries_response() -> CommandResponse {
         Err(e) => CommandResponse {
             code: 1,
             message: format!("Error getting boot entries: {}", e),
+        },
+    }
+}
+
+fn discover_entries_response() -> CommandResponse {
+    match with_privileges(|| {
+        let discovered = boot::discover_parsed_boot_entries(0, 200)?;
+        let boot_next = boot::get_boot_next()?;
+        let boot_current = boot::get_boot_current()?;
+        let mut entries = Vec::new();
+        for (entry_id, parsed) in discovered {
+            let is_bootnext = boot_next == Some(entry_id);
+            let is_current = boot_current == Some(entry_id);
+            entries.push(BootEntry {
+                id: entry_id,
+                description: parsed.description,
+                is_default: None,
+                is_bootnext,
+                is_current,
+            });
+        }
+        Ok(entries)
+    }) {
+        Ok(entries) => CommandResponse {
+            code: 0,
+            message: serde_json::to_string(&entries).unwrap(),
+        },
+        Err(e) => CommandResponse {
+            code: 1,
+            message: format!("Error discovering boot entries: {}", e),
         },
     }
 }

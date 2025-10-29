@@ -156,3 +156,28 @@ pub fn get_boot_to_firmware_setup_state() -> Result<bool, Box<dyn std::error::Er
         None => Ok(false),
     }
 }
+
+pub fn discover_boot_entries(start: u16, end: u16) -> Result<Vec<u16>, Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+    let mut found = Vec::new();
+    for id in start..=end {
+        if get_boot_entry(id).is_ok() {
+            found.push(id);
+        }
+    }
+    Ok(found)
+}
+
+pub fn discover_parsed_boot_entries(
+    start: u16,
+    end: u16,
+) -> Result<Vec<(u16, LoadOption)>, Box<dyn std::error::Error>> {
+    verify_uefi_firmware()?;
+    let mut found = Vec::new();
+    for id in start..=end {
+        if let Ok(load_option) = get_parsed_boot_entry(id) {
+            found.push((id, load_option));
+        }
+    }
+    Ok(found)
+}

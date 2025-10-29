@@ -16,6 +16,7 @@ pub enum CliCommand {
     GetBootNext,
     SetBootNext(u16),
     GetBootEntries,
+    DiscoverEntries,
     SaveBootOrder(Vec<u16>),
     UnsetBootNext,
     GetBootCurrent,
@@ -28,7 +29,7 @@ pub enum CliCommand {
 pub struct BootEntry {
     pub id: u16,
     pub description: String,
-    pub is_default: bool,
+    pub is_default: Option<bool>,
     pub is_bootnext: bool,
     pub is_current: bool,
 }
