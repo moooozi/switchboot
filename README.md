@@ -4,8 +4,8 @@
    <img src="./app-icon.svg" alt="Switchboot app icon" width="64" height="64" />
    <p style="margin:0">SwitchBoot is a tiny tool that lets you manage EFI boot entries on your machine.</p>
 </div>
-
-<a id="quick-links"></a>
+<div style="margin-top: 12px;"></div>
+<img src="./others\screenshot_switchboot_color_modes.png" alt="Switchboot app icon" />
 
 ## Quick links
 
