@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import ApiService from "../lib/components/ApiService.svelte";
   import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import Header from "../lib/components/Header.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
   import { getIconId } from '../lib/iconMap';
-  import type { BootEntry } from "../lib/types";
+  import type { BootEntry, ChangeEvent } from "../lib/types";
+  import { OrderActions } from "../lib/types";
+  import { OrderManager } from "../lib/orderManager";
+  import { undoRedoStore } from "../lib/stores/undoRedo";
   import { mockBootEntries } from "./mockBootEntries";
 
   let bootEntries: BootEntry[] = [];
@@ -20,6 +23,9 @@
   let initialized = false;
   let discoveredEntriesLoading = true;
   let efiSetupState = false;
+
+  // Order manager for handling changes with undo/redo
+  let orderManager: OrderManager;
 
   // Shortcut dialog state
   let showShortcutDialog = false;
@@ -38,15 +44,32 @@
   $: if (initialized) console.log(`Current Boot order: [${bootEntries.map(e => e.id).join(',')}]`);
   $: changed = initialized && JSON.stringify(bootEntries.map(e => e.id)) !== JSON.stringify(originalOrder);
 
+  // Initialize order manager when boot entries are fetched
+  $: if (bootEntries.length > 0 && !orderManager && apiService) {
+    orderManager = new OrderManager(
+      bootEntries,
+      (entries) => {
+        bootEntries = entries;
+      },
+      (updatedDiscovered) => {
+        discoveredEntries = updatedDiscovered;
+      },
+      (newEfiState) => {
+        efiSetupState = newEfiState;
+      },
+      apiService
+    );
+  }
+
+  // Update order manager's discovered entries when they change
+  $: if (orderManager && discoveredEntries) {
+    orderManager.setDiscoveredEntries(discoveredEntries);
+  }
+
   // Move entry up/down
   function moveEntry(idx: number, dir: "up" | "down") {
-    if (busy) return;
-    const newIdx = dir === "up" ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= bootEntries.length) return;
-    [bootEntries[idx], bootEntries[newIdx]] = [
-      bootEntries[newIdx],
-      bootEntries[idx],
-    ];
+    if (busy || !orderManager) return;
+    orderManager.moveEntry(idx, dir);
   }
   // Save boot order
   async function saveOrder() {
@@ -58,7 +81,31 @@
   // Discard changes
   function discardChanges() {
     if (busy) return;
-    bootEntries = [...originalEntries];
+
+    // Save current state for undo
+    const currentEntries = [...bootEntries];
+
+    // Create undoable discard action
+    const undoCommand = () => {
+      bootEntries = currentEntries;
+    };
+
+    const redoCommand = () => {
+      bootEntries = [...originalEntries];
+    };
+
+    // Execute the discard
+    redoCommand();
+
+    // Create and register the change event
+    const changeEvent: ChangeEvent = {
+      action: OrderActions.DiscardChanges,
+      undoCommand,
+      redoCommand,
+      description: OrderActions.DiscardChanges
+    };
+
+    undoRedoStore.addChange(changeEvent);
   }
 
   // Handle events from ApiService (now callback props)
@@ -70,6 +117,21 @@
     bootEntries = entries;
     originalEntries = [...entries];
     originalOrder = bootEntries.map((e) => e.id);
+
+    // Initialize order manager
+    orderManager = new OrderManager(
+      entries,
+      (updatedEntries) => {
+        bootEntries = updatedEntries;
+      },
+      (updatedDiscovered) => {
+        discoveredEntries = updatedDiscovered;
+      },
+      (newEfiState) => {
+        efiSetupState = newEfiState;
+      },
+      apiService
+    );
   }
 
   function handleError(errorMessage: string) {
@@ -78,7 +140,16 @@
 
   // Handle events from BootEntriesList (now callback props)
   function handleEntriesChanged(entries: BootEntry[]) {
+    // Just update local state for UI during dragging - actual change recording happens in drag end
     bootEntries = entries;
+  }
+
+  function handleDragStart() {
+    orderManager?.startDrag();
+  }
+
+  function handleDragEnd(entries: BootEntry[]) {
+    orderManager?.endDrag(entries);
   }
 
   function handleMoveUp(index: number) {
@@ -90,21 +161,13 @@
   }
 
   async function handleSetBootNext(entry: BootEntry) {
-    await apiService.setBootNext(entry.id);
-    // Update discovered entries to reflect the new bootnext status
-    discoveredEntries = discoveredEntries.map(e => ({
-      ...e,
-      is_bootnext: e.id === entry.id
-    }));
+    if (!orderManager) return;
+    await orderManager.setBootNext(entry.id);
   }
 
   async function handleUnsetBootNext() {
-    await apiService.unsetBootNext();
-    // Update discovered entries to reflect the unset bootnext status
-    discoveredEntries = discoveredEntries.map(e => ({
-      ...e,
-      is_bootnext: false
-    }));
+    if (!orderManager) return;
+    await orderManager.unsetBootNext();
   }
 
   async function handleRestartNow() {
@@ -112,21 +175,13 @@
   }
 
   async function handleMakeDefault(entry: BootEntry) {
-    // Move the selected entry to the first position, keeping others in order
-    const entryIndex = bootEntries.findIndex((e) => e.id === entry.id);
-    if (entryIndex === -1) return;
+    if (!orderManager) return;
+    orderManager.makeDefault(entry.id);
 
-    // Create new order with selected entry first
-    const newBootEntries = [
-      bootEntries[entryIndex],
-      ...bootEntries.slice(0, entryIndex),
-      ...bootEntries.slice(entryIndex + 1),
-    ];
-
-    bootEntries = newBootEntries;
-
-    // Save the new boot order
-    await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+    // // Save the new boot order immediately (this action itself is not undoable)
+    // await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+    // originalOrder = bootEntries.map((e) => e.id);
+    // originalEntries = [...bootEntries];
   }
 
   async function handleAddShortcut(entry: BootEntry) {
@@ -158,23 +213,48 @@
   }
 
   async function handleRebootToFirmwareSetup() {
-    await apiService.setBootToFirmwareSetup();
-    // Update EFI Setup entry status
-    efiSetupState = true;
+    if (!orderManager) return;
+    await orderManager.setBootToFirmwareSetup();
   }
 
   async function handleUnsetBootToFirmwareSetup() {
-    await apiService.unsetBootToFirmwareSetup();
-    // Update EFI Setup entry status
-    efiSetupState = false;
+    if (!orderManager) return;
+    await orderManager.unsetBootToFirmwareSetup();
   }
 
   async function handleAddToBootOrder(entry: BootEntry) {
-    bootEntries = [...bootEntries, entry];
+    if (!orderManager) return;
+    orderManager.addToBootOrder(entry);
   }
 
   async function handleRemoveFromBootOrder(entry: BootEntry) {
-    bootEntries = bootEntries.filter(e => e.id !== entry.id);
+    if (!orderManager) return;
+    orderManager.removeFromBootOrder(entry.id);
+  }
+
+  // Undo/Redo functionality
+  function handleUndo() {
+    undoRedoStore.undo();
+  }
+
+  function handleRedo() {
+    undoRedoStore.redo();
+  }
+
+  // Keyboard shortcuts
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        handleUndo();
+      } else if ((event.key === 'y') || (event.key === 'z' && event.shiftKey)) {
+        event.preventDefault();
+        handleRedo();
+      } else if (event.key === 's') {
+        event.preventDefault();
+        saveOrder();
+      }
+    }
   }
 
   if (false) {
@@ -187,6 +267,9 @@
     }, 3000);
   } else {
     onMount(async () => {
+      // Add keyboard shortcuts
+      document.addEventListener('keydown', handleKeydown);
+
       await apiService.fetchPortableStatus();
       
       // Load boot entries first (fast)
@@ -208,6 +291,10 @@
         }
       })();
     });
+
+    onDestroy(() => {
+      document.removeEventListener('keydown', handleKeydown);
+    });
   }
 </script>
 
@@ -222,7 +309,7 @@
   class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
-  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onreboottofirmwaresetup={handleRebootToFirmwareSetup} />
+  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onreboottofirmwaresetup={handleRebootToFirmwareSetup} onundo={handleUndo} onredo={handleRedo} />
 
   {#if error}
     <p class="text-red-600 dark:text-red-400 max-w-2xl mx-auto px-2 mb-4">
@@ -237,6 +324,8 @@
     {others}
     {discoveredEntriesLoading}
     onentrieschanged={handleEntriesChanged}
+    ondragstart={handleDragStart}
+    ondragend={handleDragEnd}
     onmoveup={handleMoveUp}
     onmovedown={handleMoveDown}
     onsetbootnext={handleSetBootNext}

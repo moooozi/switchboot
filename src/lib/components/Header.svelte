@@ -3,12 +3,22 @@
   import ContextMenuItem from "./ContextMenuItem.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import { toggleContextMenu as toggleGlobalContextMenu } from "../stores/contextMenu";
+  import { undoRedoStore } from "../stores/undoRedo";
 
   export let changed: boolean;
   export let busy: boolean;
   export let onsave: (() => void) | undefined = undefined;
   export let ondiscard: (() => void) | undefined = undefined;
   export let onreboottofirmwaresetup: (() => void) | undefined = undefined;
+  export let onundo: (() => void) | undefined = undefined;
+  export let onredo: (() => void) | undefined = undefined;
+
+  let undoRedoState = { canUndo: false, canRedo: false, undoDescription: '', redoDescription: '' };
+
+  // Subscribe to undo/redo state
+  undoRedoStore.subscribe(state => {
+    undoRedoState = state;
+  });
 
   function toggleContextMenu(event: MouseEvent) {
     event.stopPropagation(); // Prevent the click from bubbling to document
@@ -17,6 +27,16 @@
 
     // Build context menu items
     const items = [
+      {
+        label: undoRedoState.canUndo ? `Undo ${undoRedoState.undoDescription}` : "Undo",
+        disabled: !undoRedoState.canUndo || busy,
+        onclick: () => onundo?.()
+      },
+      {
+        label: undoRedoState.canRedo ? `Redo ${undoRedoState.redoDescription}` : "Redo",
+        disabled: !undoRedoState.canRedo || busy,
+        onclick: () => onredo?.()
+      },
       {
         label: "Reboot to Firmware Setup",
         onclick: () => onreboottofirmwaresetup?.()

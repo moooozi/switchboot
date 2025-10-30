@@ -14,6 +14,8 @@
   // Callback props instead of events
   export let onentrieschanged: ((entries: BootEntry[]) => void) | undefined =
     undefined;
+  export let ondragstart: (() => void) | undefined = undefined;
+  export let ondragend: ((entries: BootEntry[]) => void) | undefined = undefined;
   export let onmoveup: ((index: number) => void) | undefined = undefined;
   export let onmovedown: ((index: number) => void) | undefined = undefined;
   export let onsetbootnext: ((entry: BootEntry) => void) | undefined =
@@ -33,11 +35,21 @@
 
   const flipDuration = 150;
 
-  function handleDnd(event: CustomEvent<{ items: BootEntry[] }>) {
+  function handleDndConsider(event: CustomEvent<{ items: BootEntry[] }>) {
     if (busy) return;
+    // Capture the starting order when drag begins
+    ondragstart?.();
     const { detail } = event;
     bootEntries = detail.items;
     onentrieschanged?.(bootEntries);
+  }
+
+  function handleDndFinalize(event: CustomEvent<{ items: BootEntry[] }>) {
+    if (busy) return;
+    const { detail } = event;
+    bootEntries = detail.items;
+    // Apply the drag change with the captured start order
+    ondragend?.(bootEntries);
   }
 
   function handleMoveUp(index: number) {
@@ -71,7 +83,12 @@
     const items = [
       {
         label: "Make Default",
-        disabled: entry.is_default || busy,
+        disabled: entry.is_default || busy || entry.id < 0,
+        title: entry.is_default 
+          ? "Already default" 
+          : entry.id < 0 
+            ? "Not possible for this entry" 
+            : "",
         onclick: () => onmakedefault?.(entry)
       },
       {
@@ -132,8 +149,8 @@
 
         dragDisabled: busy,
       }}
-      on:consider={handleDnd}
-      on:finalize={handleDnd}
+      on:consider={handleDndConsider}
+      on:finalize={handleDndFinalize}
     >
       {#each bootEntries as entry, idx (entry.id)}
         <div animate:flip={{ duration: flipDuration }}>
