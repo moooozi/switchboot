@@ -3,9 +3,7 @@
   import { flip } from "svelte/animate";
   import type { BootEntry } from "../types";
   import BootEntryItem from "./BootEntryItem.svelte";
-  import ContextMenuItem from "./ContextMenuItem.svelte";
-  import ContextMenu from "./ContextMenu.svelte";
-  import { openContextMenu, toggleContextMenu } from "../stores/contextMenu";
+  import { openContextMenu } from "../stores/contextMenu";
 
   export let bootEntries: BootEntry[];
   export let busy: boolean;

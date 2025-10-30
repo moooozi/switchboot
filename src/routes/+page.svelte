@@ -28,7 +28,7 @@
   $: others = [
     {
       id: -200,
-      description: "EFI Setup",
+      description: "EFI Firmware Setup",
       is_default: null,
       is_bootnext: efiSetupState,
       is_current: false,
