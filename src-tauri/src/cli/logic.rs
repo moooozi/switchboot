@@ -206,7 +206,7 @@ fn get_boot_entries_response() -> CommandResponse {
 
 fn discover_entries_response() -> CommandResponse {
     match with_privileges(|| {
-        let discovered = boot::discover_parsed_boot_entries(0, 200)?;
+        let discovered = boot::discover_parsed_boot_entries(0, u16::MAX)?;
         let boot_next = boot::get_boot_next()?;
         let boot_current = boot::get_boot_current()?;
         let mut entries = Vec::new();

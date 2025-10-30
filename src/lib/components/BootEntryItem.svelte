@@ -46,8 +46,13 @@
   role="button"
   tabindex="0"
 >
-  <div class="flex items-center gap-3 flex-1">
-  <OsIcon description={entry.description} size={28} />
+  <div class="flex items-center gap-2 flex-1">
+    {#if !isInOthers}
+      <span class="text-sm font-medium text-neutral-500 dark:text-neutral-400 w-6 text-center">
+        {index + 1}.
+      </span>
+    {/if}
+    <OsIcon description={entry.description} size={28} />
     <span class="text-base">{entry.description}</span>
   </div>
 

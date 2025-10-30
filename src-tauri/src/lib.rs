@@ -109,14 +109,14 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-fn discover_entries() -> Result<Vec<BootEntry>, String> {
+async fn discover_entries() -> Result<Vec<BootEntry>, String> {
     let out = call_cli(&CliCommand::DiscoverEntries, false)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-fn discover_entries() -> Result<Vec<BootEntry>, String> {
+async fn discover_entries() -> Result<Vec<BootEntry>, String> {
     get_cli()?.send_command(&CliCommand::DiscoverEntries)
 }
 
