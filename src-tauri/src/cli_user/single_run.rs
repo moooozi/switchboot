@@ -36,6 +36,10 @@ pub fn call_cli(cmd: &CliCommand) -> Result<String, String> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+        if output.status.code() == Some(127) {
+            Err("Authentication was cancelled or denied.".to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
     }
 }
