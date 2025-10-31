@@ -60,6 +60,7 @@
       await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
+      throw e;
     } finally {
       busy = false;
     }
@@ -73,6 +74,7 @@
       await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
+      throw e;
     } finally {
       busy = false;
     }
@@ -86,6 +88,7 @@
       await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
+      throw e;
     } finally {
       busy = false;
     }

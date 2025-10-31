@@ -50,7 +50,12 @@ export class OrderManager {
     )?.id;
 
     // Perform the API call
-    await this.apiService.setBootNext(entryId);
+    try {
+      await this.apiService.setBootNext(entryId);
+    } catch (e) {
+      // Error handled by ApiService's onerror callback
+      return;
+    }
 
     // Update discovered entries
     const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
@@ -63,7 +68,11 @@ export class OrderManager {
     // Create undo event
     const undoCommand = async () => {
       if (currentBootNext !== undefined) {
-        await this.apiService.setBootNext(currentBootNext);
+        try {
+          await this.apiService.setBootNext(currentBootNext);
+        } catch (e) {
+          return;
+        }
         const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
           is_bootnext: e.id === currentBootNext,
@@ -71,7 +80,11 @@ export class OrderManager {
         this.discoveredEntries = undoEntries;
         this.onDiscoveredEntriesChanged?.(undoEntries);
       } else {
-        await this.apiService.unsetBootNext();
+        try {
+          await this.apiService.unsetBootNext();
+        } catch (e) {
+          return;
+        }
         const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
           is_bootnext: false,
@@ -82,7 +95,11 @@ export class OrderManager {
     };
 
     const redoCommand = async () => {
-      await this.apiService.setBootNext(entryId);
+      try {
+        await this.apiService.setBootNext(entryId);
+      } catch (e) {
+        return;
+      }
       const redoEntries = this.discoveredEntries.map((e) => ({
         ...e,
         is_bootnext: e.id === entryId,
@@ -113,7 +130,12 @@ export class OrderManager {
     )?.id;
 
     // Perform the API call
-    await this.apiService.unsetBootNext();
+    try {
+      await this.apiService.unsetBootNext();
+    } catch (e) {
+      // Error handled by ApiService's onerror callback
+      return;
+    }
 
     // Update discovered entries
     const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
@@ -126,7 +148,11 @@ export class OrderManager {
     // Create undo event
     const undoCommand = async () => {
       if (currentBootNext !== undefined) {
-        await this.apiService.setBootNext(currentBootNext);
+        try {
+          await this.apiService.setBootNext(currentBootNext);
+        } catch (e) {
+          return;
+        }
         const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
           is_bootnext: e.id === currentBootNext,
@@ -137,7 +163,11 @@ export class OrderManager {
     };
 
     const redoCommand = async () => {
-      await this.apiService.unsetBootNext();
+      try {
+        await this.apiService.unsetBootNext();
+      } catch (e) {
+        return;
+      }
       const redoEntries = this.discoveredEntries.map((e) => ({
         ...e,
         is_bootnext: false,
@@ -309,18 +339,31 @@ export class OrderManager {
     if (!this.apiService) return;
 
     // Perform the API call
-    await this.apiService.setBootToFirmwareSetup();
+    try {
+      await this.apiService.setBootToFirmwareSetup();
+    } catch (e) {
+      // Error handled by ApiService's onerror callback
+      return;
+    }
     this.onEfiSetupStateChanged?.(true);
 
     // Note: efiSetupState is managed separately in the main component
     // This action changes EFI state immediately and is undoable
     const undoCommand = async () => {
-      await this.apiService.unsetBootToFirmwareSetup();
+      try {
+        await this.apiService.unsetBootToFirmwareSetup();
+      } catch (e) {
+        return;
+      }
       this.onEfiSetupStateChanged?.(false);
     };
 
     const redoCommand = async () => {
-      await this.apiService.setBootToFirmwareSetup();
+      try {
+        await this.apiService.setBootToFirmwareSetup();
+      } catch (e) {
+        return;
+      }
       this.onEfiSetupStateChanged?.(true);
     };
 
@@ -341,16 +384,29 @@ export class OrderManager {
     if (!this.apiService) return;
 
     // Perform the API call
-    await this.apiService.unsetBootToFirmwareSetup();
+    try {
+      await this.apiService.unsetBootToFirmwareSetup();
+    } catch (e) {
+      // Error handled by ApiService's onerror callback
+      return;
+    }
     this.onEfiSetupStateChanged?.(false);
 
     const undoCommand = async () => {
-      await this.apiService.setBootToFirmwareSetup();
+      try {
+        await this.apiService.setBootToFirmwareSetup();
+      } catch (e) {
+        return;
+      }
       this.onEfiSetupStateChanged?.(true);
     };
 
     const redoCommand = async () => {
-      await this.apiService.unsetBootToFirmwareSetup();
+      try {
+        await this.apiService.unsetBootToFirmwareSetup();
+      } catch (e) {
+        return;
+      }
       this.onEfiSetupStateChanged?.(false);
     };
 
