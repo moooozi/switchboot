@@ -5,7 +5,7 @@
 cmd="$1"
 
 case "$cmd" in
-	set-boot-next|set-boot-fw)
+	set-boot-next|unset-boot-next|set-boot-fw|unset-boot-fw)
 		# forward the full argv to the real binary
 		exec /usr/bin/switchboot --cli "$@"
 		;;
