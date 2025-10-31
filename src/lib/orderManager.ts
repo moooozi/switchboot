@@ -273,7 +273,9 @@ export class OrderManager {
    */
   addToBootOrder(entry: BootEntry): void {
     const originalOrder = this.getBootEntries().map(e => e.id);
-    const newOrder = [...originalOrder, entry.id];
+    // Add the entry to bootEntries
+    this.bootEntries = [...this.bootEntries, entry];
+    const newOrder = this.getBootEntries().map(e => e.id);
 
     this.changeOrder(OrderActions.AddToBootOrder, originalOrder, newOrder);
   }
@@ -345,6 +347,33 @@ export class OrderManager {
       undoCommand,
       redoCommand,
       description: OrderActions.UnsetBootToFirmwareSetup
+    };
+
+    undoRedoStore.addChange(changeEvent);
+  }
+
+  /**
+   * Discard changes and restore to original state
+   */
+  discardToOriginal(originalEntries: BootEntry[]): void {
+    const currentEntries = this.getBootEntries();
+
+    const undoCommand = () => {
+      this.setBootEntries(currentEntries);
+    };
+
+    const redoCommand = () => {
+      this.setBootEntries([...originalEntries]);
+    };
+
+    // Execute the discard
+    redoCommand();
+
+    const changeEvent: ChangeEvent = {
+      action: OrderActions.DiscardChanges,
+      undoCommand,
+      redoCommand,
+      description: OrderActions.DiscardChanges
     };
 
     undoRedoStore.addChange(changeEvent);

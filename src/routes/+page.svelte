@@ -80,32 +80,8 @@
 
   // Discard changes
   function discardChanges() {
-    if (busy) return;
-
-    // Save current state for undo
-    const currentEntries = [...bootEntries];
-
-    // Create undoable discard action
-    const undoCommand = () => {
-      bootEntries = currentEntries;
-    };
-
-    const redoCommand = () => {
-      bootEntries = [...originalEntries];
-    };
-
-    // Execute the discard
-    redoCommand();
-
-    // Create and register the change event
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.DiscardChanges,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.DiscardChanges
-    };
-
-    undoRedoStore.addChange(changeEvent);
+    if (busy || !orderManager) return;
+    orderManager.discardToOriginal(originalEntries);
   }
 
   // Handle events from ApiService (now callback props)
@@ -117,6 +93,9 @@
     bootEntries = entries;
     originalEntries = [...entries];
     originalOrder = bootEntries.map((e) => e.id);
+
+    // Initialize discovered entries with boot entries
+    discoveredEntries = [...entries];
 
     // Initialize order manager
     orderManager = new OrderManager(
@@ -283,7 +262,11 @@
       // Load discovered entries asynchronously (slow)
       (async () => {
         try {
-          discoveredEntries = await apiService.fetchDiscoveredEntries();
+          const fetchedEntries = await apiService.fetchDiscoveredEntries();
+          // Merge new entries without overwriting existing ones
+          const existingIds = new Set(discoveredEntries.map(e => e.id));
+          const newEntries = fetchedEntries.filter(e => !existingIds.has(e.id));
+          discoveredEntries = [...discoveredEntries, ...newEntries];
         } catch (e) {
           onerror?.(String(e));
         } finally {

@@ -139,7 +139,7 @@
 
 <div class="flex-1 overflow-y-auto">
   <div class="mb-4">
-    <h2 class="text-lg font-semibold p-2 max-w-2xl w-full mx-auto">Boot Order</h2>
+    <h2 class="text-lg font-semibold pl-3 pb-1 max-w-2xl w-full mx-auto select-none">Boot Order</h2>
     <div
       class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
       use:dndzone={{
@@ -176,7 +176,7 @@
 
   {#if others.length > 0}
     <details class="mb-4">
-      <summary class="text-lg font-semibold cursor-pointer p-2 max-w-2xl w-full mx-auto">Others</summary>
+      <summary class="text-lg font-semibold cursor-pointer pl-3 pb-1 max-w-2xl w-full mx-auto select-none">Others</summary>
       <div class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto">
         {#if discoveredEntriesLoading}
           <!-- Show EFI Setup immediately -->
