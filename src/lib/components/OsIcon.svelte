@@ -5,11 +5,19 @@
   import { getIconId } from "../iconMap";
 
   const iconId = getIconId(description);
-  let svgPath: string | undefined = iconId ? `/os-icons/${iconId}.svg` : undefined;
+  let svgPath: string | undefined = iconId
+    ? `/os-icons/${iconId}.svg`
+    : undefined;
 </script>
 
 {#if svgPath}
-  <img src={svgPath} alt={description} width={size} height={size} class="rounded-sm" />
+  <img
+    src={svgPath}
+    alt={description}
+    width={size}
+    height={size}
+    class="rounded-sm"
+  />
 {:else}
   <!-- preserve layout when no icon is available -->
   <div
@@ -18,4 +26,3 @@
     style="width: {size}px; height: {size}px; display: inline-block;"
   ></div>
 {/if}
-

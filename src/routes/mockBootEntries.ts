@@ -14,15 +14,14 @@ export const mockBootEntries: BootEntry[] = [
     description: "Fedora 43",
     is_default: true,
     is_bootnext: false,
-    is_current: false
-
+    is_current: false,
   },
   {
     id: 2,
     description: "Ubuntu 24.04",
     is_default: false,
     is_bootnext: true,
-    is_current: false
+    is_current: false,
   },
   {
     id: 3,
@@ -36,20 +35,20 @@ export const mockBootEntries: BootEntry[] = [
     description: "Arch Linux",
     is_default: false,
     is_bootnext: false,
-    is_current: false
+    is_current: false,
   },
   {
     id: 7,
     description: "EFI: Network Boot",
     is_default: false,
     is_bootnext: false,
-    is_current: false
+    is_current: false,
   },
   {
     id: 8,
     description: "EFI: USB Drive",
     is_default: false,
     is_bootnext: false,
-    is_current: false
-  }
+    is_current: false,
+  },
 ];

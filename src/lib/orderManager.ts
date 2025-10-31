@@ -1,6 +1,6 @@
-import type { BootEntry, ChangeEvent } from './types';
-import { OrderActions } from './types';
-import { undoRedoStore } from './stores/undoRedo';
+import { undoRedoStore } from "./stores/undoRedo";
+import type { BootEntry, ChangeEvent } from "./types";
+import { OrderActions } from "./types";
 
 export class OrderManager {
   private bootEntries: BootEntry[] = [];
@@ -45,15 +45,17 @@ export class OrderManager {
     if (!this.apiService) return;
 
     // Store current bootnext state
-    const currentBootNext = this.discoveredEntries.find(e => e.is_bootnext)?.id;
+    const currentBootNext = this.discoveredEntries.find(
+      (e) => e.is_bootnext
+    )?.id;
 
     // Perform the API call
     await this.apiService.setBootNext(entryId);
 
     // Update discovered entries
-    const newDiscoveredEntries = this.discoveredEntries.map(e => ({
+    const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
       ...e,
-      is_bootnext: e.id === entryId
+      is_bootnext: e.id === entryId,
     }));
     this.discoveredEntries = newDiscoveredEntries;
     this.onDiscoveredEntriesChanged?.(newDiscoveredEntries);
@@ -62,17 +64,17 @@ export class OrderManager {
     const undoCommand = async () => {
       if (currentBootNext !== undefined) {
         await this.apiService.setBootNext(currentBootNext);
-        const undoEntries = this.discoveredEntries.map(e => ({
+        const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
-          is_bootnext: e.id === currentBootNext
+          is_bootnext: e.id === currentBootNext,
         }));
         this.discoveredEntries = undoEntries;
         this.onDiscoveredEntriesChanged?.(undoEntries);
       } else {
         await this.apiService.unsetBootNext();
-        const undoEntries = this.discoveredEntries.map(e => ({
+        const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
-          is_bootnext: false
+          is_bootnext: false,
         }));
         this.discoveredEntries = undoEntries;
         this.onDiscoveredEntriesChanged?.(undoEntries);
@@ -81,9 +83,9 @@ export class OrderManager {
 
     const redoCommand = async () => {
       await this.apiService.setBootNext(entryId);
-      const redoEntries = this.discoveredEntries.map(e => ({
+      const redoEntries = this.discoveredEntries.map((e) => ({
         ...e,
-        is_bootnext: e.id === entryId
+        is_bootnext: e.id === entryId,
       }));
       this.discoveredEntries = redoEntries;
       this.onDiscoveredEntriesChanged?.(redoEntries);
@@ -93,7 +95,7 @@ export class OrderManager {
       action: OrderActions.SetBootNext,
       undoCommand,
       redoCommand,
-      description: OrderActions.SetBootNext
+      description: OrderActions.SetBootNext,
     };
 
     undoRedoStore.addChange(changeEvent);
@@ -106,15 +108,17 @@ export class OrderManager {
     if (!this.apiService) return;
 
     // Store current bootnext state
-    const currentBootNext = this.discoveredEntries.find(e => e.is_bootnext)?.id;
+    const currentBootNext = this.discoveredEntries.find(
+      (e) => e.is_bootnext
+    )?.id;
 
     // Perform the API call
     await this.apiService.unsetBootNext();
 
     // Update discovered entries
-    const newDiscoveredEntries = this.discoveredEntries.map(e => ({
+    const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
       ...e,
-      is_bootnext: false
+      is_bootnext: false,
     }));
     this.discoveredEntries = newDiscoveredEntries;
     this.onDiscoveredEntriesChanged?.(newDiscoveredEntries);
@@ -123,9 +127,9 @@ export class OrderManager {
     const undoCommand = async () => {
       if (currentBootNext !== undefined) {
         await this.apiService.setBootNext(currentBootNext);
-        const undoEntries = this.discoveredEntries.map(e => ({
+        const undoEntries = this.discoveredEntries.map((e) => ({
           ...e,
-          is_bootnext: e.id === currentBootNext
+          is_bootnext: e.id === currentBootNext,
         }));
         this.discoveredEntries = undoEntries;
         this.onDiscoveredEntriesChanged?.(undoEntries);
@@ -134,9 +138,9 @@ export class OrderManager {
 
     const redoCommand = async () => {
       await this.apiService.unsetBootNext();
-      const redoEntries = this.discoveredEntries.map(e => ({
+      const redoEntries = this.discoveredEntries.map((e) => ({
         ...e,
-        is_bootnext: false
+        is_bootnext: false,
       }));
       this.discoveredEntries = redoEntries;
       this.onDiscoveredEntriesChanged?.(redoEntries);
@@ -146,7 +150,7 @@ export class OrderManager {
       action: OrderActions.UnsetBootNext,
       undoCommand,
       redoCommand,
-      description: OrderActions.UnsetBootNext
+      description: OrderActions.UnsetBootNext,
     };
 
     undoRedoStore.addChange(changeEvent);
@@ -163,14 +167,14 @@ export class OrderManager {
     const originalEntries = this.getBootEntries();
 
     // Create new order based on the provided order IDs
-    const newEntries = newOrder.map(id =>
-      originalEntries.find(entry => entry.id === id)!
+    const newEntries = newOrder.map(
+      (id) => originalEntries.find((entry) => entry.id === id)!
     );
 
     // Undo command: restore to original order
     const undoCommand = () => {
-      const undoEntries = originalOrder.map(id =>
-        originalEntries.find(entry => entry.id === id)!
+      const undoEntries = originalOrder.map(
+        (id) => originalEntries.find((entry) => entry.id === id)!
       );
       this.setBootEntries(undoEntries);
     };
@@ -188,7 +192,7 @@ export class OrderManager {
       action,
       undoCommand,
       redoCommand,
-      description: action
+      description: action,
     };
 
     undoRedoStore.addChange(changeEvent);
@@ -199,19 +203,23 @@ export class OrderManager {
   /**
    * Move an entry up or down in the boot order
    */
-  moveEntry(index: number, direction: 'up' | 'down'): void {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === this.bootEntries.length - 1) return;
+  moveEntry(index: number, direction: "up" | "down"): void {
+    if (direction === "up" && index === 0) return;
+    if (direction === "down" && index === this.bootEntries.length - 1) return;
 
-    const originalOrder = this.getBootEntries().map(e => e.id);
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    const originalOrder = this.getBootEntries().map((e) => e.id);
+    const newIndex = direction === "up" ? index - 1 : index + 1;
 
     // Swap entries
     const newEntries = [...this.getBootEntries()];
-    [newEntries[index], newEntries[newIndex]] = [newEntries[newIndex], newEntries[index]];
+    [newEntries[index], newEntries[newIndex]] = [
+      newEntries[newIndex],
+      newEntries[index],
+    ];
 
-    const newOrder = newEntries.map(e => e.id);
-    const action = direction === 'up' ? OrderActions.MoveUp : OrderActions.MoveDown;
+    const newOrder = newEntries.map((e) => e.id);
+    const action =
+      direction === "up" ? OrderActions.MoveUp : OrderActions.MoveDown;
 
     this.changeOrder(action, originalOrder, newOrder);
   }
@@ -220,8 +228,8 @@ export class OrderManager {
    * Set boot entries directly (used for drag and drop)
    */
   setEntriesFromDragDrop(entries: BootEntry[]): void {
-    const originalOrder = this.getBootEntries().map(e => e.id);
-    const newOrder = entries.map(e => e.id);
+    const originalOrder = this.getBootEntries().map((e) => e.id);
+    const newOrder = entries.map((e) => e.id);
 
     this.changeOrder(OrderActions.ReorderByDrag, originalOrder, newOrder);
   }
@@ -230,7 +238,7 @@ export class OrderManager {
    * Capture the original order when drag starts
    */
   startDrag(): void {
-    this.dragStartOrder = this.getBootEntries().map(e => e.id);
+    this.dragStartOrder = this.getBootEntries().map((e) => e.id);
   }
 
   /**
@@ -239,11 +247,15 @@ export class OrderManager {
   endDrag(entries: BootEntry[]): void {
     if (!this.dragStartOrder) return;
 
-    const newOrder = entries.map(e => e.id);
+    const newOrder = entries.map((e) => e.id);
 
     // Only create a change event if the order actually changed
     if (JSON.stringify(this.dragStartOrder) !== JSON.stringify(newOrder)) {
-      this.changeOrder(OrderActions.ReorderByDrag, this.dragStartOrder, newOrder);
+      this.changeOrder(
+        OrderActions.ReorderByDrag,
+        this.dragStartOrder,
+        newOrder
+      );
     }
 
     this.dragStartOrder = null;
@@ -253,8 +265,8 @@ export class OrderManager {
    * Make an entry the default (move to first position)
    */
   makeDefault(entryId: number): void {
-    const originalOrder = this.getBootEntries().map(e => e.id);
-    const entryIndex = this.getBootEntries().findIndex(e => e.id === entryId);
+    const originalOrder = this.getBootEntries().map((e) => e.id);
+    const entryIndex = this.getBootEntries().findIndex((e) => e.id === entryId);
 
     if (entryIndex === -1 || entryIndex === 0) return;
 
@@ -262,7 +274,7 @@ export class OrderManager {
     const newOrder = [
       entryId,
       ...originalOrder.slice(0, entryIndex),
-      ...originalOrder.slice(entryIndex + 1)
+      ...originalOrder.slice(entryIndex + 1),
     ];
 
     this.changeOrder(OrderActions.MakeDefault, originalOrder, newOrder);
@@ -272,10 +284,10 @@ export class OrderManager {
    * Add an entry to the boot order
    */
   addToBootOrder(entry: BootEntry): void {
-    const originalOrder = this.getBootEntries().map(e => e.id);
+    const originalOrder = this.getBootEntries().map((e) => e.id);
     // Add the entry to bootEntries
     this.bootEntries = [...this.bootEntries, entry];
-    const newOrder = this.getBootEntries().map(e => e.id);
+    const newOrder = this.getBootEntries().map((e) => e.id);
 
     this.changeOrder(OrderActions.AddToBootOrder, originalOrder, newOrder);
   }
@@ -284,8 +296,8 @@ export class OrderManager {
    * Remove an entry from the boot order
    */
   removeFromBootOrder(entryId: number): void {
-    const originalOrder = this.getBootEntries().map(e => e.id);
-    const newOrder = originalOrder.filter(id => id !== entryId);
+    const originalOrder = this.getBootEntries().map((e) => e.id);
+    const newOrder = originalOrder.filter((id) => id !== entryId);
 
     this.changeOrder(OrderActions.RemoveFromBootOrder, originalOrder, newOrder);
   }
@@ -316,7 +328,7 @@ export class OrderManager {
       action: OrderActions.SetBootToFirmwareSetup,
       undoCommand,
       redoCommand,
-      description: OrderActions.SetBootToFirmwareSetup
+      description: OrderActions.SetBootToFirmwareSetup,
     };
 
     undoRedoStore.addChange(changeEvent);
@@ -346,7 +358,7 @@ export class OrderManager {
       action: OrderActions.UnsetBootToFirmwareSetup,
       undoCommand,
       redoCommand,
-      description: OrderActions.UnsetBootToFirmwareSetup
+      description: OrderActions.UnsetBootToFirmwareSetup,
     };
 
     undoRedoStore.addChange(changeEvent);
@@ -373,7 +385,7 @@ export class OrderManager {
       action: OrderActions.DiscardChanges,
       undoCommand,
       redoCommand,
-      description: OrderActions.DiscardChanges
+      description: OrderActions.DiscardChanges,
     };
 
     undoRedoStore.addChange(changeEvent);

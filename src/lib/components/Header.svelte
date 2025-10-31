@@ -10,10 +10,15 @@
   export let onundo: (() => void) | undefined = undefined;
   export let onredo: (() => void) | undefined = undefined;
 
-  let undoRedoState = { canUndo: false, canRedo: false, undoDescription: '', redoDescription: '' };
+  let undoRedoState = {
+    canUndo: false,
+    canRedo: false,
+    undoDescription: "",
+    redoDescription: "",
+  };
 
   // Subscribe to undo/redo state
-  undoRedoStore.subscribe(state => {
+  undoRedoStore.subscribe((state) => {
     undoRedoState = state;
   });
 
@@ -25,23 +30,27 @@
     // Build context menu items
     const items = [
       {
-        label: undoRedoState.canUndo ? `Undo ${undoRedoState.undoDescription}` : "Undo",
+        label: undoRedoState.canUndo
+          ? `Undo ${undoRedoState.undoDescription}`
+          : "Undo",
         disabled: !undoRedoState.canUndo || busy,
-        onclick: () => onundo?.()
+        onclick: () => onundo?.(),
       },
       {
-        label: undoRedoState.canRedo ? `Redo ${undoRedoState.redoDescription}` : "Redo",
+        label: undoRedoState.canRedo
+          ? `Redo ${undoRedoState.redoDescription}`
+          : "Redo",
         disabled: !undoRedoState.canRedo || busy,
-        onclick: () => onredo?.()
-      }
+        onclick: () => onredo?.(),
+      },
     ];
 
     // Toggle the global context menu
-    toggleGlobalContextMenu('header-3dot', {
+    toggleGlobalContextMenu("header-3dot", {
       triggerElement: button,
       items,
-      preferredPlacement: 'bottom-start',
-      onclose: () => {} // No special close handling needed
+      preferredPlacement: "bottom-start",
+      onclose: () => {}, // No special close handling needed
     });
   }
 </script>
@@ -69,7 +78,7 @@
     >
       Discard
     </Button>
-    
+
     <!-- 3 dots menu button -->
     <div class="relative">
       <button
@@ -82,7 +91,9 @@
         onclick={toggleContextMenu}
       >
         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+          <path
+            d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"
+          />
         </svg>
       </button>
     </div>

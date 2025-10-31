@@ -1,5 +1,5 @@
-import { writable } from 'svelte/store';
-import type { ChangeEvent } from '../types';
+import { writable } from "svelte/store";
+import type { ChangeEvent } from "../types";
 
 export interface UndoRedoState {
   canUndo: boolean;
@@ -14,8 +14,8 @@ class UndoRedoManager {
   private store = writable<UndoRedoState>({
     canUndo: false,
     canRedo: false,
-    undoDescription: '',
-    redoDescription: ''
+    undoDescription: "",
+    redoDescription: "",
   });
 
   subscribe = this.store.subscribe;
@@ -74,8 +74,12 @@ class UndoRedoManager {
     this.store.set({
       canUndo,
       canRedo,
-      undoDescription: canUndo ? this.history[this.currentIndex].description : '',
-      redoDescription: canRedo ? this.history[this.currentIndex + 1].description : ''
+      undoDescription: canUndo
+        ? this.history[this.currentIndex].description
+        : "",
+      redoDescription: canRedo
+        ? this.history[this.currentIndex + 1].description
+        : "",
     });
   }
 

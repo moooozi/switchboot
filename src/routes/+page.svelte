@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import ApiService from "../lib/components/ApiService.svelte";
   import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import Header from "../lib/components/Header.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
-  import { getIconId } from '../lib/iconMap';
-  import type { BootEntry, ChangeEvent } from "../lib/types";
-  import { OrderActions, ShortcutAction } from "../lib/types";
+  import { getIconId } from "../lib/iconMap";
   import { OrderManager } from "../lib/orderManager";
   import { undoRedoStore } from "../lib/stores/undoRedo";
+  import type { BootEntry } from "../lib/types";
+  import { ShortcutAction } from "../lib/types";
   import { mockBootEntries } from "./mockBootEntries";
 
   let bootEntries: BootEntry[] = [];
@@ -39,10 +39,18 @@
       is_bootnext: efiSetupState,
       is_current: false,
     },
-    ...discoveredEntries.filter(e => !bootEntries.some(b => b.id === e.id) && e.id !== -200)
+    ...discoveredEntries.filter(
+      (e) => !bootEntries.some((b) => b.id === e.id) && e.id !== -200
+    ),
   ];
-  $: if (initialized) console.log(`Current Boot order: [${bootEntries.map(e => e.id).join(',')}]`);
-  $: changed = initialized && JSON.stringify(bootEntries.map(e => e.id)) !== JSON.stringify(originalOrder);
+  $: if (initialized)
+    console.log(
+      `Current Boot order: [${bootEntries.map((e) => e.id).join(",")}]`
+    );
+  $: changed =
+    initialized &&
+    JSON.stringify(bootEntries.map((e) => e.id)) !==
+      JSON.stringify(originalOrder);
 
   // Initialize order manager when boot entries are fetched
   $: if (bootEntries.length > 0 && !orderManager && apiService) {
@@ -178,7 +186,10 @@
 
     await apiService.createShortcut({
       name: config.name,
-      action: shortcutEntry.id === -200 ? ShortcutAction.SetFirmwareSetup : ShortcutAction.SetBootNext,
+      action:
+        shortcutEntry.id === -200
+          ? ShortcutAction.SetFirmwareSetup
+          : ShortcutAction.SetBootNext,
       entryId: shortcutEntry.id === -200 ? undefined : shortcutEntry.id,
       reboot: config.reboot,
       iconId,
@@ -224,13 +235,13 @@
   // Keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
     if (event.ctrlKey || event.metaKey) {
-      if (event.key === 'z' && !event.shiftKey) {
+      if (event.key === "z" && !event.shiftKey) {
         event.preventDefault();
         handleUndo();
-      } else if ((event.key === 'y') || (event.key === 'z' && event.shiftKey)) {
+      } else if (event.key === "y" || (event.key === "z" && event.shiftKey)) {
         event.preventDefault();
         handleRedo();
-      } else if (event.key === 's') {
+      } else if (event.key === "s") {
         event.preventDefault();
         saveOrder();
       }
@@ -248,25 +259,27 @@
   } else {
     onMount(async () => {
       // Add keyboard shortcuts
-      document.addEventListener('keydown', handleKeydown);
+      document.addEventListener("keydown", handleKeydown);
 
       await apiService.fetchPortableStatus();
-      
+
       // Load boot entries first (fast)
       await apiService.fetchBootEntries();
-      
+
       // Get EFI Setup state
       efiSetupState = await apiService.getBootToFirmwareSetupState();
-      
+
       initialized = true;
-      
+
       // Load discovered entries asynchronously (slow)
       (async () => {
         try {
           const fetchedEntries = await apiService.fetchDiscoveredEntries();
           // Merge new entries without overwriting existing ones
-          const existingIds = new Set(discoveredEntries.map(e => e.id));
-          const newEntries = fetchedEntries.filter(e => !existingIds.has(e.id));
+          const existingIds = new Set(discoveredEntries.map((e) => e.id));
+          const newEntries = fetchedEntries.filter(
+            (e) => !existingIds.has(e.id)
+          );
           discoveredEntries = [...discoveredEntries, ...newEntries];
         } catch (e) {
           onerror?.(String(e));
@@ -277,7 +290,7 @@
     });
 
     onDestroy(() => {
-      document.removeEventListener('keydown', handleKeydown);
+      document.removeEventListener("keydown", handleKeydown);
     });
   }
 </script>
@@ -293,7 +306,14 @@
   class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
-  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onundo={handleUndo} onredo={handleRedo} />
+  <Header
+    {changed}
+    {busy}
+    onsave={saveOrder}
+    ondiscard={discardChanges}
+    onundo={handleUndo}
+    onredo={handleRedo}
+  />
 
   {#if error}
     <p class="text-red-600 dark:text-red-400 max-w-2xl mx-auto px-2 mb-4">
