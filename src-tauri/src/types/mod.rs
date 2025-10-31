@@ -24,7 +24,6 @@ pub enum CliCommand {
     SetBootNext(u16),
     GetBootEntries,
     DiscoverEntries,
-    SaveBootOrder(Vec<u16>),
     UnsetBootNext,
     GetBootCurrent,
     SetBootFirmware,

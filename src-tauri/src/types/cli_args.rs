@@ -7,7 +7,6 @@ impl CliCommand {
     pub const SET_BOOT_NEXT: &'static str = "set-boot-next";
     pub const GET_BOOT_ENTRIES: &'static str = "get-boot-entries";
     pub const DISCOVER_ENTRIES: &'static str = "discover-entries";
-    pub const SAVE_BOOT_ORDER: &'static str = "save-boot-order";
     pub const UNSET_BOOT_NEXT: &'static str = "unset-boot-next";
     pub const GET_BOOT_CURRENT: &'static str = "get-boot-current";
     pub const SET_BOOT_FW: &'static str = "set-boot-fw";
@@ -26,7 +25,18 @@ impl CliCommand {
         }
     }
 
-    pub fn allow_non_auth_exec(&self) -> bool {
+    pub fn requires_root_privileges(&self) -> bool {
+        match self {
+            CliCommand::SetBootOrder(_) => true,
+            CliCommand::SetBootNext(_) => true,
+            CliCommand::UnsetBootNext => true,
+            CliCommand::SetBootFirmware => true,
+            CliCommand::UnsetBootFirmware => true,
+            _ => false,
+        }
+    }
+
+    pub fn allow_no_auth_exec(&self) -> bool {
         match self {
             CliCommand::SetBootNext(_) => true,
             CliCommand::UnsetBootNext => true,
@@ -50,11 +60,6 @@ impl CliCommand {
             CliCommand::SetBootNext(id) => vec![Self::SET_BOOT_NEXT.into(), id.to_string()],
             CliCommand::GetBootEntries => vec![Self::GET_BOOT_ENTRIES.into()],
             CliCommand::DiscoverEntries => vec![Self::DISCOVER_ENTRIES.into()],
-            CliCommand::SaveBootOrder(order) => {
-                let mut args = vec![Self::SAVE_BOOT_ORDER.into()];
-                args.extend(order.iter().map(u16::to_string));
-                args
-            }
             CliCommand::UnsetBootNext => vec![Self::UNSET_BOOT_NEXT.into()],
             CliCommand::GetBootCurrent => vec![Self::GET_BOOT_CURRENT.into()],
             CliCommand::SetBootFirmware => vec![Self::SET_BOOT_FW.into()],
@@ -80,7 +85,6 @@ impl CliCommand {
             },
             Self::GET_BOOT_ENTRIES => Ok(CliCommand::GetBootEntries),
             Self::DISCOVER_ENTRIES => Ok(CliCommand::DiscoverEntries),
-            Self::SAVE_BOOT_ORDER => Ok(CliCommand::SaveBootOrder(parse_u16_vec(&args[1..])?)),
             Self::UNSET_BOOT_NEXT => Ok(CliCommand::UnsetBootNext),
             Self::GET_BOOT_CURRENT => Ok(CliCommand::GetBootCurrent),
             Self::SET_BOOT_FW => Ok(CliCommand::SetBootFirmware),

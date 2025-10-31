@@ -6,7 +6,6 @@ pub fn dispatch_command(command: CliCommand) -> CommandResponse {
     match command {
         CliCommand::SetBootOrder(ids) => set_boot_order_response(&ids),
         CliCommand::SetBootNext(id) => set_boot_next_response(Some(id)),
-        CliCommand::SaveBootOrder(ids) => save_boot_order_response(&ids),
         CliCommand::UnsetBootNext => unset_boot_next_response(),
         CliCommand::GetBootOrder => get_boot_order_response(),
         CliCommand::GetBootNext => get_boot_next_response(),
@@ -113,25 +112,6 @@ fn set_boot_next_response(id: Option<u16>) -> CommandResponse {
         None => CommandResponse {
             code: 1,
             message: "Missing or invalid entry id for set-boot-next".to_string(),
-        },
-    }
-}
-
-fn save_boot_order_response(ids: &Vec<u16>) -> CommandResponse {
-    match with_privileges(|| {
-        boot::set_boot_order(ids)?;
-        if let Some(&first_entry) = ids.first() {
-            boot::set_boot_next(first_entry)?;
-        }
-        Ok(())
-    }) {
-        Ok(_) => CommandResponse {
-            code: 0,
-            message: "Boot order saved successfully".to_string(),
-        },
-        Err(e) => CommandResponse {
-            code: 1,
-            message: format!("Error saving boot order: {}", e),
         },
     }
 }

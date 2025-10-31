@@ -38,7 +38,7 @@
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
           "/usr/share/icons/hicolor": "icons-linux/hicolor",
-          "/usr/bin/switchboot-cli-nopass": "platform/linux/links/switchboot-cli-nopass"
+          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
         }
       },
       "rpm": {
@@ -46,7 +46,7 @@
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
           "/usr/share/icons/hicolor": "icons-linux/hicolor",
-          "/usr/bin/switchboot-cli-nopass": "platform/linux/links/switchboot-cli-nopass"
+          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
         }
       }
     },

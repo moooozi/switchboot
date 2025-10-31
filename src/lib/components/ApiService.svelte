@@ -78,11 +78,11 @@
     }
   }
 
-  // Save boot order
-  export async function saveBootOrder(newOrder: number[]) {
+  // Set boot order
+  export async function setBootOrder(newOrder: number[]) {
     busy = true;
     try {
-      await invoke("save_boot_order", { newOrder });
+      await invoke("set_boot_order", { order: newOrder });
       await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));

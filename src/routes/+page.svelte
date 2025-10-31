@@ -81,7 +81,7 @@
   }
   // Save boot order
   async function saveOrder() {
-    await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+    await apiService.setBootOrder(bootEntries.map((e) => e.id));
     originalOrder = bootEntries.map((e) => e.id);
     originalEntries = [...bootEntries];
   }
@@ -166,7 +166,7 @@
     orderManager.makeDefault(entry.id);
 
     // // Save the new boot order immediately (this action itself is not undoable)
-    // await apiService.saveBootOrder(bootEntries.map((e) => e.id));
+    // await apiService.setBootOrder(bootEntries.map((e) => e.id));
     // originalOrder = bootEntries.map((e) => e.id);
     // originalEntries = [...bootEntries];
   }

@@ -19,7 +19,7 @@ pub use build_info::APP_IDENTIFIER;
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_order() -> Result<Vec<u16>, String> {
-    let out = call_cli(&CliCommand::GetBootOrder, false)?;
+    let out = call_cli(&CliCommand::GetBootOrder)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -32,7 +32,7 @@ fn get_boot_order() -> Result<Vec<u16>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
-    call_cli(&CliCommand::SetBootOrder(order), true)?;
+    call_cli(&CliCommand::SetBootOrder(order))?;
     Ok(())
 }
 
@@ -45,7 +45,7 @@ fn set_boot_order(order: Vec<u16>) -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_next() -> Result<Option<u16>, String> {
-    let out = call_cli(&CliCommand::GetBootNext, false)?;
+    let out = call_cli(&CliCommand::GetBootNext)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -58,7 +58,7 @@ fn get_boot_next() -> Result<Option<u16>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn set_boot_next(entry_id: u16) -> Result<(), String> {
-    call_cli(&CliCommand::SetBootNext(entry_id), true)?;
+    call_cli(&CliCommand::SetBootNext(entry_id))?;
     Ok(())
 }
 
@@ -70,21 +70,8 @@ fn set_boot_next(entry_id: u16) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
-    call_cli(&CliCommand::SaveBootOrder(new_order), true)?;
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-#[tauri::command]
-fn save_boot_order(new_order: Vec<u16>) -> Result<(), String> {
-    get_cli()?.send_command_unit(&CliCommand::SaveBootOrder(new_order))
-}
-
-#[cfg(not(target_os = "windows"))]
-#[tauri::command]
 fn unset_boot_next() -> Result<(), String> {
-    call_cli(&CliCommand::UnsetBootNext, true)?;
+    call_cli(&CliCommand::UnsetBootNext)?;
     Ok(())
 }
 
@@ -97,7 +84,7 @@ fn unset_boot_next() -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
-    let out = call_cli(&CliCommand::GetBootEntries, false)?;
+    let out = call_cli(&CliCommand::GetBootEntries)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -110,7 +97,7 @@ fn get_boot_entries() -> Result<Vec<BootEntry>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 async fn discover_entries() -> Result<Vec<BootEntry>, String> {
-    let out = call_cli(&CliCommand::DiscoverEntries, false)?;
+    let out = call_cli(&CliCommand::DiscoverEntries)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -123,7 +110,7 @@ async fn discover_entries() -> Result<Vec<BootEntry>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_current() -> Result<Option<u16>, String> {
-    let out = call_cli(&CliCommand::GetBootCurrent, false)?;
+    let out = call_cli(&CliCommand::GetBootCurrent)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -136,7 +123,7 @@ fn get_boot_current() -> Result<Option<u16>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn set_boot_fw() -> Result<(), String> {
-    call_cli(&CliCommand::SetBootFirmware, true)?;
+    call_cli(&CliCommand::SetBootFirmware)?;
     Ok(())
 }
 
@@ -149,7 +136,7 @@ fn set_boot_fw() -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn unset_boot_fw() -> Result<(), String> {
-    call_cli(&CliCommand::UnsetBootFirmware, true)?;
+    call_cli(&CliCommand::UnsetBootFirmware)?;
     Ok(())
 }
 
@@ -162,7 +149,7 @@ fn unset_boot_fw() -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 fn get_boot_fw() -> Result<bool, String> {
-    let out = call_cli(&CliCommand::GetBootFirmware, false)?;
+    let out = call_cli(&CliCommand::GetBootFirmware)?;
     serde_json::from_str(&out).map_err(|e| e.to_string())
 }
 
@@ -353,7 +340,6 @@ pub fn run(_app_config: Option<()>) {
             set_boot_next,
             get_boot_entries,
             discover_entries,
-            save_boot_order,
             unset_boot_next,
             get_boot_current,
             set_boot_fw,

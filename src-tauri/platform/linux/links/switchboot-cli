@@ -1,0 +1,3 @@
+#!/bin/bash
+# Symlink to switchboot used by polkit.
+exec /usr/bin/switchboot --cli "$@"
