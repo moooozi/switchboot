@@ -1,15 +1,12 @@
 <script lang="ts">
-  import Button from "./Button.svelte";
-  import ContextMenuItem from "./ContextMenuItem.svelte";
-  import ContextMenu from "./ContextMenu.svelte";
   import { toggleContextMenu as toggleGlobalContextMenu } from "../stores/contextMenu";
   import { undoRedoStore } from "../stores/undoRedo";
+  import Button from "./Button.svelte";
 
   export let changed: boolean;
   export let busy: boolean;
   export let onsave: (() => void) | undefined = undefined;
   export let ondiscard: (() => void) | undefined = undefined;
-  export let onreboottofirmwaresetup: (() => void) | undefined = undefined;
   export let onundo: (() => void) | undefined = undefined;
   export let onredo: (() => void) | undefined = undefined;
 
@@ -36,10 +33,6 @@
         label: undoRedoState.canRedo ? `Redo ${undoRedoState.redoDescription}` : "Redo",
         disabled: !undoRedoState.canRedo || busy,
         onclick: () => onredo?.()
-      },
-      {
-        label: "Reboot to Firmware Setup",
-        onclick: () => onreboottofirmwaresetup?.()
       }
     ];
 

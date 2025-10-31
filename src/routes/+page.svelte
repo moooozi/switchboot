@@ -293,7 +293,7 @@
   class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
-  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onreboottofirmwaresetup={handleRebootToFirmwareSetup} onundo={handleUndo} onredo={handleRedo} />
+  <Header {changed} {busy} onsave={saveOrder} ondiscard={discardChanges} onundo={handleUndo} onredo={handleRedo} />
 
   {#if error}
     <p class="text-red-600 dark:text-red-400 max-w-2xl mx-auto px-2 mb-4">
