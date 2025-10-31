@@ -72,6 +72,9 @@ pub fn handle_exec_mode(command: &CliCommand, should_reboot: bool) -> Result<(),
         CliCommand::SetBootNext(entry_id) => {
             switchboot_lib::handle_bootnext_shortcut_execution(*entry_id, should_reboot)
         }
+        CliCommand::SetBootFirmware => {
+            switchboot_lib::handle_bootfw_shortcut_execution(should_reboot)
+        }
         _ => Err(format!(
             "Command {:?} is not supported in exec mode",
             command

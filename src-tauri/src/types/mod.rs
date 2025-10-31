@@ -2,9 +2,16 @@ use serde::{Deserialize, Serialize};
 mod cli_args;
 
 #[derive(Debug, Serialize, Deserialize)]
+pub enum ShortcutAction {
+    SetBootNext,
+    SetFirmwareSetup,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ShortcutConfig {
     pub name: String,
-    pub entry_id: u16,
+    pub action: ShortcutAction,
+    pub entry_id: Option<u16>,
     pub reboot: bool,
     pub icon_id: Option<String>,
 }

@@ -8,15 +8,16 @@ export type BootEntry = {
 
 export type ShortcutConfig = {
   name: string;
-  entryId: number;
+  action: ShortcutAction;
+  entryId?: number;
   reboot: boolean;
   iconId?: string;
 };
 
 export enum OrderActions {
-  MoveUp = "Move Up",
-  MoveDown = "Move Down",
-  ReorderByDrag = "Reorder By Drag",
+  MoveUp = "Move Entry Up",
+  MoveDown = "Move Entry Down",
+  ReorderByDrag = "Move Entry",
   MakeDefault = "Make Default",
   AddToBootOrder = "Add to Boot Order",
   RemoveFromBootOrder = "Remove from Boot Order",
@@ -32,4 +33,9 @@ export interface ChangeEvent {
   undoCommand: () => void;
   redoCommand: () => void;
   description: string;
+}
+
+export enum ShortcutAction {
+  SetBootNext = "SetBootNext",
+  SetFirmwareSetup = "SetFirmwareSetup",
 }

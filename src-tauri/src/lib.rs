@@ -12,7 +12,7 @@ use cli_user::get_cli;
 pub mod windows;
 
 use tauri::Manager;
-pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutConfig};
+pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutAction, ShortcutConfig};
 // Re-export build metadata from top-level module
 pub use build_info::APP_IDENTIFIER;
 
@@ -177,6 +177,7 @@ fn get_boot_fw() -> Result<bool, String> {
 fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     crate::windows::create_shortcut_on_desktop(
         &std::env::current_exe().map_err(|e| e.to_string())?,
+        &config.action,
         config.entry_id,
         config.reboot,
         &config.name,
@@ -194,11 +195,16 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     let exe = env::current_exe().map_err(|e| e.to_string())?;
 
     // Build the command line for the shortcut
-    let mut exec_cmd = format!(
-        "\"{}\" --exec set-boot-next {}",
-        exe.display(),
-        config.entry_id
-    );
+    let mut exec_cmd = match config.action {
+        ShortcutAction::SetBootNext => {
+            if let Some(id) = config.entry_id {
+                format!("\"{}\" --exec set-boot-next {}", exe.display(), id)
+            } else {
+                return Err("entry_id required for SetBootNext action".to_string());
+            }
+        }
+        ShortcutAction::SetFirmwareSetup => format!("\"{}\" --exec set-boot-fw", exe.display()),
+    };
     if config.reboot {
         exec_cmd.push_str(" reboot");
     }
@@ -238,10 +244,22 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     let name_extension = if config.reboot { "reboot" } else { "bootnext" };
 
     // Build the final desktop file path without mutating the applications directory path
-    let desktop_file = desktop_path.join(format!(
-        "{}-{}-{}.desktop",
-        APP_IDENTIFIER, name_extension, config.entry_id
-    ));
+    let desktop_file = match config.action {
+        ShortcutAction::SetBootNext => {
+            if let Some(id) = config.entry_id {
+                desktop_path.join(format!(
+                    "{}-{}-{}.desktop",
+                    APP_IDENTIFIER, name_extension, id
+                ))
+            } else {
+                return Err("entry_id required for SetBootNext action".to_string());
+            }
+        }
+        ShortcutAction::SetFirmwareSetup => desktop_path.join(format!(
+            "{}-{}-firmware.desktop",
+            APP_IDENTIFIER, name_extension
+        )),
+    };
 
     fs::write(&desktop_file, desktop_entry).map_err(|e| e.to_string())?;
 
@@ -261,6 +279,14 @@ pub fn handle_bootnext_shortcut_execution(
     should_reboot: bool,
 ) -> Result<(), String> {
     set_boot_next(entry_id)?;
+    if should_reboot {
+        restart_now()?;
+    }
+    Ok(())
+}
+
+pub fn handle_bootfw_shortcut_execution(should_reboot: bool) -> Result<(), String> {
+    set_boot_fw()?;
     if should_reboot {
         restart_now()?;
     }

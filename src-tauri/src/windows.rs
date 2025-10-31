@@ -1,3 +1,4 @@
+use crate::types::ShortcutAction;
 use std::os::windows::ffi::OsStrExt;
 
 #[cfg(target_os = "windows")]
@@ -50,7 +51,8 @@ fn to_wide<S: AsRef<std::ffi::OsStr>>(s: S) -> Vec<u16> {
 #[cfg(target_os = "windows")]
 pub fn create_shortcut_on_desktop(
     cli_path: &std::path::Path,
-    entry_id: u16,
+    action: &ShortcutAction,
+    entry_id: Option<u16>,
     restart: bool,
     shortcut_name: &str,
     icon_id: Option<String>,
@@ -84,7 +86,16 @@ pub fn create_shortcut_on_desktop(
         let mut shortcut_path = PathBuf::from(desktop);
         shortcut_path.push(format!("{shortcut_name}.lnk"));
 
-        let mut args = format!("--exec set-boot-next {}", entry_id);
+        let mut args = match action {
+            ShortcutAction::SetBootNext => {
+                if let Some(id) = entry_id {
+                    format!("--exec set-boot-next {}", id)
+                } else {
+                    return Err("entry_id required for SetBootNext action".to_string());
+                }
+            }
+            ShortcutAction::SetFirmwareSetup => "--exec set-boot-fw".to_string(),
+        };
         if restart {
             args.push_str(" reboot");
         }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import type { BootEntry } from "../types";
+  import type { BootEntry, ShortcutAction } from "../types";
 
   export let onstatusfetched: ((portable: boolean) => void) | undefined =
     undefined;
@@ -106,7 +106,8 @@
   // Create shortcut
   export async function createShortcut(config: {
     name: string;
-    entryId: number;
+    action: ShortcutAction;
+    entryId?: number;
     reboot: boolean;
     iconId?: string;
   }) {
@@ -115,6 +116,7 @@
       await invoke("create_shortcut", {
         config: {
           name: config.name,
+          action: config.action,
           entry_id: config.entryId,
           reboot: config.reboot,
           icon_id: config.iconId,

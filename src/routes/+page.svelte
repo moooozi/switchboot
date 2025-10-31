@@ -6,7 +6,7 @@
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
   import { getIconId } from '../lib/iconMap';
   import type { BootEntry, ChangeEvent } from "../lib/types";
-  import { OrderActions } from "../lib/types";
+  import { OrderActions, ShortcutAction } from "../lib/types";
   import { OrderManager } from "../lib/orderManager";
   import { undoRedoStore } from "../lib/stores/undoRedo";
   import { mockBootEntries } from "./mockBootEntries";
@@ -174,11 +174,12 @@
   }) {
     if (!shortcutEntry) return;
 
-  const iconId = getIconId(shortcutEntry.description) || "generic";
+    const iconId = getIconId(shortcutEntry.description) || "generic";
 
     await apiService.createShortcut({
       name: config.name,
-      entryId: shortcutEntry.id,
+      action: shortcutEntry.id === -200 ? ShortcutAction.SetFirmwareSetup : ShortcutAction.SetBootNext,
+      entryId: shortcutEntry.id === -200 ? undefined : shortcutEntry.id,
       reboot: config.reboot,
       iconId,
     });
