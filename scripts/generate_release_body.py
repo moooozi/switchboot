@@ -32,7 +32,7 @@ def get_file_description(filename):
     if filename.endswith('.deb'):
         return "Debian/Ubuntu Package"
     elif filename.endswith('.rpm'):
-        return "Fedora/RHEL Package"
+        return "Fedora/OpenSUSE Package"
     elif filename.endswith('.exe'):
         # Distinguish between setup and portable executables
         if 'setup' in filename.lower():

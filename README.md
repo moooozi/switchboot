@@ -50,7 +50,7 @@ On Fedora & derivatives:
 ```bash
 # Add repo
 sudo dnf install dnf-plugins-core
-sudo dnf config-manager --add-repo https://moooozi.github.io/switchboot/rpm/switchboot.repo
+sudo dnf config-manager addrepo --from-repofile=https://moooozi.github.io/switchboot/rpm/switchboot.repo
 
 # Install
 sudo dnf install switchboot
