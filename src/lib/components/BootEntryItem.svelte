@@ -164,7 +164,7 @@
       variant="neutral"
       size="small"
       rounded="circle"
-      disabled={busy || entry.id < 0}
+      disabled={busy || entry.id < 0 || totalEntries === 1}
       ariaLabel="Remove from boot order"
       title="Remove this entry from the boot order"
       onclick={() => onremovefrombootorder?.(entry)}
