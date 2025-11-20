@@ -198,6 +198,11 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
 
     // Build the .desktop file content
     let icon_name = config.icon_id.as_deref().unwrap_or("generic");
+    let sanitized_name = config
+        .name
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>();
     let desktop_entry = format!(
         "[Desktop Entry]\n\
         Type=Application\n\
@@ -206,7 +211,7 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         Icon=swboot-{}\n\
         Terminal=false\n\
         Categories=Utility;\n",
-        config.name, exec_cmd, icon_name
+        sanitized_name, exec_cmd, icon_name
     );
 
     // Get XDG_DATA_HOME or default to ~/.local/share

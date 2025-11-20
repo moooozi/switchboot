@@ -48,6 +48,18 @@ fn to_wide<S: AsRef<std::ffi::OsStr>>(s: S) -> Vec<u16> {
         .collect()
 }
 
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\\' | '/' => '_',
+            c if c.is_control() => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 #[cfg(target_os = "windows")]
 pub fn create_shortcut_on_desktop(
     cli_path: &std::path::Path,
@@ -84,7 +96,7 @@ pub fn create_shortcut_on_desktop(
         windows::Win32::System::Com::CoTaskMemFree(Some(desktop_ptr.0 as _));
 
         let mut shortcut_path = PathBuf::from(desktop);
-        shortcut_path.push(format!("{shortcut_name}.lnk"));
+        shortcut_path.push(format!("{}.lnk", sanitize_filename(shortcut_name)));
 
         let mut args = match action {
             ShortcutAction::SetBootNext => {
