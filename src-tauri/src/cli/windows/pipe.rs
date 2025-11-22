@@ -1,5 +1,5 @@
 use crate::build_info;
-use named_pipe_ipc::{NamedPipeClientStruct, NamedPipeServerStruct};
+use pipeguard::{NamedPipeClientStruct, NamedPipeServerStruct};
 
 pub const PIPE_NAME: &str = build_info::APP_IDENTIFIER_VERSION;
 
@@ -29,11 +29,11 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
     use tokio::sync::mpsc;
 
     // Create a channel to communicate with the connection handler
-    let (connection_tx, mut connection_rx) =
-        mpsc::channel::<named_pipe_ipc::NamedPipeConnection>(1);
+    let (connection_tx, mut connection_rx) = mpsc::channel::<pipeguard::NamedPipeConnection>(1);
 
     // Create encrypted server
     let mut server = NamedPipeServerStruct::new_encrypted(PIPE_NAME, None);
+    server.enforce_same_path_client(true);
 
     eprintln!("[PIPE_SERVER] Pipe server created, waiting for elevated client to connect...");
 
@@ -51,7 +51,7 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                     // Send the connection to the main loop
                     if connection_tx.send(connection).await.is_err() {
                         eprintln!("[PIPE_SERVER ERROR] Failed to send connection to main loop");
-                        return Err(named_pipe_ipc::NamedPipeError::Io(std::io::Error::new(
+                        return Err(pipeguard::NamedPipeError::Io(std::io::Error::new(
                             std::io::ErrorKind::BrokenPipe,
                             "Channel closed",
                         )));
@@ -133,7 +133,7 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
 
 /// Send a command to the elevated client and wait for response
 async fn send_command_and_get_response(
-    connection: &mut named_pipe_ipc::NamedPipeConnection,
+    connection: &mut pipeguard::NamedPipeConnection,
     line: &str,
 ) -> Result<String, String> {
     use super::CliCommand;
@@ -219,6 +219,7 @@ pub async fn run_elevated_connector_async(
     eprintln!("[PIPE_CLIENT] Creating encrypted client");
     // Create encrypted client
     let mut client = NamedPipeClientStruct::new_encrypted(PIPE_NAME, None);
+    client.enforce_same_path_server(true);
 
     eprintln!("[PIPE_CLIENT] Attempting to connect to unelevated pipe server...");
 

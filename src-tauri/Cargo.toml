@@ -32,8 +32,8 @@ log = "0.4.28"
 chrono = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-named_pipe_ipc = { path = "./libs/named_pipe_ipc" }
-tokio = "1"
+pipeguard = { git = "https://github.com/moooozi/pipeguard", tag = "v0.1.0" }
+tokio = { version = "1", features = ["io-std"] }
 chacha20poly1305 = "0.10"
 windows = { version = "0.61", features = ["Win32_System_Services"] }
 windows-service = "0.8.0"
