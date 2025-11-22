@@ -1,5 +1,6 @@
 use crate::build_info;
 use pipeguard::{NamedPipeClientStruct, NamedPipeServerStruct};
+use std::io::Write;
 
 pub const PIPE_NAME: &str = build_info::APP_IDENTIFIER_VERSION;
 
@@ -33,7 +34,6 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
 
     // Create encrypted server
     let mut server = NamedPipeServerStruct::new_encrypted(PIPE_NAME, None);
-    server.enforce_same_path_client(true);
 
     eprintln!("[PIPE_SERVER] Pipe server created, waiting for elevated client to connect...");
 
@@ -108,7 +108,7 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                     Ok(response) => {
                         eprintln!("[PIPE_SERVER] Received response, outputting to stdout");
                         // Output response to stdout
-                        println!("{}", response);
+                        let _ = std::io::stdout().write_all(format!("{}\n", response).as_bytes());
                     }
                     Err(e) => {
                         eprintln!("[PIPE_SERVER ERROR] Failed to process command: {}", e);
