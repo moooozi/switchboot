@@ -87,6 +87,19 @@ jobs:
             mkdir -p repo/signatures
           fi
 
+          echo "Attempting to download existing updates archive..."
+          if wget -q ${PAGES_BASE_URL}/updates.tar.xz -O /tmp/updates.tar.xz; then
+            echo "Updates archive found, extracting..."
+            mkdir -p repo/updates
+            tar -xJf /tmp/updates.tar.xz -C repo/
+            rm /tmp/updates.tar.xz
+            echo "Extracted existing updates:"
+            find repo/updates -type f | head -20
+          else
+            echo "No existing updates archive found (this is OK for first release)"
+            mkdir -p repo/updates
+          fi
+
       - name: Setup repository structure
         shell: bash
         run: |
@@ -109,6 +122,16 @@ jobs:
             ls -la repo/deb/pool/main/s/switchboot/*.deb
           else
             echo "No new DEB packages found"
+          fi
+
+          echo "Copying new update signatures..."
+          mkdir -p repo/updates/${{ inputs.version }}
+          if ls artifacts/update-sig/*.sig 1> /dev/null 2>&1; then
+            cp artifacts/update-sig/*.sig repo/updates/${{ inputs.version }}/
+            echo "Added new update signatures"
+            ls -la repo/updates/${{ inputs.version }}/*.sig
+          else
+            echo "No new update signatures found"
           fi
 
           echo "Copying repository configuration files..."
@@ -144,6 +167,13 @@ jobs:
           echo "Installing repository management tools..."
           sudo apt-get update
           sudo apt-get install -y createrepo-c dpkg-dev apt-utils rpm
+
+      - name: Generate latest.json for updates
+        shell: bash
+        run: |
+          set -e
+          echo "Generating latest.json for updates..."
+          python3 scripts/generate_latest_json.py "${{ inputs.version }}" "${PAGES_BASE_URL}"
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
@@ -295,6 +325,23 @@ jobs:
             cd ..
           else
             echo "No signatures directory found or it's empty, skipping archive creation"
+          fi
+
+      - name: Create updates archive
+        shell: bash
+        run: |
+          set -e
+          echo "Creating compressed archive of all updates..."
+          if [ -d "repo/updates" ] && [ "$(ls -A repo/updates 2>/dev/null)" ]; then
+            cd repo
+            tar -cJf updates.tar.xz updates/
+            echo "Updates archive created successfully:"
+            ls -lh updates.tar.xz
+            echo "Archive contains:"
+            tar -tJf updates.tar.xz | head -20
+            cd ..
+          else
+            echo "No updates directory found or it's empty, skipping archive creation"
           fi
 
       - name: Generate directory indexes

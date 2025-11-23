@@ -181,7 +181,10 @@ jobs:
         run: pnpm icons
 
       - name: Build Tauri (release)
-        run: pnpm tauri build --no-bundle
+        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Gather release binaries to sign
         if: ${{ steps.secrets_check.outputs.have_cert == 'true' }}
@@ -211,7 +214,10 @@ jobs:
           CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
 
       - name: Bundle Tauri
-        run: pnpm tauri bundle
+        run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Collect artifacts
         id: collect
@@ -223,6 +229,13 @@ jobs:
           if (-not $nsis) { Write-Error "NSIS installer not found in src-tauri\target\release\bundle\nsis"; exit 1 }
           $setupName = "Switchboot_x64-setup.exe"
           Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $setupName)
+
+          # Copy the signature file for the updater
+          $sigFile = $nsis.FullName + '.sig'
+          if (Test-Path $sigFile) {
+            $sigName = $setupName + '.sig'
+            Copy-Item $sigFile -Destination (Join-Path $PWD 'artifacts' $sigName)
+          }
 
           $portable = Join-Path $PWD 'src-tauri\target\release\switchboot.exe'
           if (-not (Test-Path $portable)) { Write-Error "Portable exe not found at $portable"; exit 1 }

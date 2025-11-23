@@ -9,6 +9,8 @@
   export let ondiscard: (() => void) | undefined = undefined;
   export let onundo: (() => void) | undefined = undefined;
   export let onredo: (() => void) | undefined = undefined;
+  export let onupdateclick: (() => void) | undefined = undefined;
+  export let availableUpdate: any = null;
 
   let undoRedoState = {
     canUndo: false,
@@ -58,7 +60,17 @@
 <div
   class="container max-w-2xl mx-auto flex items-center justify-between mb-8 px-3"
 >
-  <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
+  <div>
+    <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
+    {#if availableUpdate}
+      <button
+        class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        onclick={onupdateclick}
+      >
+        Upgrade to v{availableUpdate.version}
+      </button>
+    {/if}
+  </div>
   <div class="flex gap-3 items-center">
     <Button
       variant="primary"

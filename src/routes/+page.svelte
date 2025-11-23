@@ -4,6 +4,7 @@
   import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import Header from "../lib/components/Header.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
+  import UpdateDialog from "../lib/components/UpdateDialog.svelte";
   import { getIconId } from "../lib/iconMap";
   import { OrderManager } from "../lib/orderManager";
   import { undoRedoStore } from "../lib/stores/undoRedo";
@@ -23,6 +24,11 @@
   let initialized = false;
   let discoveredEntriesLoading = true;
   let efiSetupState = false;
+  let availableUpdate: any = null;
+  let showUpdateDialog = false;
+  let updateProgress = 0;
+  let updateStatus = "";
+  let updateTotalSize = 0;
 
   // Order manager for handling changes with undo/redo
   let orderManager: OrderManager;
@@ -236,6 +242,56 @@
     undoRedoStore.redo();
   }
 
+  async function handleUpdateClick() {
+    if (!availableUpdate) return;
+    try {
+      showUpdateDialog = true;
+      updateProgress = 0;
+      updateTotalSize = 0;
+      updateStatus = "Starting download...";
+      busy = true;
+
+      await availableUpdate.downloadAndInstall((event: any) => {
+        switch (event.event) {
+          case "Started":
+            updateTotalSize = event.data.contentLength;
+            updateStatus = `Downloading ${(event.data.contentLength / (1024 * 1024)).toFixed(1)} MB...`;
+            break;
+          case "Progress":
+            updateProgress += event.data.chunkLength;
+            const percentage =
+              updateTotalSize > 0
+                ? (updateProgress / updateTotalSize) * 100
+                : 0;
+            updateStatus = `Downloaded ${(updateProgress / (1024 * 1024)).toFixed(1)} MB of ${(updateTotalSize / (1024 * 1024)).toFixed(1)} MB (${percentage.toFixed(1)}%)`;
+            break;
+          case "Finished":
+            updateStatus = "Download finished, installing...";
+            updateProgress = updateTotalSize;
+            break;
+        }
+      });
+
+      updateStatus = "Update installed successfully!";
+      // Clear the available update since it's now installed
+      availableUpdate = null;
+
+      // Close dialog after a short delay
+      setTimeout(() => {
+        showUpdateDialog = false;
+      }, 2000);
+    } catch (e) {
+      console.error("Update installation failed:", e);
+      updateStatus = "Update failed";
+      alert("Failed to install update");
+      setTimeout(() => {
+        showUpdateDialog = false;
+      }, 2000);
+    } finally {
+      busy = false;
+    }
+  }
+
   // Keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
     if (event.ctrlKey || event.metaKey) {
@@ -272,6 +328,13 @@
 
       // Get EFI Setup state
       efiSetupState = await apiService.getBootToFirmwareSetupState();
+
+      // Check for updates
+      try {
+        availableUpdate = await apiService.checkForUpdates();
+      } catch (e) {
+        console.log("Update check failed:", e);
+      }
 
       initialized = true;
 
@@ -317,6 +380,8 @@
     ondiscard={discardChanges}
     onundo={handleUndo}
     onredo={handleRedo}
+    onupdateclick={handleUpdateClick}
+    {availableUpdate}
   />
 
   {#if error}
@@ -357,6 +422,14 @@
     oncancel={handleShortcutCancel}
   />
 {/if}
+
+<!-- Update Progress Dialog -->
+<UpdateDialog
+  visible={showUpdateDialog}
+  status={updateStatus}
+  progress={updateProgress}
+  totalSize={updateTotalSize}
+/>
 
 <style>
   :global(::-webkit-scrollbar) {

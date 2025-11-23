@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { check } from "@tauri-apps/plugin-updater";
   import type { BootEntry, ShortcutAction } from "../types";
 
   export let onstatusfetched: ((portable: boolean) => void) | undefined =
@@ -162,6 +163,66 @@
     busy = true;
     try {
       await invoke("unset_boot_fw");
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Check for updates
+  export async function checkForUpdates() {
+    busy = true;
+    try {
+      const update = await check();
+      return update;
+    } catch (e) {
+      onerror?.(String(e));
+      throw e;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Mock update check for testing UI
+  export async function checkForMockUpdates() {
+    busy = true;
+    try {
+      // Simulate network delay
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Return a mock update object
+      return {
+        version: "0.3.0",
+        body: "This is a mock update for testing the UI.\n\n- Added new features\n- Fixed some bugs\n- Improved performance",
+        downloadAndInstall: async (callback: (event: any) => void) => {
+          const totalSize = 15 * 1024 * 1024; // 15 MB
+          let downloaded = 0;
+
+          // Simulate download progress
+          callback({ event: "Started", data: { contentLength: totalSize } });
+
+          const interval = setInterval(() => {
+            const chunkSize = Math.random() * 500000 + 100000; // Random chunk between 100KB-600KB
+            downloaded += chunkSize;
+
+            if (downloaded >= totalSize) {
+              downloaded = totalSize;
+              callback({ event: "Progress", data: { chunkLength: chunkSize } });
+              callback({ event: "Finished" });
+              clearInterval(interval);
+
+              // Simulate installation delay
+              setTimeout(() => {
+                // Mock successful installation
+              }, 2000);
+            } else {
+              callback({ event: "Progress", data: { chunkLength: chunkSize } });
+            }
+          }, 200); // Update every 200ms
+        },
+      };
     } catch (e) {
       onerror?.(String(e));
       throw e;

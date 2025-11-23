@@ -1,0 +1,12 @@
+{
+  "identifier": "dev.zidane.switchboot",
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGRTgxRDBGNTE0MjU5NDMKUldSRFdVSlJEeDNvbjhCR2FKUWtIcFEzTzN3U08ySHlXcytiSmRubGJGaGNiNzVValFIL3YvWVYK",
+      "endpoints": ["https://moooozi.github.io/switchboot/updates/latest.json"]
+    }
+  }
+}

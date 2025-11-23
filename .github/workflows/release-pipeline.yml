@@ -105,9 +105,15 @@ jobs:
         id: collect_files
         shell: bash
         run: |
-          files=$(find artifacts -type f -name "*.deb" -o -name "*.rpm" -o -name "*.exe" | tr '\n' ';' | sed 's/;$//')
+          files=$(find artifacts -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.exe" \) | tr '\n' ';' | sed 's/;$//')
           echo "files=$files" >> $GITHUB_OUTPUT
           echo "Files to sign: $files"
+
+      - name: Prepare update signatures
+        shell: bash
+        run: |
+          mkdir -p artifacts/update-sig
+          mv artifacts/*.sig artifacts/update-sig/ 2>/dev/null || echo "No .sig files to move"
 
       - name: Sign artifacts with GPG
         if: steps.collect_files.outputs.files != ''

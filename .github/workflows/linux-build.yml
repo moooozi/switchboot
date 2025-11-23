@@ -120,10 +120,16 @@ jobs:
         run: |
           pnpm tauri icon ./app-icon.svg
           pnpm icons
-          pnpm tauri build --no-bundle
+          pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Bundle Tauri (deb & rpm)
-        run: pnpm tauri bundle
+        run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Collect artifacts
         id: collect

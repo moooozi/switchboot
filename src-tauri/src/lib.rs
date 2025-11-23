@@ -330,6 +330,7 @@ fn is_portable() -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(_app_config: Option<()>) {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Single instance plugin to focus existing window on second launch
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = app

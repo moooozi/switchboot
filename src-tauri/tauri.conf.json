@@ -48,6 +48,13 @@
           "/usr/share/icons/hicolor": "icons-linux/hicolor",
           "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
         }
+      },
+      "appimage": {
+        "files": {
+          "/usr/share/polkit-1": "platform/linux/polkit-1",
+          "/usr/share/icons/hicolor": "icons-linux/hicolor",
+          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
+        }
       }
     },
     "active": true,
