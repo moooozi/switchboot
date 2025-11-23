@@ -71,6 +71,7 @@ jobs:
     uses: ./.github/workflows/windows-build.yml
     with:
       version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
 
   create-release:
     name: Create Release

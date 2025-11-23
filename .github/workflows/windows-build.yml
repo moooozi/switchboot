@@ -49,29 +49,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Install Rust via rustup (stable)
+      - name: Remove unwanted Rust targets
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "Downloading rustup-init.exe"
-          Invoke-WebRequest -Uri 'https://win.rustup.rs' -UseBasicParsing -OutFile 'rustup-init.exe'
-          Write-Host "Running rustup-init.exe (non-interactive)"
-          Start-Process -FilePath .\rustup-init.exe -ArgumentList '-y','--no-modify-path','--default-toolchain','stable' -Wait
-          Remove-Item .\rustup-init.exe
-          # Add cargo bin to PATH for remaining steps
-          $cargo = "$env:USERPROFILE\\.cargo\\bin"
-          Add-Content -Path $env:GITHUB_PATH -Value $cargo
-          Write-Host "rustup and rustc versions:"
-          rustup --version
-          rustc --version
+          rustup target remove x86_64-pc-windows-gnu
+          rustup target remove i686-pc-windows-msvc
+
+      - name: Update Rust
+        shell: pwsh
+        run: rustup update stable
 
       - name: Get rustc version
         id: rustver
         shell: pwsh
         run: |
           # Emit rustc version to a step output so the cache key can include it.
-          $v = (rustc --version).Trim()
-          Write-Output "rustc=$v" >> $env:GITHUB_OUTPUT
+          $fullVersion = (rustc --version).Trim()
+          $version = $fullVersion.Split()[1]
+          Write-Output "rustc=$version" >> $env:GITHUB_OUTPUT
 
       - name: Cache Cargo registry and git
         uses: actions/cache@v4
@@ -182,9 +177,6 @@ jobs:
 
       - name: Build Tauri (release)
         run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Gather release binaries to sign
         if: ${{ steps.secrets_check.outputs.have_cert == 'true' }}
@@ -217,7 +209,6 @@ jobs:
         run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Collect artifacts
         id: collect

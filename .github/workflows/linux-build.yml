@@ -77,18 +77,6 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Install Rust (rustup)
-        shell: bash
-        run: |
-          # Install rustup and set stable toolchain as default
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          source $HOME/.cargo/env
-          rustup default stable
-          # add commonly useful components
-          rustup component add rust-src || true
-          # persist cargo bin in subsequent steps
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
       - name: Capture Rust toolchain version
         id: rustver
         shell: bash
@@ -116,20 +104,21 @@ jobs:
           path: src-tauri/target
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
 
-      - name: Build frontend and Tauri (no bundle)
+      - name: Update Rust
+        run: rustup update stable
+
+      - name: Generate icons
         run: |
           pnpm tauri icon ./app-icon.svg
           pnpm icons
-          pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Build frontend and Tauri (no bundle)
+        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
 
       - name: Bundle Tauri (deb & rpm)
         run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Collect artifacts
         id: collect
