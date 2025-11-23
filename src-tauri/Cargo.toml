@@ -1,6 +1,6 @@
 [package]
 name = "switchboot"
-version = "0.2.1"
+version = "0.2.2"
 description = "SwitchBoot lets you manage EFI boot entries on your machine."
 authors = ["M Zidane"]
 edition = "2021"
