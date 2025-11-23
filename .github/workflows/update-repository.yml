@@ -48,6 +48,16 @@ jobs:
           name: signed-artifacts-${{ inputs.version }}
           path: artifacts
 
+      - name: Construct Pages Base URL
+        id: construct-url
+        shell: bash
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          PAGES_BASE_URL="https://${OWNER}.github.io/${REPO}"
+          echo "pages_base_url=${PAGES_BASE_URL}" >> $GITHUB_OUTPUT
+          echo "Using Pages base URL: ${PAGES_BASE_URL}"
+
       - name: Download existing repository
         shell: bash
         run: |
@@ -55,10 +65,7 @@ jobs:
           echo "Downloading existing repository from GitHub Pages..."
           # Construct GitHub Pages base URL dynamically so forks/workflows don't need hardcoded owner/repo
           # GITHUB_REPOSITORY is provided by the runner in the form 'owner/repo'
-          OWNER="${GITHUB_REPOSITORY%%/*}"
-          REPO="${GITHUB_REPOSITORY#*/}"
-          PAGES_BASE_URL="https://${OWNER}.github.io/${REPO}"
-          echo "Using Pages base URL: ${PAGES_BASE_URL}"
+          PAGES_BASE_URL="${{ steps.construct-url.outputs.pages_base_url }}"
           mkdir -p repo/rpm/x86_64
           mkdir -p repo/deb/pool/main/s/switchboot
           mkdir -p repo/deb/dists/stable/main/binary-amd64
@@ -173,7 +180,7 @@ jobs:
         run: |
           set -e
           echo "Generating latest.json for updates..."
-          python3 scripts/generate_latest_json.py "${{ inputs.version }}" "${PAGES_BASE_URL}"
+          python3 scripts/generate_latest_json.py "${{ inputs.version }}" "${{ steps.construct-url.outputs.pages_base_url }}"
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
