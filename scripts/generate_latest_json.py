@@ -18,11 +18,9 @@ pub_date = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M
 sig_file_path = f"repo/updates/{version}/Switchboot_x64-setup.exe.sig"
 if os.path.exists(sig_file_path):
     with open(sig_file_path, 'r') as f:
-        lines = f.readlines()
-        if len(lines) >= 2:
-            signature = lines[1].strip()
-        else:
-            print("Error: Sig file does not have enough lines")
+        signature = f.read().strip()
+        if not signature:
+            print("Error: Sig file is empty")
             sys.exit(1)
 else:
     print(f"Error: Sig file not found at {sig_file_path}")
