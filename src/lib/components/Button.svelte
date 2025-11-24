@@ -26,7 +26,7 @@
 
   $: variantClass = `btn-${variant}`;
 
-  $: classes = `btn ${variantClass} ${sizeClass} ${roundedClass}`;
+  $: classes = `btn ${variantClass} ${sizeClass} ${roundedClass} select-none`;
 
   function handleClick() {
     if (!disabled) {

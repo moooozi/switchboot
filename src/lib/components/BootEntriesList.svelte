@@ -1,20 +1,31 @@
 <script lang="ts">
+  /**
+   * BootEntriesList Component
+   * 
+   * Manages two drag-and-drop zones for boot entries:
+   * - Boot Order: Ordered list of bootable entries with full reordering support
+   * - Others: Unordered discovered entries that can be added to boot order
+   */
+
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
-  import { openContextMenu } from "../stores/contextMenu";
   import type { BootEntry } from "../types";
   import { CrossZoneDragManager } from "../utils/crossZoneDragManager";
+  import { smoothHeight } from "../utils/smoothHeight";
+  import { isDraggable, haveSameItems, createDndConfig } from "../utils/bootEntryHelpers";
+  import { openBootEntryContextMenu } from "./BootEntriesContextMenu";
   import BootEntryItem from "./BootEntryItem.svelte";
   import CollapsibleSection from "./CollapsibleSection.svelte";
 
-  // Props
+  // ==================== Props ====================
+  
   export let bootEntries: BootEntry[];
   export let busy: boolean;
   export let isPortable: boolean | null;
   export let others: BootEntry[] = [];
   export let discoveredEntriesLoading = false;
 
-  // Callbacks for boot entry actions
+  // Event callbacks
   export let onentrieschanged: ((entries: BootEntry[]) => void) | undefined = undefined;
   export let ondragstart: (() => void) | undefined = undefined;
   export let ondragend: ((entries: BootEntry[]) => void) | undefined = undefined;
@@ -30,41 +41,27 @@
   export let onaddtobootorder: ((entry: BootEntry, position?: number) => void) | undefined = undefined;
   export let onremovefrombootorder: ((entry: BootEntry) => void) | undefined = undefined;
 
-  // Constants
+  // ==================== Constants & State ====================
+  
   const FLIP_DURATION_MS = 150;
   const DND_ZONE_TYPE = "boot-entries";
-
-  // Drag manager instance
   const dragManager = new CrossZoneDragManager();
 
-  // Local state for drag and drop (synced with props when not dragging)
   let localBootEntries: BootEntry[] = [];
   let localOthers: BootEntry[] = [];
 
-  // Reactive sync: Update local state when props change and not dragging
   $: if (!dragManager.isActive()) {
     localBootEntries = bootEntries;
     localOthers = others;
   }
 
-  // ==================== Drag Prevention ====================
-
-  /**
-   * Check if an entry can be dragged (entries with negative IDs cannot be dragged)
-   */
-  function isDraggable(entry: BootEntry): boolean {
-    return entry.id >= 0;
-  }
-
-  // ==================== Boot Order Zone Handlers ====================
+  // ==================== Drag & Drop Handlers ====================
 
   function handleBootOrderConsider(event: CustomEvent<{ items: BootEntry[] }>) {
     if (busy) return;
 
-    // Initialize drag tracking on first consider event
     if (!dragManager.isActive()) {
       dragManager.startDrag(bootEntries, others);
-      ondragstart?.();
     }
 
     localBootEntries = event.detail.items;
@@ -77,59 +74,45 @@
     const finalItems = event.detail.items;
     const analysis = dragManager.analyzeBootOrderChanges(finalItems);
 
-    // Update local and prop state
-    bootEntries = finalItems;
-    localBootEntries = finalItems;
+    bootEntries = localBootEntries = finalItems;
 
-    // Handle cross-zone additions (from Others to Boot Order)
-    analysis.addedFromOthers.forEach(({ entry, position }) => {
-      onaddtobootorder?.(entry, position);
-    });
+    // Trigger appropriate callbacks based on drag operation type
+    analysis.addedFromOthers.forEach(({ entry, position }) => onaddtobootorder?.(entry, position));
+    analysis.removedToOthers.forEach(entry => onremovefrombootorder?.(entry));
 
-    // Handle cross-zone removals (from Boot Order to Others)
-    analysis.removedToOthers.forEach(entry => {
-      onremovefrombootorder?.(entry);
-    });
-
-    // Handle reordering within Boot Order only
+    // Only record reorder operations (cross-zone ops create their own undo events)
     if (analysis.isReorderOnly) {
+      ondragstart?.();
       ondragend?.(bootEntries);
     }
 
     dragManager.endDrag();
   }
 
-  // ==================== Others Zone Handlers ====================
-
   function handleOthersConsider(event: CustomEvent<{ items: BootEntry[] }>) {
     if (busy) return;
 
-    // Initialize drag tracking on first consider event
     if (!dragManager.isActive()) {
       dragManager.startDrag(bootEntries, others);
     }
 
+    // Prevent reordering within Others zone - only allow cross-zone additions
+    if (haveSameItems(localOthers, event.detail.items)) return;
+    
     localOthers = event.detail.items;
   }
 
   function handleOthersFinalize(event: CustomEvent<{ items: BootEntry[] }>) {
     if (busy) return;
 
-    const finalItems = event.detail.items;
-    const analysis = dragManager.analyzeOthersChanges(finalItems);
+    const analysis = dragManager.analyzeOthersChanges(event.detail.items);
+    localOthers = event.detail.items;
 
-    // Update local state
-    localOthers = finalItems;
-
-    // Handle items moved from Boot Order to Others
-    analysis.addedFromBoot.forEach(entry => {
-      onremovefrombootorder?.(entry);
-    });
-
+    analysis.addedFromBoot.forEach(entry => onremovefrombootorder?.(entry));
     dragManager.endDrag();
   }
 
-  // ==================== Action Handlers ====================
+  // ==================== Entry Action Handlers ====================
 
   const handleMoveUp = (index: number) => onmoveup?.(index);
   const handleMoveDown = (index: number) => onmovedown?.(index);
@@ -137,176 +120,92 @@
   const handleUnsetBootNext = () => onunsetbootnext?.();
   const handleRestartNow = () => onrestartnow?.();
 
-  // ==================== Context Menu ====================
-
-  function handleContextMenu(data: { entry: BootEntry; mouseEvent: MouseEvent }) {
-    const { entry, mouseEvent } = data;
-    mouseEvent.preventDefault();
-
-    const contextMenuItems = [
-      {
-        label: "Make Default",
-        disabled: entry.is_default || busy || entry.id < 0,
-        title: entry.is_default
-          ? "Already default"
-          : entry.id < 0
-            ? "Not possible for this entry"
-            : "",
-        onclick: () => onmakedefault?.(entry),
-      },
-      {
-        label: "Add Shortcut",
-        disabled: busy || isPortable !== false,
-        title:
-          isPortable === true
-            ? "Shortcuts are not available in portable mode"
-            : isPortable === null
-              ? "Loading portable mode status..."
-              : "",
-        onclick: () => onaddshortcut?.(entry),
-      },
-    ];
-
-    // Create temporary trigger element for positioning
-    const trigger = createContextMenuTrigger(mouseEvent.clientX, mouseEvent.clientY);
-
-    openContextMenu({
-      triggerElement: trigger,
-      items: contextMenuItems,
-      preferredPlacement: "right-start",
-      onclose: () => cleanupContextMenuTrigger(trigger),
-      owner: "boot-entries-right-click",
+  const handleContextMenu = ({ entry, mouseEvent }: { entry: BootEntry; mouseEvent: MouseEvent }) => {
+    openBootEntryContextMenu({
+      entry,
+      mouseEvent,
+      busy,
+      isPortable,
+      onMakeDefault: onmakedefault,
+      onAddShortcut: onaddshortcut,
     });
-  }
+  };
 
-  function createContextMenuTrigger(x: number, y: number): HTMLDivElement {
-    const trigger = document.createElement("div");
-    Object.assign(trigger.style, {
-      position: "fixed",
-      left: `${x}px`,
-      top: `${y}px`,
-      width: "1px",
-      height: "1px",
-      opacity: "0",
-      pointerEvents: "none",
-    });
-    document.body.appendChild(trigger);
-    return trigger;
-  }
+  const getEntryProps = (entry: BootEntry, idx: number, isInOthers = false) => ({
+    entry,
+    index: idx,
+    totalEntries: isInOthers ? others.length : bootEntries.length,
+    busy,
+    isInOthers,
+    oncontextmenu: handleContextMenu,
+    onsetbootnext: handleSetBootNext,
+    onunsetbootnext: handleUnsetBootNext,
+    onsetboottofirmwaresetup,
+    onunsetboottofirmwaresetup,
+    onrestartnow: handleRestartNow,
+    ...(isInOthers 
+      ? { onaddtobootorder } 
+      : { onmoveup: handleMoveUp, onmovedown: handleMoveDown, onremovefrombootorder }
+    ),
+  });
 
-  function cleanupContextMenuTrigger(trigger: HTMLDivElement): void {
-    if (document.body.contains(trigger)) {
-      document.body.removeChild(trigger);
-    }
-  }
+  const dndConfig = (items: BootEntry[], disabled = false) => 
+    createDndConfig(items, disabled, FLIP_DURATION_MS, DND_ZONE_TYPE);
 </script>
 
 <div class="flex-1 overflow-y-auto">
+  <!-- Boot Order Section -->
   <CollapsibleSection title="Boot Order" count={bootEntries.length} open>
-    <div
-      class="flex flex-col gap-4"
-      use:dndzone={{
-        items: localBootEntries,
-        flipDurationMs: FLIP_DURATION_MS,
-        dropTargetStyle: {},
-        dragDisabled: busy,
-        type: DND_ZONE_TYPE,
-      }}
-      on:consider={handleBootOrderConsider}
-      on:finalize={handleBootOrderFinalize}
-    >
-      {#each localBootEntries as entry, idx (entry.id)}
-        <div 
-          animate:flip={{ duration: FLIP_DURATION_MS }}
-          class:non-draggable={!isDraggable(entry)}
-        >
-          <BootEntryItem
-            {entry}
-            index={idx}
-            totalEntries={bootEntries.length}
-            {busy}
-            onmoveup={handleMoveUp}
-            onmovedown={handleMoveDown}
-            onsetbootnext={handleSetBootNext}
-            onunsetbootnext={handleUnsetBootNext}
-            {onsetboottofirmwaresetup}
-            {onunsetboottofirmwaresetup}
-            onrestartnow={handleRestartNow}
-            {onremovefrombootorder}
-            oncontextmenu={handleContextMenu}
-          />
-        </div>
-      {/each}
+    <div use:smoothHeight>
+      <div
+        class="flex flex-col gap-4"
+        use:dndzone={dndConfig(localBootEntries, busy)}
+        on:consider={handleBootOrderConsider}
+        on:finalize={handleBootOrderFinalize}
+      >
+        {#each localBootEntries as entry, idx (entry.id)}
+          <div 
+            animate:flip={{ duration: FLIP_DURATION_MS }}
+            class:non-draggable={!isDraggable(entry, localBootEntries.length === 1)}
+          >
+            <BootEntryItem {...getEntryProps(entry, idx)} />
+          </div>
+        {/each}
+      </div>
     </div>
   </CollapsibleSection>
 
+  <!-- Others Section -->
   {#if others.length > 0}
     <CollapsibleSection title="Others" count={others.length} open>
-      <div
-        class="flex flex-col gap-4"
-        use:dndzone={{
-          items: localOthers,
-          flipDurationMs: FLIP_DURATION_MS,
-          dropTargetStyle: {},
-          dragDisabled: busy || discoveredEntriesLoading,
-          type: DND_ZONE_TYPE,
-        }}
-        on:consider={handleOthersConsider}
-        on:finalize={handleOthersFinalize}
-      >
-        {#if discoveredEntriesLoading}
-          {#each localOthers.filter((entry) => entry.id === -200) as entry, idx (entry.id)}
-            <div 
-              animate:flip={{ duration: FLIP_DURATION_MS }}
-              class:non-draggable={!isDraggable(entry)}
-            >
-              <BootEntryItem
-                {entry}
-                index={idx}
-                totalEntries={others.length}
-                {busy}
-                isInOthers={true}
-                {onaddtobootorder}
-                {onsetbootnext}
-                {onunsetbootnext}
-                {onsetboottofirmwaresetup}
-                {onunsetboottofirmwaresetup}
-                {onrestartnow}
-                oncontextmenu={handleContextMenu}
-              />
+      <div use:smoothHeight>
+        <div
+          class="flex flex-col gap-4"
+          use:dndzone={{ ...dndConfig(localOthers, busy || discoveredEntriesLoading), dropFromOthersDisabled: false }}
+          on:consider={handleOthersConsider}
+          on:finalize={handleOthersFinalize}
+        >
+          {#if discoveredEntriesLoading}
+            <!-- Show special entries during loading -->
+            {#each localOthers.filter(e => e.id === -200) as entry, idx (entry.id)}
+              <div class:non-draggable={!isDraggable(entry, false)}>
+                <BootEntryItem {...getEntryProps(entry, idx, true)} />
+              </div>
+            {/each}
+            
+            <!-- Loading indicator -->
+            <div class="flex items-center justify-center p-8 text-neutral-500 dark:text-neutral-400">
+              <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-500 mr-2"></div>
+              Loading boot entries...
             </div>
-          {/each}
-          <div
-            class="flex items-center justify-center p-8 text-neutral-500 dark:text-neutral-400"
-          >
-            <div
-              class="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-500 mr-2"
-            ></div>
-            Loading boot entries...
-          </div>
-        {:else}
-          {#each localOthers as entry, idx (entry.id)}
-            <div 
-              animate:flip={{ duration: FLIP_DURATION_MS }}
-              class:non-draggable={!isDraggable(entry)}
-            >
-              <BootEntryItem
-                {entry}
-                index={idx}
-                totalEntries={others.length}
-                {busy}
-                isInOthers={true}
-                {onaddtobootorder}
-                {onsetbootnext}
-                {onunsetbootnext}
-                {onsetboottofirmwaresetup}
-                {onunsetboottofirmwaresetup}
-                {onrestartnow}
-                oncontextmenu={handleContextMenu}
-              />
-            </div>
-          {/each}
-        {/if}
+          {:else}
+            {#each localOthers as entry, idx (entry.id)}
+              <div class:non-draggable={!isDraggable(entry, false)}>
+                <BootEntryItem {...getEntryProps(entry, idx, true)} />
+              </div>
+            {/each}
+          {/if}
+        </div>
       </div>
     </CollapsibleSection>
   {/if}

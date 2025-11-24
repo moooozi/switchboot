@@ -64,7 +64,7 @@
     <h1 class="text-3xl font-bold tracking-tight select-none">Switchboot</h1>
     {#if availableUpdate}
       <button
-        class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        class="text-sm text-blue-600 dark:text-blue-400 hover:underline select-none"
         onclick={onupdateclick}
       >
         Upgrade to v{availableUpdate.version}
@@ -96,7 +96,7 @@
       <button
         class="w-10 h-10 flex items-center justify-center rounded-lg
                hover:bg-neutral-200 dark:hover:bg-neutral-700
-               transition-colors disabled:opacity-50"
+               transition-colors disabled:opacity-50 select-none"
         disabled={busy}
         title="More options"
         aria-label="More options"
