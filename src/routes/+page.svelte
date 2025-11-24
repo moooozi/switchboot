@@ -283,7 +283,6 @@
     } catch (e) {
       console.error("Update installation failed:", e);
       updateStatus = "Update failed";
-      alert("Failed to install update");
       setTimeout(() => {
         showUpdateDialog = false;
       }, 2000);
