@@ -380,8 +380,9 @@
   onerror={handleError}
 />
 
+<!-- Reduced right padding (pr-3 = 12px) to match scrollbar width and prevent layout shift -->
 <main
-  class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 min-h-svh h-screen flex flex-col font-sans"
+  class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 px-5 py-5 pr-3 min-h-svh h-screen flex flex-col font-sans"
   on:contextmenu|preventDefault
 >
   <Header

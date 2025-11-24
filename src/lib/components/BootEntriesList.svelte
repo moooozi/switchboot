@@ -153,7 +153,7 @@
     createDndConfig(items, disabled, FLIP_DURATION_MS, DND_ZONE_TYPE);
 </script>
 
-<div class="flex-1 overflow-y-auto">
+<div class="flex-1 overflow-y-scroll">
   <!-- Boot Order Section -->
   <CollapsibleSection title="Boot Order" count={bootEntries.length} open>
     <div use:smoothHeight>
