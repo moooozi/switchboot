@@ -73,9 +73,11 @@ Or get the latest `.rpm` package from the [Releases page](https://github.com/moo
 
 ## Portable Windows Limitations
 
-The portable Windows version has the following limitations:
+Limitations of the portable Windows version:
 
-- **No shortcut creation**: The portable version does not support creating desktop shortcuts e.g. for rebooting to a specific EFI boot entry.
+- **No shortcut creation**: Creating desktop shortcuts (e.g. for rebooting to a specific EFI boot entry) is not supported.
+- **No updates**: Built-in updates are not available.
+- **WebView2 dependency**: Cannot install [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if it is not already preinstalled on the system.
 
 ## How to compile
 
