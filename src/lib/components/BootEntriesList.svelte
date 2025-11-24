@@ -4,6 +4,7 @@
   import { openContextMenu } from "../stores/contextMenu";
   import type { BootEntry } from "../types";
   import BootEntryItem from "./BootEntryItem.svelte";
+  import CollapsibleSection from "./CollapsibleSection.svelte";
 
   export let bootEntries: BootEntry[];
   export let busy: boolean;
@@ -140,19 +141,13 @@
 <svelte:document on:click={handleDocumentClick} />
 
 <div class="flex-1 overflow-y-auto">
-  <div class="mb-4">
-    <h2
-      class="text-lg font-semibold pl-3 pb-1 max-w-2xl w-full mx-auto select-none"
-    >
-      Boot Order
-    </h2>
+  <CollapsibleSection title="Boot Order" count={bootEntries.length} open>
     <div
-      class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
+      class="flex flex-col gap-4"
       use:dndzone={{
         items: bootEntries,
         flipDurationMs: flipDuration,
         dropTargetStyle: {},
-
         dragDisabled: busy,
       }}
       on:consider={handleDndConsider}
@@ -178,64 +173,54 @@
         </div>
       {/each}
     </div>
-  </div>
+  </CollapsibleSection>
 
   {#if others.length > 0}
-    <details class="mb-4">
-      <summary
-        class="text-lg font-semibold cursor-pointer pl-3 pb-1 max-w-2xl w-full mx-auto select-none"
-        >Others</summary
-      >
-      <div
-        class="flex flex-col gap-4 mb-2 bg-neutral-100 dark:bg-neutral-900 px-2 max-w-2xl w-full mx-auto"
-      >
-        {#if discoveredEntriesLoading}
-          <!-- Show EFI Setup immediately -->
-          {#each others.filter((entry) => entry.id === -200) as entry, idx}
-            <BootEntryItem
-              {entry}
-              index={idx}
-              totalEntries={others.length}
-              {busy}
-              isInOthers={true}
-              {onaddtobootorder}
-              {onsetbootnext}
-              {onunsetbootnext}
-              {onsetboottofirmwaresetup}
-              {onunsetboottofirmwaresetup}
-              {onrestartnow}
-              oncontextmenu={handleContextMenu}
-            />
-          {/each}
-          <!-- Show loading for other entries -->
+    <CollapsibleSection title="Others" count={others.length} open>
+      {#if discoveredEntriesLoading}
+        {#each others.filter((entry) => entry.id === -200) as entry, idx}
+          <BootEntryItem
+            {entry}
+            index={idx}
+            totalEntries={others.length}
+            {busy}
+            isInOthers={true}
+            {onaddtobootorder}
+            {onsetbootnext}
+            {onunsetbootnext}
+            {onsetboottofirmwaresetup}
+            {onunsetboottofirmwaresetup}
+            {onrestartnow}
+            oncontextmenu={handleContextMenu}
+          />
+        {/each}
+        <div
+          class="flex items-center justify-center p-8 text-neutral-500 dark:text-neutral-400"
+        >
           <div
-            class="flex items-center justify-center p-8 text-neutral-500 dark:text-neutral-400"
-          >
-            <div
-              class="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-500 mr-2"
-            ></div>
-            Loading boot entries...
-          </div>
-        {:else}
-          {#each others as entry, idx (entry.id)}
-            <BootEntryItem
-              {entry}
-              index={idx}
-              totalEntries={others.length}
-              {busy}
-              isInOthers={true}
-              {onaddtobootorder}
-              {onsetbootnext}
-              {onunsetbootnext}
-              {onsetboottofirmwaresetup}
-              {onunsetboottofirmwaresetup}
-              {onrestartnow}
-              oncontextmenu={handleContextMenu}
-            />
-          {/each}
-        {/if}
-      </div>
-    </details>
+            class="animate-spin rounded-full h-6 w-6 border-b-2 border-neutral-500 mr-2"
+          ></div>
+          Loading boot entries...
+        </div>
+      {:else}
+        {#each others as entry, idx (entry.id)}
+          <BootEntryItem
+            {entry}
+            index={idx}
+            totalEntries={others.length}
+            {busy}
+            isInOthers={true}
+            {onaddtobootorder}
+            {onsetbootnext}
+            {onunsetbootnext}
+            {onsetboottofirmwaresetup}
+            {onunsetboottofirmwaresetup}
+            {onrestartnow}
+            oncontextmenu={handleContextMenu}
+          />
+        {/each}
+      {/if}
+    </CollapsibleSection>
   {/if}
 </div>
 
