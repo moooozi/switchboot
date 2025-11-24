@@ -3799,7 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "switchboot"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bincode",
  "chacha20poly1305",
