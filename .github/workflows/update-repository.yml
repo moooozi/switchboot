@@ -328,7 +328,7 @@ jobs:
             echo "Signatures archive created successfully:"
             ls -lh signatures.tar.xz
             echo "Archive contains:"
-            tar -tJf signatures.tar.xz | head -20
+            tar -tJf signatures.tar.xz | head -20 || true
             cd ..
           else
             echo "No signatures directory found or it's empty, skipping archive creation"
@@ -345,7 +345,7 @@ jobs:
             echo "Updates archive created successfully:"
             ls -lh updates.tar.xz
             echo "Archive contains:"
-            tar -tJf updates.tar.xz | head -20
+            tar -tJf updates.tar.xz | head -20 || true
             cd ..
           else
             echo "No updates directory found or it's empty, skipping archive creation"
