@@ -18,7 +18,7 @@
   export let onsetboottofirmwaresetup: (() => void) | undefined = undefined;
   export let onunsetboottofirmwaresetup: (() => void) | undefined = undefined;
   export let onrestartnow: (() => void) | undefined = undefined;
-  export let onaddtobootorder: ((entry: BootEntry) => void) | undefined =
+  export let onaddtobootorder: ((entry: BootEntry, position?: number) => void) | undefined =
     undefined;
   export let onremovefrombootorder: ((entry: BootEntry) => void) | undefined =
     undefined;
@@ -32,7 +32,7 @@
 </script>
 
 <div
-  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers ? "cursor-default" : "cursor-grab"}
+  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers || entry.id < 0 ? "cursor-default" : "cursor-grab"}
     ${
       entry.is_default
         ? "border-sky-500"

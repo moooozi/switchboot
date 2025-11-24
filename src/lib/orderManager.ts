@@ -312,13 +312,24 @@ export class OrderManager {
 
   /**
    * Add an entry to the boot order
+   * @param entry The entry to add
+   * @param position Optional position index where to insert the entry. If not provided, adds to end.
    */
-  addToBootOrder(entry: BootEntry): void {
+  addToBootOrder(entry: BootEntry, position?: number): void {
     const originalOrder = this.getBootEntries().map((e) => e.id);
-    // Add the entry to bootEntries
-    this.bootEntries = [...this.bootEntries, entry];
+    
+    // Add the entry at specified position or at the end
+    if (position !== undefined && position >= 0 && position <= this.bootEntries.length) {
+      this.bootEntries = [
+        ...this.bootEntries.slice(0, position),
+        entry,
+        ...this.bootEntries.slice(position)
+      ];
+    } else {
+      this.bootEntries = [...this.bootEntries, entry];
+    }
+    
     const newOrder = this.getBootEntries().map((e) => e.id);
-
     this.changeOrder(OrderActions.AddToBootOrder, originalOrder, newOrder);
   }
 

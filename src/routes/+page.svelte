@@ -37,6 +37,16 @@
   let showShortcutDialog = false;
   let shortcutEntry: BootEntry | null = null;
 
+  // Merge boot next state from discoveredEntries into bootEntries
+  $: if (discoveredEntries.length > 0 && bootEntries.length > 0) {
+    bootEntries = bootEntries.map((entry) => {
+      const discovered = discoveredEntries.find((d) => d.id === entry.id);
+      return discovered
+        ? { ...entry, is_bootnext: discovered.is_bootnext }
+        : entry;
+    });
+  }
+
   $: others = [
     {
       id: -200,
@@ -223,9 +233,9 @@
     await orderManager.unsetBootToFirmwareSetup();
   }
 
-  async function handleAddToBootOrder(entry: BootEntry) {
+  async function handleAddToBootOrder(entry: BootEntry, position?: number) {
     if (!orderManager) return;
-    orderManager.addToBootOrder(entry);
+    orderManager.addToBootOrder(entry, position);
   }
 
   async function handleRemoveFromBootOrder(entry: BootEntry) {

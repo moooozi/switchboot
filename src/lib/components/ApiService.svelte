@@ -58,7 +58,6 @@
     busy = true;
     try {
       await invoke("set_boot_next", { entryId });
-      await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
       throw e;
@@ -72,7 +71,6 @@
     busy = true;
     try {
       await invoke("unset_boot_next");
-      await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
       throw e;
@@ -86,7 +84,6 @@
     busy = true;
     try {
       await invoke("set_boot_order", { order: newOrder });
-      await fetchBootEntries();
     } catch (e) {
       onerror?.(String(e));
       throw e;
