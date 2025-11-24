@@ -3778,7 +3778,7 @@ dependencies = [
 
 [[package]]
 name = "switchboot"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bincode",
  "firmware_variables",
