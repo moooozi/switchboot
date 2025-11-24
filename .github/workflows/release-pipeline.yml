@@ -164,12 +164,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare release artifacts (exclude .asc files)
+      - name: Prepare release artifacts (exclude .asc and .sig files)
         id: prepare_release_files
         shell: bash
         run: |
-          # Generate newline-separated list of files excluding .asc
-          files=$(find artifacts -type f ! -name "*.asc" -printf '%p\n')
+          # Generate newline-separated list of files excluding .asc and .sig
+          files=$(find artifacts -type f ! -name "*.asc" ! -name "*.sig" -printf '%p\n')
           echo "Files to upload to release:"
           echo "$files"
           # Save to output (newline-separated)
