@@ -13,8 +13,6 @@ Switchboot is a Tauri + Svelte desktop application for managing EFI boot entries
 **Backend (Rust/Tauri):**
 - `src-tauri/src/lib.rs` - Tauri commands and platform-specific logic
 - `src-tauri/src/cli/` - CLI daemon for privileged EFI operations
-- Uses `firmware_variables` crate for EFI variable manipulation
-- Uses `pipeguard` crate for secure Windows named pipe IPC
 - Platform-specific implementations with `#[cfg(target_os = "...")]` attributes
 
 **Build System:**
@@ -22,6 +20,7 @@ Switchboot is a Tauri + Svelte desktop application for managing EFI boot entries
 - **Frontend**: `pnpm build` → Vite static build to `build/`
 - **Native**: `pnpm tauri build` bundles with Rust backend
 - **Full build**: `pnpm tauri build` (runs frontend build automatically)
+- **Rust Edition**: 2024
 
 ## Key Patterns & Conventions
 
@@ -58,8 +57,9 @@ if (/windows boot manager/i.test(d)) return "windows";
 if (/ubuntu|kubuntu|xubuntu|lubuntu|buntu/i.test(d)) return "ubuntu";
 ```
 
-### CLI Communication
+### Features
 - **Custom IPC Implementation**: Uses `pipeguard` crate (https://github.com/moooozi/pipeguard) for secure named pipe IPC
+- **EFI Operations**: Uses `firmware_variables` crate (https://github.com/moooozi/firmware_variables) for EFI variable manipulation
 - JSON serialization over stdin/stdout between GUI and CLI daemon
 - CLI runs with elevated privileges for EFI operations
 - Commands defined in `src-tauri/src/types/cli_args.rs`
@@ -69,15 +69,14 @@ if (/ubuntu|kubuntu|xubuntu|lubuntu|buntu/i.test(d)) return "ubuntu";
 ### Local Development
 ```bash
 pnpm install          # Install dependencies
-pnpm dev             # Start Vite dev server (port 1420)
-pnpm tauri dev       # Start Tauri dev mode (opens native app)
+pnpm tauri dev --config src-tauri/tauri.signed.conf.json # Start Tauri dev mode (opens native app)
 ```
 
 ### Building
 ```bash
 pnpm icons           # Generate icons for current platform
 pnpm tauri icon ./app-icon.svg  # Generate app icons
-pnpm tauri build     # Full native build
+pnpm tauri build     # Full native build (takes log time, use equivalently dev command for faster iteration)
 ```
 
 ### Testing EFI Operations
@@ -149,5 +148,8 @@ type BootEntry = {
 - `src-tauri/src/cli/logic.rs` - EFI operation implementations
 - `tools/prerender-icons.js` - Icon generation pipeline
 - `src-tauri/src/cli/windows/pipe.rs` - Pipeguard IPC implementation
-- `.github/workflows/release-pipeline.yml` - Build automation</content>
-<parameter name="filePath">d:\Repos\switchboot\.github\copilot-instructions.md
+- `.github/workflows/release-pipeline.yml` - Build automation
+
+## Updating this Document
+- If you notice inconsistencies or no longer accurate information in this document, please update it to reflect the current codebase and practices.
+- Keep the document concise and focused on key architectural and coding guidelines.
