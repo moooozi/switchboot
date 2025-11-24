@@ -328,11 +328,13 @@
       // Get EFI Setup state
       efiSetupState = await apiService.getBootToFirmwareSetupState();
 
-      // Check for updates
-      try {
-        availableUpdate = await apiService.checkForUpdates();
-      } catch (e) {
-        console.log("Update check failed:", e);
+      // Check for updates (not in portable mode)
+      if (!isPortable) {
+        try {
+          availableUpdate = await apiService.checkForUpdates();
+        } catch (e) {
+          console.log("Update check failed:", e);
+        }
       }
 
       initialized = true;
