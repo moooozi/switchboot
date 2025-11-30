@@ -223,4 +223,8 @@
     user-select: none;
     cursor: default !important;
   }
+  /* Allow interaction with buttons inside non-draggable items */
+  :global(.non-draggable button) {
+    pointer-events: auto;
+  }
 </style>
