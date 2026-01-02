@@ -219,7 +219,6 @@
 
   /* Prevent dragging for items with negative IDs */
   .non-draggable {
-    pointer-events: none;
     user-select: none;
     cursor: default !important;
   }

@@ -10,6 +10,9 @@
   export let busy: boolean;
   export let isInOthers = false;
 
+  $: draggable = (isInOthers && entry.id > 0) || (!isInOthers && totalEntries > 1);
+  let wiggling = false;
+  
   export let onmoveup: ((index: number) => void) | undefined = undefined;
   export let onmovedown: ((index: number) => void) | undefined = undefined;
   export let onsetbootnext: ((entry: BootEntry) => void) | undefined =
@@ -27,12 +30,13 @@
     | undefined = undefined;
 
   function handleContextMenu(event: MouseEvent) {
+    event.stopPropagation();
     oncontextmenu?.({ entry, mouseEvent: event });
   }
 </script>
 
 <div
-  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers || entry.id < 0 ? "cursor-default" : "cursor-grab"}
+  class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers || entry.id < 0 ? "cursor-default" : "cursor-grab"} ${wiggling ? 'wiggle' : ''}
     ${
       entry.is_default
         ? "border-sky-500"
@@ -43,6 +47,20 @@
     bg-neutral-200 dark:bg-neutral-800`}
   data-id={entry.id}
   on:contextmenu={handleContextMenu}
+  on:mousedown={(e) => { 
+    if (e.button !== 0) return;
+    if ((e.target as Element)?.closest('button')) {
+      e.preventDefault(); 
+      e.stopPropagation(); 
+      return;
+    }
+    if (!draggable) {
+      e.preventDefault(); 
+      e.stopPropagation(); 
+      wiggling = true; 
+      setTimeout(() => wiggling = false, 300); 
+    }
+  }}
   role="button"
   tabindex="0"
 >
@@ -173,3 +191,15 @@
     </Button>
   {/if}
 </div>
+
+<style>
+  .wiggle {
+    animation: wiggle 0.3s ease-in-out;
+  }
+
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-3deg); }
+    75% { transform: rotate(3deg); }
+  }
+</style>

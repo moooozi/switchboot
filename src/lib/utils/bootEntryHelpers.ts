@@ -28,4 +28,5 @@ export const createDndConfig = (
   dropTargetStyle: {},
   dragDisabled: disabled,
   type: zoneType,
+  handle: '.drag-handle',
 });
