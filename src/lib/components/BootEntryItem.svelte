@@ -199,8 +199,8 @@
   }
 
   @keyframes wiggle {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(-3deg); }
-    75% { transform: rotate(3deg); }
+    0%, 100% { transform: translate(0px, 0px) rotate(0deg); }
+    25% { transform: translate(-2px, -1px) rotate(-1deg); }
+    75% { transform: translate(2px, 1px) rotate(1deg); }
   }
 </style>
