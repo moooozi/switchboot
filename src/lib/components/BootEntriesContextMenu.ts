@@ -6,6 +6,7 @@ interface ContextMenuOptions {
   mouseEvent: MouseEvent;
   busy: boolean;
   isPortable: boolean | null;
+  defaultEntryId: number | null;
   onMakeDefault?: (entry: BootEntry) => void;
   onAddShortcut?: (entry: BootEntry) => void;
 }
@@ -18,12 +19,14 @@ export function openBootEntryContextMenu({
   mouseEvent,
   busy,
   isPortable,
+  defaultEntryId,
   onMakeDefault,
   onAddShortcut,
 }: ContextMenuOptions) {
   mouseEvent.preventDefault();
 
   const isSpecialEntry = entry.id < 0;
+  const isDefault = entry.id === defaultEntryId;
 
   const trigger = document.createElement("div");
   Object.assign(trigger.style, {
@@ -42,8 +45,8 @@ export function openBootEntryContextMenu({
     items: [
       {
         label: "Make Default",
-        disabled: entry.is_default || busy || isSpecialEntry,
-        title: entry.is_default
+        disabled: isDefault || busy || isSpecialEntry,
+        title: isDefault
           ? "Already default"
           : isSpecialEntry
             ? "Not possible for this entry"

@@ -24,6 +24,7 @@
   export let isPortable: boolean | null;
   export let others: BootEntry[] = [];
   export let discoveredEntriesLoading = false;
+  export let defaultEntryId: number | null;
 
   // Event callbacks
   export let onentrieschanged: ((entries: BootEntry[]) => void) | undefined = undefined;
@@ -126,6 +127,7 @@
       mouseEvent,
       busy,
       isPortable,
+      defaultEntryId,
       onMakeDefault: onmakedefault,
       onAddShortcut: onaddshortcut,
     });
@@ -137,6 +139,7 @@
     totalEntries: isInOthers ? others.length : bootEntries.length,
     busy,
     isInOthers,
+    defaultEntryId,
     oncontextmenu: handleContextMenu,
     onsetbootnext: handleSetBootNext,
     onunsetbootnext: handleUnsetBootNext,

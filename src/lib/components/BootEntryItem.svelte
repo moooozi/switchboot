@@ -9,6 +9,7 @@
   export let totalEntries: number;
   export let busy: boolean;
   export let isInOthers = false;
+  export let defaultEntryId: number | null;
 
   $: draggable = (isInOthers && entry.id > 0) || (!isInOthers && totalEntries > 1);
   let wiggling = false;
@@ -38,7 +39,7 @@
 <div
   class={`flex items-center gap-3 p-4 rounded-xl border transition-colors select-none ${isInOthers || entry.id < 0 ? "cursor-default" : "cursor-grab"} ${wiggling ? 'wiggle' : ''}
     ${
-      entry.is_default
+      entry.id === defaultEntryId
         ? "border-sky-500"
         : entry.is_bootnext
           ? "border-emerald-500"
@@ -86,7 +87,7 @@
     </Label>
   {/if}
 
-  {#if entry.is_default}
+  {#if entry.id === defaultEntryId}
     <Label
       variant="primary"
       size="small"

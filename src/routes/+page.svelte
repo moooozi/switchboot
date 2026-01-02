@@ -51,7 +51,6 @@
     {
       id: -200,
       description: "EFI Firmware Setup",
-      is_default: null,
       is_bootnext: efiSetupState,
       is_current: false,
     },
@@ -67,6 +66,9 @@
     initialized &&
     JSON.stringify(bootEntries.map((e) => e.id)) !==
       JSON.stringify(originalOrder);
+
+  // Derive default entry ID from original order
+  $: defaultEntryId = originalOrder[0] ?? null;
 
   // Initialize order manager when boot entries are fetched
   $: if (bootEntries.length > 0 && !orderManager && apiService) {
@@ -408,6 +410,7 @@
     {isPortable}
     {others}
     {discoveredEntriesLoading}
+    {defaultEntryId}
     onentrieschanged={handleEntriesChanged}
     ondragstart={handleDragStart}
     ondragend={handleDragEnd}
