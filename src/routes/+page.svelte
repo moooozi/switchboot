@@ -20,6 +20,7 @@
   let changed = false;
   let busy = false;
   let isPortable: boolean | null = null;
+  let os: string = "unknown";
   let apiService: ApiService;
   let initialized = false;
   let discoveredEntriesLoading = true;
@@ -333,6 +334,7 @@
       document.addEventListener("keydown", handleKeydown);
 
       await apiService.fetchPortableStatus();
+      os = await apiService.getOS();
 
       // Load boot entries first (fast)
       await apiService.fetchBootEntries();
@@ -340,8 +342,8 @@
       // Get EFI Setup state
       efiSetupState = await apiService.getBootToFirmwareSetupState();
 
-      // Check for updates (not in portable mode)
-      if (!isPortable) {
+      // Check for updates (not in portable mode and not on Linux)
+      if (!isPortable && os !== "linux") {
         try {
           availableUpdate = await apiService.checkForUpdates();
         } catch (e) {

@@ -24,6 +24,15 @@
     }
   }
 
+  // Get OS
+  export async function getOS(): Promise<string> {
+    try {
+      return (await invoke("get_os")) as string;
+    } catch (e) {
+      return "unknown";
+    }
+  }
+
   // Fetch boot entries from Rust backend
   export async function fetchBootEntries() {
     busy = true;

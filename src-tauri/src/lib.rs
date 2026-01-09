@@ -285,6 +285,19 @@ pub fn handle_bootfw_shortcut_execution(should_reboot: bool) -> Result<(), Strin
     Ok(())
 }
 
+#[tauri::command]
+fn get_os() -> String {
+    if cfg!(target_os = "linux") {
+        "linux".to_string()
+    } else if cfg!(target_os = "windows") {
+        "windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "macos".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn restart_now() -> Result<(), String> {
@@ -354,6 +367,7 @@ pub fn run(_app_config: Option<()>) {
             create_shortcut,
             restart_now,
             is_portable,
+            get_os,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
