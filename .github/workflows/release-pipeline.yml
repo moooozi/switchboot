@@ -29,12 +29,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Read version from tauri.conf.json
+      - name: Read version from package.json
         id: get_version
         shell: bash
         run: |
           # Read version field from JSON and emit outputs
-          ver=$(python -c "import json,sys;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          ver=$(python -c "import json,sys;print(json.load(open('package.json'))['version'])")
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format: $ver. Expected MAJOR.MINOR.PATCH"
+            exit 1
+          fi
           echo "version=$ver" >> $GITHUB_OUTPUT
           echo "tag=v$ver" >> $GITHUB_OUTPUT
 
