@@ -3,6 +3,11 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() {
+    if let Err(e) = sync_version() {
+        eprintln!("Failed to sync version: {}", e);
+        std::process::exit(1);
+    }
+
     if let Err(e) = generate_build_info() {
         eprintln!("Failed to generate build info: {}", e);
         std::process::exit(1);
@@ -10,6 +15,42 @@ fn main() {
 
     // Continue with tauri build
     tauri_build::build();
+}
+
+fn sync_version() -> Result<(), String> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?;
+    let package_json_path = Path::new(&manifest_dir).join("../package.json");
+    let cargo_toml_path = Path::new(&manifest_dir).join("Cargo.toml");
+
+    // Read package.json
+    let package_contents = fs::read_to_string(&package_json_path)
+        .map_err(|e| format!("Failed to read package.json: {}", e))?;
+    let package_json: serde_json::Value = serde_json::from_str(&package_contents)
+        .map_err(|e| format!("Failed to parse package.json: {}", e))?;
+    let version = package_json
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or("Version not found in package.json")?;
+
+    // Read Cargo.toml
+    let mut cargo_contents = fs::read_to_string(&cargo_toml_path)
+        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+
+    // Replace version line
+    let version_regex = regex::RegexBuilder::new(r#"^version = ".*"$"#)
+        .multi_line(true)
+        .build()
+        .map_err(|e| format!("Regex error: {}", e))?;
+    cargo_contents = version_regex
+        .replace(&cargo_contents, format!(r#"version = "{}""#, version))
+        .to_string();
+
+    // Write back
+    fs::write(&cargo_toml_path, &cargo_contents)
+        .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+
+    println!("Synced version {} to Cargo.toml", version);
+    Ok(())
 }
 
 fn generate_build_info() -> Result<(), String> {
