@@ -25,6 +25,13 @@
 //   --no-sign       force an unsigned annotated tag
 //   -m, --message MSG     custom commit + tag message (default: "Release vX.Y.Z")
 //   --no-verify     skip the clean-working-tree check (not recommended)
+//   --force-retag   re-release an existing version: overwrite its tag, bypass the
+//                   "must be greater than current/latest tag" checks, and force-
+//                   push the tag. With no version arg it retags the current
+//                   version without making a new commit.
+//
+//   pnpm release --force-retag        # retag the current version
+//   pnpm release --force-retag 1.2.3  # overwrite an existing v1.2.3 tag
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -52,7 +59,7 @@ function escapeReg(s) {
 }
 
 function parseArgs(argv) {
-  const opts = { dryRun: false, push: true, yes: false, verify: true, sign: null, message: null, bump: null, explicit: null };
+  const opts = { dryRun: false, push: true, yes: false, verify: true, sign: null, message: null, bump: null, explicit: null, forceRetag: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") opts.dryRun = true;
@@ -61,6 +68,7 @@ function parseArgs(argv) {
     else if (a === "--no-verify") opts.verify = false;
     else if (a === "--sign") opts.sign = true;
     else if (a === "--no-sign") opts.sign = false;
+    else if (a === "--force-retag") opts.forceRetag = true;
     else if (a === "-m" || a === "--message") opts.message = argv[++i];
     else if (!a.startsWith("-")) {
       if (a === "patch" || a === "minor" || a === "major") opts.bump = a;
@@ -166,10 +174,6 @@ function originUrl() {
 
 const opts = parseArgs(process.argv.slice(2));
 
-if (!opts.bump && !opts.explicit) {
-  die("Usage: pnpm release <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [-y] [--sign|--no-sign] [-m MSG]");
-}
-
 const pkgV = readPackageVersion();
 const cargoV = readCargoVersion();
 if (pkgV !== cargoV) {
@@ -177,13 +181,26 @@ if (pkgV !== cargoV) {
 }
 
 const current = pkgV;
-const next = opts.explicit ?? bumpVersion(current, opts.bump);
-if (!SEMVER.test(next)) die(`Invalid version: ${next}`);
-if (compare(next, current) <= 0) die(`New version ${next} must be greater than current ${current}.`);
+let next;
+if (opts.explicit) {
+  next = opts.explicit;
+} else if (opts.bump) {
+  next = bumpVersion(current, opts.bump);
+} else if (opts.forceRetag) {
+  next = current;
+} else {
+  die("Usage: pnpm release <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [-y] [--sign|--no-sign] [-m MSG] [--force-retag]");
+}
 
-const latest = latestTagVersion();
-if (latest && compare(next, latest) <= 0) {
-  die(`New version ${next} must be greater than the latest existing tag v${latest}.`);
+if (!SEMVER.test(next)) die(`Invalid version: ${next}`);
+
+if (!opts.forceRetag) {
+  if (compare(next, current) <= 0) die(`New version ${next} must be greater than current ${current}.`);
+
+  const latest = latestTagVersion();
+  if (latest && compare(next, latest) <= 0) {
+    die(`New version ${next} must be greater than the latest existing tag v${latest}.`);
+  }
 }
 
 if (opts.verify && !isCleanTree()) {
@@ -198,11 +215,16 @@ const tag = `v${next}`;
 const commitMessage = opts.message ?? `chore(release): ${tag}`;
 const tagMessage = opts.message ?? `Release ${tag}`;
 
-console.log(`Releasing ${current} -> ${next}`);
+if (opts.forceRetag) {
+  console.log(`Force-retagging ${current === next ? `current version ${next}` : `${current} -> ${next}`}`);
+} else {
+  console.log(`Releasing ${current} -> ${next}`);
+}
 console.log(`  package.json : ${PKG_PATH}`);
 console.log(`  Cargo.toml   : ${CARGO_PATH}`);
 console.log(`  tag          : ${tag}   (GPG-signed: ${sign})`);
-console.log(`  commit       : ${commitMessage}`);
+if (opts.forceRetag) console.log(`  force-retag  : true (existing ${tag} tag will be overwritten)`);
+console.log(`  commit       : ${next === current ? "(none — version unchanged)" : commitMessage}`);
 
 // --- update files ---
 const pkgJson = JSON.parse(readFileSync(PKG_PATH, "utf8"));
@@ -230,17 +252,28 @@ if (opts.dryRun) {
 const addFiles = ["package.json", "src-tauri/Cargo.toml"];
 if (existsSync(CARGO_LOCK_PATH)) addFiles.push("src-tauri/Cargo.lock");
 run(`git add ${addFiles.join(" ")}`);
-run(`git commit -m ${JSON.stringify(commitMessage)}`);
 
-// --- create (signed) annotated tag ---
-if (sign) {
-  run(`git tag -s -m ${JSON.stringify(tagMessage)} ${tag}`);
-} else {
-  run(`git tag -a -m ${JSON.stringify(tagMessage)} ${tag}`);
+const needsCommit = next !== current;
+let committed = false;
+if (needsCommit) {
+  run(`git commit -m ${JSON.stringify(commitMessage)}`);
+  committed = true;
+} else if (opts.forceRetag) {
+  console.log("  Version unchanged — retagging without a new commit.");
 }
 
+// --- create (signed) annotated tag (force-move it when --force-retag) ---
+const tagArgs = [opts.forceRetag && "-f", sign ? "-s" : "-a", "-m", JSON.stringify(tagMessage), tag]
+  .filter(Boolean)
+  .join(" ");
+run(`git tag ${tagArgs}`);
+
 const branch = sh("git rev-parse --abbrev-ref HEAD");
-console.log(`\nCommitted '${commitMessage}' on '${branch}' and created tag ${tag}.`);
+if (committed) {
+  console.log(`\nCommitted '${commitMessage}' on '${branch}' and created tag ${tag}.`);
+} else {
+  console.log(`\nRecreated tag ${tag} on '${branch}' (no new commit).`);
+}
 console.log("(Nothing has been pushed yet.)");
 
 // --- push (only with explicit confirmation) ---
@@ -261,10 +294,12 @@ if (!opts.push) {
   pushNow = ans === "y";
 }
 
+const tagPush = opts.forceRetag ? `git push origin ${tag} --force` : `git push origin ${tag}`;
+
 if (pushNow) {
-  console.log(`\nPushing '${branch}' and ${tag} to origin...`);
-  run(`git push origin ${branch}`);
-  run(`git push origin ${tag}`);
+  console.log(`\nPushing to origin...`);
+  if (committed) run(`git push origin ${branch}`);
+  run(tagPush);
 
   const url = originUrl();
   console.log("\nDone. The pipeline will now build and open a DRAFT release:");
@@ -272,6 +307,6 @@ if (pushNow) {
   if (url) console.log(`  ${url}/releases  (review & publish the draft)`);
 } else {
   console.log("\nNot pushed. When you are ready, run:");
-  console.log(`  git push origin ${branch}`);
-  console.log(`  git push origin ${tag}`);
+  if (committed) console.log(`  git push origin ${branch}`);
+  console.log(`  ${tagPush}`);
 }
