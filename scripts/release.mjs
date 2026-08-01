@@ -3,9 +3,10 @@
 // Single-source version bumper for Switchboot.
 //
 // Bumps the version in BOTH package.json and src-tauri/Cargo.toml, commits the
-// change, creates an annotated git tag `vX.Y.Z`, and pushes both to origin.
-// Pushing the tag is what triggers the release pipeline (which builds and
-// publishes a *draft* GitHub release).
+// change, and creates an annotated git tag `vX.Y.Z`. It does NOT push
+// automatically — after the commit + tag are made locally you are asked to
+// confirm before anything leaves your machine. Pushing the tag is what triggers
+// the release pipeline (which builds and publishes a *draft* GitHub release).
 //
 //   tauri.conf.json already reads its version from package.json
 //   (`"version": "../package.json"`), so it needs no change.
@@ -17,37 +18,46 @@
 //   pnpm release 1.2.3          # explicit version
 //
 // Flags:
-//   --dry-run     write files but do NOT commit / tag / push
-//   --no-push     commit & tag locally, but do not push to origin
-//   --sign        force a GPG-signed annotated tag
-//   --no-sign     force an unsigned annotated tag
-//   -m, --message MSG   custom commit + tag message (default: "Release vX.Y.Z")
-//   --no-verify   skip the clean-working-tree check (not recommended)
+//   --dry-run       write files but do NOT commit / tag / push
+//   --no-push       commit & tag locally, never ask to push
+//   -y, --yes       skip the push confirmation and push immediately
+//   --sign          force a GPG-signed annotated tag
+//   --no-sign       force an unsigned annotated tag
+//   -m, --message MSG     custom commit + tag message (default: "Release vX.Y.Z")
+//   --no-verify     skip the clean-working-tree check (not recommended)
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import * as readline from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG_PATH = resolve(ROOT, "package.json");
 const CARGO_PATH = resolve(ROOT, "src-tauri/Cargo.toml");
+const CARGO_LOCK_PATH = resolve(ROOT, "src-tauri/Cargo.lock");
+const CARGO_DIR = resolve(ROOT, "src-tauri");
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
-function sh(cmd) {
-  return execSync(cmd, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", cwd: ROOT }).trim();
+function sh(cmd, cwd = ROOT) {
+  return execSync(cmd, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", cwd }).trim();
 }
-function run(cmd) {
-  execSync(cmd, { stdio: "inherit", cwd: ROOT });
+function run(cmd, cwd = ROOT) {
+  execSync(cmd, { stdio: "inherit", cwd });
+}
+function escapeReg(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseArgs(argv) {
-  const opts = { dryRun: false, push: true, verify: true, sign: null, message: null, bump: null, explicit: null };
+  const opts = { dryRun: false, push: true, yes: false, verify: true, sign: null, message: null, bump: null, explicit: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--no-push") opts.push = false;
+    else if (a === "-y" || a === "--yes") opts.yes = true;
     else if (a === "--no-verify") opts.verify = false;
     else if (a === "--sign") opts.sign = true;
     else if (a === "--no-sign") opts.sign = false;
@@ -76,6 +86,37 @@ function readCargoVersion() {
   const m = txt.match(/^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
   if (!m) throw new Error("Could not find [package] version in Cargo.toml");
   return m[1];
+}
+function readCargoName() {
+  const txt = readFileSync(CARGO_PATH, "utf8");
+  const m = txt.match(/^\[package\][\s\S]*?^name\s*=\s*"([^"]+)"/m);
+  if (!m) throw new Error("Could not find [package] name in Cargo.toml");
+  return m[1];
+}
+// Keep src-tauri/Cargo.lock in sync with the new package version. Uses
+// `cargo update -p <name> --precise <ver>` when cargo is available (touches only
+// this crate's lock entry), else falls back to a direct patch of the lock.
+function syncCargoLock(version) {
+  if (!existsSync(CARGO_LOCK_PATH)) {
+    console.log("  Cargo.lock not found — nothing to sync.");
+    return;
+  }
+  const name = readCargoName();
+  try {
+    sh("cargo --version");
+    run(`cargo update -p ${name} --precise ${version}`, CARGO_DIR);
+    return;
+  } catch {
+    // cargo unavailable — patch the lock entry directly.
+    let lock = readFileSync(CARGO_LOCK_PATH, "utf8");
+    const re = new RegExp(`(name = "${escapeReg(name)}"\\nversion = ")([^"]+)(")`);
+    const patched = lock.replace(re, `$1${version}$3`);
+    if (patched === lock) {
+      console.warn(`  Warning: could not update ${name} in Cargo.lock. Run 'cargo update -p ${name}' manually.`);
+      return;
+    }
+    writeFileSync(CARGO_LOCK_PATH, patched);
+  }
 }
 function bumpVersion(v, kind) {
   const [maj, min, pat] = v.split(".").map(Number);
@@ -126,7 +167,7 @@ function originUrl() {
 const opts = parseArgs(process.argv.slice(2));
 
 if (!opts.bump && !opts.explicit) {
-  die("Usage: pnpm release <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--sign|--no-sign] [-m MSG]");
+  die("Usage: pnpm release <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [-y] [--sign|--no-sign] [-m MSG]");
 }
 
 const pkgV = readPackageVersion();
@@ -176,14 +217,19 @@ const cargoNext = cargo.replace(
 if (cargo === cargoNext) die("Failed to update Cargo.toml [package] version.");
 writeFileSync(CARGO_PATH, cargoNext);
 
+// --- sync Cargo.lock to the new package version ---
+syncCargoLock(next);
+
 if (opts.dryRun) {
   console.log("\n--dry-run: files written locally, skipping commit / tag / push.");
   console.log("Review the changes with: git diff");
   process.exit(0);
 }
 
-// --- commit the two version files only ---
-run("git add package.json src-tauri/Cargo.toml");
+// --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
+const addFiles = ["package.json", "src-tauri/Cargo.toml"];
+if (existsSync(CARGO_LOCK_PATH)) addFiles.push("src-tauri/Cargo.lock");
+run(`git add ${addFiles.join(" ")}`);
 run(`git commit -m ${JSON.stringify(commitMessage)}`);
 
 // --- create (signed) annotated tag ---
@@ -193,10 +239,30 @@ if (sign) {
   run(`git tag -a -m ${JSON.stringify(tagMessage)} ${tag}`);
 }
 
-// --- push ---
-if (opts.push) {
-  const branch = sh("git rev-parse --abbrev-ref HEAD");
-  console.log(`\nPushing branch '${branch}' and tag '${tag}' to origin...`);
+const branch = sh("git rev-parse --abbrev-ref HEAD");
+console.log(`\nCommitted '${commitMessage}' on '${branch}' and created tag ${tag}.`);
+console.log("(Nothing has been pushed yet.)");
+
+// --- push (only with explicit confirmation) ---
+let pushNow = false;
+if (!opts.push) {
+  console.log("--no-push set: not pushing.");
+} else if (opts.yes) {
+  pushNow = true;
+} else if (!input.isTTY) {
+  console.log("Non-interactive shell: not pushing. Re-run with -y/--yes to push, or push manually (see below).");
+} else {
+  const rl = readline.createInterface({ input, output });
+  let ans;
+  do {
+    ans = (await rl.question(`Push '${branch}' and ${tag} to origin now? (y/n) `)).trim().toLowerCase();
+  } while (ans !== "y" && ans !== "n");
+  rl.close();
+  pushNow = ans === "y";
+}
+
+if (pushNow) {
+  console.log(`\nPushing '${branch}' and ${tag} to origin...`);
   run(`git push origin ${branch}`);
   run(`git push origin ${tag}`);
 
@@ -205,5 +271,7 @@ if (opts.push) {
   if (url) console.log(`  ${url}/actions   (build progress)`);
   if (url) console.log(`  ${url}/releases  (review & publish the draft)`);
 } else {
-  console.log(`\nDone locally. Trigger CI later with:  git push origin ${tag}`);
+  console.log("\nNot pushed. When you are ready, run:");
+  console.log(`  git push origin ${branch}`);
+  console.log(`  git push origin ${tag}`);
 }

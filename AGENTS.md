@@ -138,7 +138,9 @@ Notes:
   tag — the tag pushed locally is the immutable release source of truth.
 - Build provenance (`actions/attest-build-provenance`) is attached to every
   artifact; verify with `gh attestation verify`.
-- Flags: `--dry-run`, `--no-push`, `--sign`/`--no-sign`, `-m "msg"`.
+- After committing + tagging locally it asks for
+  a `y/N` confirmation. Flags: `--dry-run`, `--no-push`, `-y`/`--yes` (skip
+  prompt), `--sign`/`--no-sign`, `-m "msg"`.
 
 ### Repository Management
 
