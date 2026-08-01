@@ -6,26 +6,29 @@ pub fn call_cli(cmd: &CliCommand) -> Result<String, String> {
 
     let executable_path = std::env::current_exe().map_err(|e| e.to_string())?;
 
+    // Platform-specific CLI invocation
     #[cfg(target_os = "linux")]
     let mut cmd = {
         if cmd.requires_root_privileges() {
+            // Privileged: Use pkexec with switchboot-cli symlink
+            // The symlink is detected via argv0, no --cli flag needed
             let mut c = Command::new("pkexec");
-            // if the command is allowed to run without interactive auth, prefer
-            // the nopass wrapper. Otherwise use the regular CLI binary.
             let mut p = executable_path.clone();
             p.set_file_name("switchboot-cli");
             c.arg(&p);
             c
         } else {
+            // Non-privileged: Direct execution with --cli flag
             let mut c = Command::new(&executable_path);
             c.arg("--cli");
             c
         }
     };
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = Command::new(&cli_path);
+        // Windows: Always use --cli flag (no symlink support)
+        let mut c = Command::new(&executable_path);
         c.arg("--cli");
         c
     };

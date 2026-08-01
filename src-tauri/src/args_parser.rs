@@ -1,78 +1,117 @@
 use switchboot_lib::types::CliCommand;
 
-/// Represents the different types of application modes/commands
-#[derive(Debug, Clone)]
+/// Application execution mode determined from argv0 and command line arguments.
+/// Optimized for fast startup with minimal allocations.
+#[derive(Debug)]
 pub enum AppMode {
-    /// Run the GUI normally
+    /// Launch the GUI (default mode, zero allocations)
     Gui,
-    /// Execute a command with optional reboot
+    /// Run CLI daemon mode (--daemon flag)
+    CliDaemon,
+    /// Execute CLI commands (stores unparsed args for deferred CliCommand parsing)
+    CliCommand(Vec<String>),
+    /// Execute a command and optionally reboot (--exec mode)
     Exec {
         command: CliCommand,
         should_reboot: bool,
     },
-    /// Run in CLI mode
-    Cli { args: Vec<String> },
+    #[cfg(windows)]
+    /// Windows-specific service commands (/service_connector, /pipe_server, etc.)
+    WindowsService(String),
 }
 
-/// Configuration parsed from command line arguments
-#[derive(Debug, Clone)]
-pub struct ParsedArgs {
-    pub mode: AppMode,
-}
-
-/// Parse command line arguments into application configuration
-pub fn parse_args<I>(args: I) -> Result<ParsedArgs, String>
-where
-    I: Iterator<Item = String>,
-{
-    let args: Vec<String> = args.collect();
-
-    // Check for CLI mode
-    if !args.is_empty() && args[0] == "--cli" {
-        let cli_args: Vec<String> = args.into_iter().skip(1).collect();
-        return Ok(ParsedArgs {
-            mode: AppMode::Cli { args: cli_args },
-        });
+/// Detect application mode from argv0 and arguments with minimal overhead.
+/// Uses busybox-style single-pass parsing for fast startup.
+///
+/// # Arguments
+/// * `argv0` - Program name (argv[0]) - used to detect switchboot-cli symlink on Linux
+/// * `args` - Mutable iterator over arguments (will be consumed as needed)
+///
+/// # Performance
+/// - GUI mode: Zero allocations (most common case)
+/// - CLI mode: Single Vec allocation, deferred command parsing
+/// - Exec mode: Single Vec allocation, immediate command parsing
+pub fn detect_mode(
+    argv0: &str,
+    args: &mut impl Iterator<Item = String>,
+) -> Result<AppMode, String> {
+    // Linux-only: Check for switchboot-cli symlink invocation
+    #[cfg(target_os = "linux")]
+    if argv0.ends_with("switchboot-cli") {
+        let cli_args: Vec<String> = args.collect();
+        // Special case: --daemon flag
+        if cli_args.len() == 1 && cli_args[0] == "--daemon" {
+            return Ok(AppMode::CliDaemon);
+        }
+        return Ok(AppMode::CliCommand(cli_args));
     }
 
-    // Check for exec mode
-    if let Some(exec_pos) = args.iter().position(|arg| arg == "--exec") {
-        let remaining_args = &args[exec_pos + 1..];
+    // Peek at first argument to determine mode
+    let Some(first_arg) = args.next() else {
+        return Ok(AppMode::Gui); // No args = GUI mode
+    };
 
-        // Parse the command using CliCommand::from_args
-        let command = CliCommand::from_args(remaining_args)
-            .map_err(|e| format!("Invalid command in --exec mode: {}", e))?;
-
-        // Check if this command is allowed in non-interactive exec mode
-        if !command.allow_non_interactive_exec() {
-            return Err(format!(
-                "Command {:?} is not allowed in --exec mode",
-                command
-            ));
+    match first_arg.as_str() {
+        // Explicit --cli flag (symlink argv0 path is the optimized Linux route,
+        // but --cli is still used by the daemon and non-privileged single-run
+        // invocations on all platforms, and for manual use)
+        "--cli" => {
+            let cli_args: Vec<String> = args.collect();
+            if cli_args.len() == 1 && cli_args[0] == "--daemon" {
+                Ok(AppMode::CliDaemon)
+            } else {
+                Ok(AppMode::CliCommand(cli_args))
+            }
         }
 
-        // Check for reboot flag
-        let should_reboot = remaining_args.iter().any(|arg| arg == "reboot");
+        // Exec mode: Parse command immediately for validation
+        "--exec" => {
+            let remaining: Vec<String> = args.collect();
+            if remaining.is_empty() {
+                return Err("--exec requires a command".to_string());
+            }
 
-        return Ok(ParsedArgs {
-            mode: AppMode::Exec {
+            // Separate reboot flag from command args
+            let has_reboot = remaining.iter().any(|a| a == "reboot");
+            let cmd_args: Vec<String> = remaining.into_iter().filter(|a| a != "reboot").collect();
+
+            // Parse and validate command
+            let command = CliCommand::from_args(&cmd_args)
+                .map_err(|e| format!("Invalid --exec command: {}", e))?;
+
+            if !command.allow_non_interactive_exec() {
+                return Err(format!(
+                    "Command '{}' is not allowed in --exec mode",
+                    cmd_args[0]
+                ));
+            }
+
+            Ok(AppMode::Exec {
                 command,
-                should_reboot,
-            },
-        });
-    }
+                should_reboot: has_reboot,
+            })
+        }
 
-    // Default to GUI mode
-    Ok(ParsedArgs { mode: AppMode::Gui })
+        // Windows-only: Service commands (/service_connector, /pipe_server, etc.)
+        #[cfg(windows)]
+        arg if arg.starts_with('/') => Ok(AppMode::WindowsService(arg.to_string())),
+
+        // Any other argument = GUI mode (ignore unknown flags)
+        _ => Ok(AppMode::Gui),
+    }
 }
 
-/// Helper function to handle exec mode execution
-pub fn handle_exec_mode(command: &CliCommand, should_reboot: bool) -> Result<(), String> {
+/// Execute a command in exec mode with optional reboot.
+/// Only allowed commands are executed (validated during parsing).
+pub fn execute_command(command: &CliCommand, should_reboot: bool) -> Result<(), String> {
     match command {
         CliCommand::SetBootNext(entry_id) => {
             switchboot_lib::handle_bootnext_shortcut_execution(*entry_id, should_reboot)
         }
         CliCommand::SetBootFirmware => {
+            switchboot_lib::handle_bootfw_shortcut_execution(should_reboot)
+        }
+        CliCommand::UnsetBootFirmware => {
             switchboot_lib::handle_bootfw_shortcut_execution(should_reboot)
         }
         _ => Err(format!(

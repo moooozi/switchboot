@@ -37,23 +37,24 @@
         "depends": ["polkitd"],
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
-          "/usr/share/icons/hicolor": "icons-linux/hicolor",
-          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
-        }
+          "/usr/share/icons/hicolor": "icons-linux/hicolor"
+        },
+        "postInstallScript": "platform/linux/scripts/post-install.sh",
+        "postRemoveScript": "platform/linux/scripts/post-remove.sh"
       },
       "rpm": {
         "depends": ["polkit"],
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
-          "/usr/share/icons/hicolor": "icons-linux/hicolor",
-          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
-        }
+          "/usr/share/icons/hicolor": "icons-linux/hicolor"
+        },
+        "postInstallScript": "platform/linux/scripts/post-install.sh",
+        "postRemoveScript": "platform/linux/scripts/post-remove.sh"
       },
       "appimage": {
         "files": {
           "/usr/share/polkit-1": "platform/linux/polkit-1",
-          "/usr/share/icons/hicolor": "icons-linux/hicolor",
-          "/usr/bin/switchboot-cli": "platform/linux/links/switchboot-cli"
+          "/usr/share/icons/hicolor": "icons-linux/hicolor"
         }
       }
     },
@@ -68,5 +69,11 @@
     ],
     "publisher": "zidane.dev",
     "copyright": "Copyright © 2025 zidane.dev"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1RjRENjU3NjIwMjIzMDYKUldRR0l3SmlWOWIwSmNoMG9qalpsOGI3UDhIZE15eUF3bjk1M1BDNHk3ODQwaExnbStIRzdhbjcK",
+      "endpoints": ["https://moooozi.github.io/switchboot/updates/latest.json"]
+    }
   }
 }

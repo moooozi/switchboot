@@ -3,7 +3,6 @@
 
 # Shell scripts must always use LF
 *.sh text eol=lf
-switchboot-cli text eol=lf
 
 # Windows-specific files can use CRLF
 *.bat text eol=crlf

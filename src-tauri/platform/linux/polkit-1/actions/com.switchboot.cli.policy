@@ -1,4 +1,10 @@
 <policyconfig>
+  <!--
+    exec.path targets the REAL binary /usr/bin/switchboot (not the switchboot-cli
+    symlink) because pkexec resolves symbolic links before authorizing. The
+    switchboot-cli symlink is invoked for argv[0] CLI detection; pkexec authorizes
+    the resolved target. Each action is disambiguated by exec.argv1 (the subcommand).
+  -->
   <action id="com.switchboot.cli.change-boot-order">
     <description>Switchboot: Change system boot order</description>
     <message>Authentication is required to change the system boot order.</message>
@@ -7,7 +13,7 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">set-boot-order</annotate>
   </action>
   <action id="com.switchboot.cli.set-boot-next">
@@ -17,7 +23,7 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>yes</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">set-boot-next</annotate>
   </action>
   <action id="com.switchboot.cli.unset-boot-next">
@@ -27,7 +33,7 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>yes</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">unset-boot-next</annotate>
   </action>
   <action id="com.switchboot.cli.set-boot-fw">
@@ -37,7 +43,7 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>yes</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">set-boot-fw</annotate>
   </action>
   <action id="com.switchboot.cli.unset-boot-fw">
@@ -47,7 +53,7 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>yes</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot-cli</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/switchboot</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">unset-boot-fw</annotate>
   </action>
 </policyconfig>
