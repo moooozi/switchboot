@@ -116,11 +116,29 @@ pnpm tauri build     # Full native build (takes log time, use equivalently dev c
 
 ## Release Process
 
-### Version Management
+### Cutting a Release
 
-- Single source of truth: `src-tauri/tauri.conf.json`
-- Release branch triggers automated builds
-- GitHub Actions generate installers and update repos
+1. From a clean working tree on `main`, run `pnpm release <patch|minor|major>`
+   (or `pnpm release 1.2.3` for an explicit version).
+2. `scripts/release.mjs` is the single source of truth. It bumps `package.json`
+   **and** `src-tauri/Cargo.toml` together, commits, creates an annotated
+   (GPG-signed) tag `vX.Y.Z`, and pushes both. `tauri.conf.json` reads its
+   version from `package.json` (`"version": "../package.json"`), so it needs no
+   change.
+3. Pushing the tag triggers `.github/workflows/release-pipeline.yml`, which
+   builds Linux + Windows, signs artifacts, and opens a **DRAFT** GitHub
+   Release.
+4. Test the draft. When you publish it, the `release: published` event runs
+   `.github/workflows/update-repository.yml`, which downloads the release
+   assets and updates the APT/RPM repos on GitHub Pages.
+
+Notes:
+
+- There is **no release branch** and the pipeline never creates or recreates a
+  tag — the tag pushed locally is the immutable release source of truth.
+- Build provenance (`actions/attest-build-provenance`) is attached to every
+  artifact; verify with `gh attestation verify`.
+- Flags: `--dry-run`, `--no-push`, `--sign`/`--no-sign`, `-m "msg"`.
 
 ### Repository Management
 

@@ -1,0 +1,54 @@
+# git-cliff configuration — generates the release notes from conventional commits.
+# Docs: https://git-cliff.org/docs/configuration
+#
+# Invoked by .github/workflows/release-pipeline.yml (orhun/git-cliff-action)
+# with `--latest`, so it diffs the previous release tag against the new one.
+#
+# Version bumps (chore(release): ...), docs, ci and merges are skipped so the
+# notes only contain user-facing changes.
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+
+{% for commit in commits -%}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+{{ commit.message | upper_first }}\
+{% if commit.breaking %} ⚠️ **breaking**{% endif %}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+require_conventional = false
+split_commits = false
+commit_preprocessors = [
+  # Strip trailing dots / whitespace for tidy bullet points.
+  { pattern = " +$", replace = "" },
+]
+commit_parsers = [
+  { body = "!$", group = "⚠️ Breaking Changes" },
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactoring" },
+  # Housekeeping — excluded from the changelog.
+  { message = "^docs", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^test", skip = true },
+  { message = "^style", skip = true },
+  { message = "^Merge", skip = true },
+  { message = "^bump version", skip = true },
+  # Anything meaningful but non-conventional lands here.
+  { message = ".*", group = "Other Changes" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+sort_commits = "newest"

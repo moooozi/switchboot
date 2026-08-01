@@ -1,18 +1,17 @@
 name: Update Package Repository
 
+# Runs when a DRAFT release is published (manually). The build artifacts
+# (packages, .asc and .sig signatures) are pulled straight from the published
+# release assets — there is no CI artifact to expire. Can also be re-run
+# manually for a given tag via workflow_dispatch.
 on:
-  workflow_call:
-    inputs:
-      version:
-        description: "Version to update repository for (e.g. v0.1.1)"
-        required: true
-        type: string
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to update repository for (e.g. v0.1.1)"
+      tag:
+        description: "Release tag to (re)publish the repo from (e.g. v0.2.7)"
         required: true
-        type: string
 
 permissions:
   contents: read
@@ -29,6 +28,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve release tag and version
+        id: init
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then echo "::error::No tag resolved"; exit 1; fi
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid tag '$TAG'"; exit 1
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -42,11 +55,22 @@ jobs:
             echo "have_gpg=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download signed artifacts (includes .asc files)
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-artifacts-${{ inputs.version }}
-          path: artifacts
+      - name: Download release assets (packages, .asc and .sig signatures)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.init.outputs.tag }}"
+          mkdir -p artifacts
+          echo "Downloading assets from release $TAG..."
+          gh release download "$TAG" -D artifacts -R "$GITHUB_REPOSITORY" --clobber
+          # Recreate the update-sig layout expected by the steps below.
+          mkdir -p artifacts/update-sig
+          find artifacts -maxdepth 1 -name '*.sig' -exec mv -t artifacts/update-sig/ {} + 2>/dev/null || true
+          echo "Downloaded assets:"
+          ls -la artifacts || true
+          ls -la artifacts/update-sig || true
 
       - name: Construct Pages Base URL
         id: construct-url
@@ -132,11 +156,11 @@ jobs:
           fi
 
           echo "Copying new update signatures..."
-          mkdir -p repo/updates/${{ inputs.version }}
+          mkdir -p repo/updates/${{ steps.init.outputs.version }}
           if ls artifacts/update-sig/*.sig 1> /dev/null 2>&1; then
-            cp artifacts/update-sig/*.sig repo/updates/${{ inputs.version }}/
+            cp artifacts/update-sig/*.sig repo/updates/${{ steps.init.outputs.version }}/
             echo "Added new update signatures"
-            ls -la repo/updates/${{ inputs.version }}/*.sig
+            ls -la repo/updates/${{ steps.init.outputs.version }}/*.sig
           else
             echo "No new update signatures found"
           fi
@@ -156,13 +180,13 @@ jobs:
         shell: bash
         run: |
           echo "Setting up signatures directory..."
-          mkdir -p repo/signatures/${{ inputs.version }}
+          mkdir -p repo/signatures/${{ steps.init.outputs.version }}
 
           # Copy all new .asc files to the signatures directory
           if ls artifacts/*.asc 1> /dev/null 2>&1; then
-            cp artifacts/*.asc repo/signatures/${{ inputs.version }}/
+            cp artifacts/*.asc repo/signatures/${{ steps.init.outputs.version }}/
             echo "Copied signature files:"
-            ls -la repo/signatures/${{ inputs.version }}/
+            ls -la repo/signatures/${{ steps.init.outputs.version }}/
           else
             echo "No signature files found"
           fi
@@ -180,7 +204,7 @@ jobs:
         run: |
           set -e
           echo "Generating latest.json for updates..."
-          python3 scripts/generate_latest_json.py "${{ inputs.version }}" "${{ steps.construct-url.outputs.pages_base_url }}"
+          python3 scripts/generate_latest_json.py "${{ steps.init.outputs.version }}" "${{ steps.construct-url.outputs.pages_base_url }}"
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
@@ -213,8 +237,8 @@ jobs:
           if [ -f repo-config/FORCE_DISABLE_PRUNE ]; then
             echo "FORCE_DISABLE_PRUNE present: skipping pruning step"
           else
-            echo "Running prune script with current version: ${INPUTS_VERSION:-${{ inputs.version }}}"
-            python3 scripts/prune_repo.py repo "switchboot" "${{ inputs.version }}" $PRUNE_ALLOW_GREATER || true
+            echo "Running prune script with current version: ${INPUTS_VERSION:-${{ steps.init.outputs.version }}}"
+            python3 scripts/prune_repo.py repo "switchboot" "${{ steps.init.outputs.version }}" $PRUNE_ALLOW_GREATER || true
           fi
 
       - name: Generate RPM repository metadata
