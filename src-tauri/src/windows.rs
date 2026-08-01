@@ -6,19 +6,17 @@ pub fn is_portable_mode() -> bool {
     use crate::cli::windows::service_management::get_service_binary_path;
     use crate::constants::SERVICE_NAME;
 
-    // Get current executable path
     let current_exe = match std::env::current_exe() {
         Ok(path) => path,
-        Err(_) => return true, // Default to portable if we can't determine
+        Err(_) => return true, // default to portable if undeterminable
     };
 
-    // Get the service binary path
     let service_binary_path = match get_service_binary_path(SERVICE_NAME) {
         Some(path) => std::path::PathBuf::from(path),
-        None => return true, // Service doesn't exist, so we're in portable mode
+        None => return true, // no installed service => portable mode
     };
 
-    // Compare base paths (parent directories)
+    // Portable mode iff the running exe is not beside the installed service binary.
     let service_base = service_binary_path
         .parent()
         .map(|p| p.to_string_lossy().to_lowercase());
@@ -26,19 +24,18 @@ pub fn is_portable_mode() -> bool {
         .parent()
         .map(|p| p.to_string_lossy().to_lowercase());
 
-    // If paths don't match (or service is not in the same directory), it's portable mode
     service_base != current_base
 }
 
 use windows::{
-    core::{Interface, PCWSTR},
     Win32::{
         System::Com::{
-            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
-            COINIT_APARTMENTTHREADED,
+            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+            CoUninitialize, IPersistFile,
         },
         UI::Shell::{IShellLinkW, ShellLink},
     },
+    core::{Interface, PCWSTR},
 };
 
 fn to_wide<S: AsRef<std::ffi::OsStr>>(s: S) -> Vec<u16> {
@@ -70,7 +67,7 @@ pub fn create_shortcut_on_desktop(
     icon_id: Option<String>,
 ) -> Result<(), String> {
     use std::path::PathBuf;
-    use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    use windows::Win32::UI::Shell::{FOLDERID_Desktop, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
 
     unsafe {
         let hr = CoInitializeEx(Some(std::ptr::null_mut()), COINIT_APARTMENTTHREADED);
@@ -91,7 +88,6 @@ pub fn create_shortcut_on_desktop(
             let os_string = std::ffi::OsString::from_wide(slice);
             PathBuf::from(os_string)
         };
-        // Don't forget to free the memory!
 
         windows::Win32::System::Com::CoTaskMemFree(Some(desktop_ptr.0 as _));
 
@@ -112,7 +108,6 @@ pub fn create_shortcut_on_desktop(
             args.push_str(" reboot");
         }
 
-        // Use CoCreateInstance to create the ShellLink COM object
         let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
             .map_err(|e| format!("CoCreateInstance failed: {e}"))?;
 
@@ -130,7 +125,7 @@ pub fn create_shortcut_on_desktop(
             ))
             .map_err(|e| format!("SetDescription failed: {e}"))?;
 
-        // Determine icon path using the installed layout: <exe_parent>/resources/icons/ico/<icon>.ico
+        // Installed layout: <exe_parent>/resources/icons/ico/<icon>.ico
         let icon_path = if let Some(id) = icon_id {
             if let Ok(exe_path) = std::env::current_exe() {
                 if let Some(exe_parent) = exe_path.parent() {
@@ -154,7 +149,7 @@ pub fn create_shortcut_on_desktop(
             std::path::PathBuf::new()
         };
 
-        // Determine final icon: prefer the requested icon_path, otherwise search for the bundled fallback
+        // Prefer the requested icon, otherwise fall back to the bundled generic icon.
         let final_icon = if icon_path.exists() {
             icon_path
         } else if let Ok(exe_path) = std::env::current_exe() {
@@ -177,13 +172,11 @@ pub fn create_shortcut_on_desktop(
         };
 
         if final_icon.exists() {
-            // set icon location on the shortcut
-            // keep wide buffer alive for the FFI call
+            // Keep the wide buffer alive across the FFI call.
             let icon_wide = to_wide(final_icon.display().to_string());
             shell_link
                 .SetIconLocation(PCWSTR::from_raw(icon_wide.as_ptr()), 0)
                 .map_err(|e| format!("SetIconLocation failed: {e}"))?;
-            // icon_wide dropped afterwards
         }
 
         let persist_file: IPersistFile = shell_link

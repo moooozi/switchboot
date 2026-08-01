@@ -38,11 +38,9 @@ pub fn call_cli(cmd: &CliCommand) -> Result<String, String> {
     let output = cmd.output().map_err(|e| e.to_string())?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else if output.status.code() == Some(127) {
+        Err("Authentication was cancelled or denied.".to_string())
     } else {
-        if output.status.code() == Some(127) {
-            Err("Authentication was cancelled or denied.".to_string())
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).to_string())
-        }
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
 }

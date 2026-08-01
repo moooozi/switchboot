@@ -51,10 +51,8 @@ impl CliProcess {
             let mut c = Command::new(&executable_path);
             c.arg("--cli");
             if is_portable_mode() {
-                // In portable mode, create the unelevated pipe server
                 c.arg("/pipe_server");
             } else {
-                // In service mode, start service and create pipe server
                 c.arg("/service_manager");
             }
             {
@@ -126,7 +124,6 @@ impl CliProcess {
 pub fn get_cli() -> Result<CliProcessGuard, String> {
     use crate::windows::is_portable_mode;
 
-    // Initialize the OnceLock if it hasn't been initialized yet
     let mutex = CLI_PROCESS.get_or_init(|| Mutex::new(None));
 
     let mut guard = mutex
@@ -134,16 +131,14 @@ pub fn get_cli() -> Result<CliProcessGuard, String> {
         .map_err(|_| "Failed to lock CLI process".to_string())?;
 
     if guard.is_none() {
-        // In portable mode, we need to launch an elevated connector before creating the pipe server
+        // In portable mode the elevated connector must be launched before the pipe server.
         if is_portable_mode() {
-            // Launch the elevated connector process first
             let executable_path = std::env::current_exe().expect("Failed to get exe path");
 
-            // Use ShellExecuteW to launch with elevation
             use std::os::windows::ffi::OsStrExt;
-            use windows::core::PCWSTR;
             use windows::Win32::UI::Shell::ShellExecuteW;
             use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+            use windows::core::PCWSTR;
 
             let exe_wide: Vec<u16> = executable_path
                 .as_os_str()
@@ -165,7 +160,7 @@ pub fn get_cli() -> Result<CliProcessGuard, String> {
                     SW_HIDE,
                 );
 
-                // ShellExecuteW returns > 32 on success
+                // ShellExecuteW returns > 32 on success.
                 if result.0 as i32 <= 32 {
                     return Err(format!(
                         "Failed to launch elevated connector: error code {}",
@@ -174,11 +169,9 @@ pub fn get_cli() -> Result<CliProcessGuard, String> {
                 }
             }
 
-            // Give the elevated process a moment to start
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
-        // Now start the unelevated pipe server (or service manager)
         let cli_process = CliProcess::start()?;
         *guard = Some(cli_process);
     }

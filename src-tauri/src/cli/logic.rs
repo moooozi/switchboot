@@ -63,8 +63,7 @@ pub fn run_daemon() {
     }
 }
 
-/// Runs the CLI interface for switchboot.
-/// Returns 0 on success, 1 on error.
+/// Run a single CLI command, returning the exit code (0 on success, 1 on error).
 pub fn run(args: Vec<String>) -> i32 {
     eprintln!("[DEBUG] cli::run called with args: {:?}", args);
 
@@ -84,7 +83,7 @@ pub fn run(args: Vec<String>) -> i32 {
     response.code
 }
 
-fn set_boot_order_response(ids: &Vec<u16>) -> CommandResponse {
+fn set_boot_order_response(ids: &[u16]) -> CommandResponse {
     match with_privileges(|| boot::set_boot_order(ids)) {
         Ok(_) => CommandResponse {
             code: 0,

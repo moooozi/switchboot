@@ -11,10 +11,9 @@ use cli_user::get_cli;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+pub use build_info::APP_IDENTIFIER;
 use tauri::Manager;
 pub use types::{BootEntry, CliCommand, CommandResponse, ShortcutAction, ShortcutConfig};
-// Re-export build metadata from top-level module
-pub use build_info::APP_IDENTIFIER;
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
@@ -178,10 +177,8 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     use std::env;
     use std::fs;
 
-    // Get the path to the current executable
     let exe = env::current_exe().map_err(|e| e.to_string())?;
 
-    // Build the command line for the shortcut
     let mut exec_cmd = match config.action {
         ShortcutAction::SetBootNext => {
             if let Some(id) = config.entry_id {
@@ -196,7 +193,6 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         exec_cmd.push_str(" reboot");
     }
 
-    // Build the .desktop file content
     let icon_name = config.icon_id.as_deref().unwrap_or("generic");
     let sanitized_name = config
         .name
@@ -214,7 +210,7 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         sanitized_name, exec_cmd, icon_name
     );
 
-    // Get XDG_DATA_HOME or default to ~/.local/share
+    // Resolve the applications dir: $XDG_DATA_HOME, falling back to ~/.local/share.
     let data_home = std::env::var("XDG_DATA_HOME")
         .ok()
         .filter(|s| !s.is_empty())
@@ -232,10 +228,9 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
     let mut desktop_path = data_home;
     desktop_path.push("applications");
     fs::create_dir_all(&desktop_path).map_err(|e| e.to_string())?;
-    // Choose the filename extension based on whether this shortcut reboots
+
     let name_extension = if config.reboot { "reboot" } else { "bootnext" };
 
-    // Build the final desktop file path without mutating the applications directory path
     let desktop_file = match config.action {
         ShortcutAction::SetBootNext => {
             if let Some(id) = config.entry_id {
@@ -255,7 +250,7 @@ fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
 
     fs::write(&desktop_file, desktop_entry).map_err(|e| e.to_string())?;
 
-    // Make the .desktop file executable
+    // Make the .desktop file executable (0o755).
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(&desktop_file)
         .map_err(|e| e.to_string())?
@@ -313,7 +308,7 @@ fn restart_now() -> Result<(), String> {
 #[cfg(unix)]
 #[tauri::command]
 fn restart_now() -> Result<(), String> {
-    let shutdown_result = Command::new("shutdown").args(&["-r", "now"]).spawn();
+    let shutdown_result = Command::new("shutdown").args(["-r", "now"]).spawn();
     if shutdown_result.is_err() {
         Command::new("reboot")
             .spawn()
@@ -344,7 +339,7 @@ fn is_portable() -> bool {
 pub fn run(_app_config: Option<()>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Single instance plugin to focus existing window on second launch
+        // Focus the existing window when a second instance is launched.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = app
                 .get_webview_window("main")

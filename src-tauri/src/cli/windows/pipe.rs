@@ -4,8 +4,8 @@ use std::io::Write;
 
 pub const PIPE_NAME: &str = build_info::APP_IDENTIFIER_VERSION;
 
-/// User instance creates the pipe server and sends a single command to the elevated instance.
-/// This function is synchronous and blocks until the command is executed and response is received.
+/// User instance: run the pipe server, forwarding stdin commands to the elevated
+/// instance and writing responses to stdout. Blocks until the connection closes.
 #[cfg(windows)]
 pub fn run_unelevated_pipe_server(timeout: Option<u64>, _wait_for_new_client: bool) {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
@@ -21,23 +21,17 @@ pub fn run_unelevated_pipe_server(timeout: Option<u64>, _wait_for_new_client: bo
     eprintln!("[PIPE_SERVER] Pipe server exited normally");
 }
 
-/// Asynchronous implementation of the unelevated pipe server.
-/// This server reads JSON commands from stdin, forwards them to the elevated client,
-/// receives responses, and outputs them to stdout.
 #[cfg(windows)]
 async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::sync::mpsc;
 
-    // Create a channel to communicate with the connection handler
     let (connection_tx, mut connection_rx) = mpsc::channel::<pipeguard::NamedPipeConnection>(1);
 
-    // Create encrypted server
     let mut server = NamedPipeServerStruct::new_encrypted(PIPE_NAME, None);
 
     eprintln!("[PIPE_SERVER] Pipe server created, waiting for elevated client to connect...");
 
-    // Spawn the server task
     let server_handle = tokio::spawn(async move {
         server
             .start(move |connection| {
@@ -48,7 +42,6 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                         connection.id()
                     );
 
-                    // Send the connection to the main loop
                     if connection_tx.send(connection).await.is_err() {
                         eprintln!("[PIPE_SERVER ERROR] Failed to send connection to main loop");
                         return Err(pipeguard::NamedPipeError::Io(std::io::Error::new(
@@ -57,7 +50,7 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                         )));
                     }
 
-                    // Keep this handler alive - it will be dropped when the connection is closed
+                    // Keep this handler alive for the connection's lifetime.
                     tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
                     Ok(())
                 }
@@ -65,7 +58,6 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
             .await
     });
 
-    // Wait for the elevated client to connect
     eprintln!("[PIPE_SERVER] Waiting for elevated client connection...");
     let mut connection = match connection_rx.recv().await {
         Some(conn) => {
@@ -80,7 +72,6 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
 
     eprintln!("[PIPE_SERVER] Starting command processing loop");
 
-    // Read commands from stdin and forward them to the elevated client
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
     let mut line_buffer = String::new();
@@ -88,11 +79,10 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
     loop {
         line_buffer.clear();
 
-        // Read command from stdin
         match reader.read_line(&mut line_buffer).await {
             Ok(0) => {
                 eprintln!("[PIPE_SERVER] EOF on stdin, disconnecting...");
-                break; // EOF
+                break;
             }
             Ok(n) => {
                 eprintln!("[PIPE_SERVER] Read {} bytes from stdin", n);
@@ -103,11 +93,9 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                 }
 
                 eprintln!("[PIPE_SERVER] Processing command: {}", line);
-                // Parse and send command to elevated client
                 match send_command_and_get_response(&mut connection, line).await {
                     Ok(response) => {
                         eprintln!("[PIPE_SERVER] Received response, outputting to stdout");
-                        // Output response to stdout
                         let _ = std::io::stdout().write_all(format!("{}\n", response).as_bytes());
                     }
                     Err(e) => {
@@ -131,7 +119,7 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
     Ok(())
 }
 
-/// Send a command to the elevated client and wait for response
+/// Forward one command to the elevated client and return its JSON-encoded response.
 async fn send_command_and_get_response(
     connection: &mut pipeguard::NamedPipeConnection,
     line: &str,
@@ -140,16 +128,13 @@ async fn send_command_and_get_response(
     use crate::types::CommandResponse;
 
     eprintln!("[PIPE_SERVER] Parsing JSON args from: {}", line);
-    // Parse JSON args
     let args: Vec<String> =
         serde_json::from_str(line).map_err(|e| format!("Invalid JSON input: {}", e))?;
 
     eprintln!("[PIPE_SERVER] Creating command from args: {:?}", args);
-    // Create command
     let command = CliCommand::from_args(&args).map_err(|e| format!("Invalid command: {}", e))?;
 
     eprintln!("[PIPE_SERVER] Serializing command");
-    // Serialize command
     let command_bytes =
         bincode::serialize(&command).map_err(|e| format!("Serialization error: {}", e))?;
 
@@ -157,14 +142,12 @@ async fn send_command_and_get_response(
         "[PIPE_SERVER] Sending {} bytes to elevated client",
         command_bytes.len()
     );
-    // Send encrypted command to elevated client
     connection
         .send_bytes(&command_bytes)
         .await
         .map_err(|e| format!("Failed to send command: {}", e))?;
 
     eprintln!("[PIPE_SERVER] Waiting for response from elevated client...");
-    // Receive encrypted response from elevated client
     let response_bytes = connection
         .receive_bytes()
         .await
@@ -174,20 +157,17 @@ async fn send_command_and_get_response(
         "[PIPE_SERVER] Received {} bytes response",
         response_bytes.len()
     );
-    // Deserialize response
     let response: CommandResponse = bincode::deserialize(&response_bytes)
         .map_err(|e| format!("Failed to deserialize response: {}", e))?;
 
     eprintln!("[PIPE_SERVER] Response deserialized successfully");
-    // Convert response to JSON string
     let response_json = serde_json::to_string(&response)
         .map_err(|e| format!("Failed to serialize response to JSON: {}", e))?;
 
     Ok(response_json)
 }
 
-/// Elevated instance connects to the unelevated pipe server and executes commands.
-/// This is the client that waits for commands from the server (unelevated instance).
+/// Elevated instance: connect to the unelevated pipe server and run received commands.
 #[cfg(windows)]
 pub fn run_elevated_connector() {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
@@ -203,12 +183,8 @@ pub fn run_elevated_connector() {
     eprintln!("[PIPE_CLIENT] Elevated connector exited normally");
 }
 
-/// Asynchronous implementation of the elevated connector.
-/// Connects to the unelevated pipe server and waits for commands to execute.
-///
-/// # Arguments
-/// * `shutdown_notify` - Optional shutdown notification. If provided, the connector will
-///   gracefully shutdown when notified. If None, it will run until the connection is closed.
+/// Connect to the unelevated pipe server and execute commands until the connection
+/// closes or `shutdown_notify` fires (when provided).
 #[cfg(windows)]
 pub async fn run_elevated_connector_async(
     shutdown_notify: Option<std::sync::Arc<tokio::sync::Notify>>,
@@ -217,13 +193,12 @@ pub async fn run_elevated_connector_async(
     use crate::types::CommandResponse;
 
     eprintln!("[PIPE_CLIENT] Creating encrypted client");
-    // Create encrypted client
     let mut client = NamedPipeClientStruct::new_encrypted(PIPE_NAME, None);
     client.enforce_same_path_server(true);
 
     eprintln!("[PIPE_CLIENT] Attempting to connect to unelevated pipe server...");
 
-    // Connect to the pipe server with retries (the server might not be ready immediately)
+    // The server may not be ready immediately, so retry the connection.
     let max_retries = 10;
     let mut retry_count = 0;
     loop {
@@ -245,10 +220,8 @@ pub async fn run_elevated_connector_async(
     eprintln!("[PIPE_CLIENT] Connected successfully to unelevated pipe server");
     eprintln!("[PIPE_CLIENT] Entering command receive loop...");
 
-    // Loop: receive commands, execute them, send responses back
     loop {
         eprintln!("[PIPE_CLIENT] Waiting for command from server...");
-        // Receive command from unelevated server or wait for shutdown signal
         let command_bytes = if let Some(ref notify) = shutdown_notify {
             tokio::select! {
                 result = client.receive_bytes() => {
@@ -258,7 +231,7 @@ pub async fn run_elevated_connector_async(
                             bytes
                         },
                         Err(e) => {
-                            // Connection closed or error - this is normal when the user instance exits
+                            // Normal when the user instance exits.
                             eprintln!("[PIPE_CLIENT] Connection closed: {}", e);
                             break;
                         }
@@ -276,7 +249,7 @@ pub async fn run_elevated_connector_async(
                     bytes
                 }
                 Err(e) => {
-                    // Connection closed or error - this is normal when the user instance exits
+                    // Normal when the user instance exits.
                     eprintln!("[PIPE_CLIENT] Connection closed: {}", e);
                     break;
                 }
@@ -284,7 +257,6 @@ pub async fn run_elevated_connector_async(
         };
 
         eprintln!("[PIPE_CLIENT] Deserializing command...");
-        // Deserialize command
         let command = match bincode::deserialize(&command_bytes) {
             Ok(cmd) => {
                 eprintln!("[PIPE_CLIENT] Command deserialized successfully");
@@ -305,12 +277,10 @@ pub async fn run_elevated_connector_async(
 
         eprintln!("[PIPE_CLIENT] Executing command with elevated privileges...");
 
-        // Execute command with elevated privileges
         let response = dispatch_command(command);
 
         eprintln!("[PIPE_CLIENT] Command executed, code: {}", response.code);
         eprintln!("[PIPE_CLIENT] Serializing response...");
-        // Serialize response
         let response_bytes = match bincode::serialize(&response) {
             Ok(bytes) => {
                 eprintln!("[PIPE_CLIENT] Response serialized: {} bytes", bytes.len());
@@ -327,7 +297,6 @@ pub async fn run_elevated_connector_async(
         };
 
         eprintln!("[PIPE_CLIENT] Sending response back to server...");
-        // Send response back to unelevated server
         if let Err(e) = client.send_bytes(&response_bytes).await {
             eprintln!("[PIPE_CLIENT ERROR] Failed to send response: {}", e);
             break;

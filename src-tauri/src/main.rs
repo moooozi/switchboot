@@ -10,13 +10,10 @@ use switchboot_lib::cli::windows;
 #[cfg(windows)]
 use switchboot_lib::constants::PIPE_SERVER_WAIT_TIMEOUT;
 
-/// Entry point for the application.
-/// Fast startup with minimal allocations - mode detection defers work until needed.
 fn main() {
     let mut args = std::env::args();
     let argv0 = args.next().unwrap_or_default();
 
-    // Detect mode with minimal overhead (busybox-style fast path)
     let mode = match args_parser::detect_mode(&argv0, &mut args) {
         Ok(mode) => mode,
         Err(e) => {
@@ -25,10 +22,8 @@ fn main() {
         }
     };
 
-    // Execute based on detected mode
     match mode {
         args_parser::AppMode::Gui => {
-            // GUI mode - check for root on Linux
             #[cfg(target_os = "linux")]
             {
                 if unsafe { libc::geteuid() } == 0 {
@@ -39,7 +34,6 @@ fn main() {
                 }
             }
 
-            // Launch Tauri GUI
             switchboot_lib::run(None);
         }
 
@@ -69,12 +63,10 @@ fn main() {
     }
 }
 
-/// Execute CLI command mode - parse and run CliCommand
 fn run_cli_command(args: Vec<String>) -> i32 {
     logic::run(args)
 }
 
-/// Execute Windows service command
 #[cfg(windows)]
 fn run_windows_service(service_arg: &str) {
     match service_arg {

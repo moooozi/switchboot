@@ -15,37 +15,36 @@ impl CliCommand {
 
     /// Returns true if this command can be executed in non-interactive mode via --exec
     pub fn allow_non_interactive_exec(&self) -> bool {
-        match self {
-            CliCommand::SetBootNext(_) => true,
-            CliCommand::SetBootFirmware => true,
-            CliCommand::UnsetBootFirmware => true,
-            CliCommand::GetBootFirmware => true,
-            // Add other commands here in the future as needed
-            _ => false,
-        }
+        matches!(
+            self,
+            CliCommand::SetBootNext(_)
+                | CliCommand::SetBootFirmware
+                | CliCommand::UnsetBootFirmware
+                | CliCommand::GetBootFirmware
+        )
     }
 
     pub fn requires_root_privileges(&self) -> bool {
-        match self {
-            CliCommand::SetBootOrder(_) => true,
-            CliCommand::SetBootNext(_) => true,
-            CliCommand::UnsetBootNext => true,
-            CliCommand::SetBootFirmware => true,
-            CliCommand::UnsetBootFirmware => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            CliCommand::SetBootOrder(_)
+                | CliCommand::SetBootNext(_)
+                | CliCommand::UnsetBootNext
+                | CliCommand::SetBootFirmware
+                | CliCommand::UnsetBootFirmware
+        )
     }
 
     pub fn allow_no_auth_exec(&self) -> bool {
-        match self {
-            CliCommand::SetBootNext(_) => true,
-            CliCommand::UnsetBootNext => true,
-            CliCommand::SetBootFirmware => true,
-            CliCommand::UnsetBootFirmware => true,
-            CliCommand::GetBootFirmware => true,
-            CliCommand::DiscoverEntries => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            CliCommand::SetBootNext(_)
+                | CliCommand::UnsetBootNext
+                | CliCommand::SetBootFirmware
+                | CliCommand::UnsetBootFirmware
+                | CliCommand::GetBootFirmware
+                | CliCommand::DiscoverEntries
+        )
     }
 
     pub fn to_args(&self) -> Vec<String> {
