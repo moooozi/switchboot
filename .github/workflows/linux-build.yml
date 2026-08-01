@@ -2,7 +2,8 @@ name: Linux Build
 
 permissions:
   contents: write
-  id-token: write # build provenance attestation
+  id-token: write # request OIDC token for signing
+  attestations: write # persist build provenance attestation
 
 on:
   workflow_call:
