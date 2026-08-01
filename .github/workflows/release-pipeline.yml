@@ -27,7 +27,7 @@ jobs:
       tag: ${{ steps.verify.outputs.tag }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -77,18 +77,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # git-cliff needs full history + tags
 
       - name: Download linux artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-artifacts-${{ needs.prepare.outputs.version }}
           path: artifacts
 
       - name: Download windows artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-artifacts-${{ needs.prepare.outputs.version }}
           path: artifacts
@@ -149,7 +149,7 @@ jobs:
           cat release_body.md
 
       - name: Create DRAFT GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: Switchboot ${{ needs.prepare.outputs.tag }}
@@ -160,7 +160,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts to the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           # Attach packages, GPG detached signatures (.asc) and Tauri updater

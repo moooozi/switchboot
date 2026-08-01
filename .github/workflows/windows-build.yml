@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check for signing secrets
         id: secrets_check
@@ -38,12 +38,12 @@ jobs:
           Write-Output "have_root=$hasRoot" >> $env:GITHUB_OUTPUT
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Install dependencies
         run: pnpm install
@@ -68,7 +68,7 @@ jobs:
           Write-Output "rustc=$version" >> $env:GITHUB_OUTPUT
 
       - name: Cache Cargo registry and git
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -78,7 +78,7 @@ jobs:
             cargo-registry-${{ runner.os }}-
 
       - name: Cache Cargo build target (optional)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: src-tauri/target
           # Include rustc version in the key to avoid restoring incompatible builds
@@ -236,13 +236,13 @@ jobs:
           Write-Output "portable_artifact=$portableName" >> $env:GITHUB_OUTPUT
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-artifacts-${{ inputs.version }}
           path: artifacts/*
 
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             artifacts/*.exe

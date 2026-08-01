@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -38,15 +38,15 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Cache pnpm store and node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.pnpm-store
@@ -89,7 +89,7 @@ jobs:
           echo "rust_version=$rv" >> $GITHUB_OUTPUT
 
       - name: Cache Cargo registry and git
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -98,7 +98,7 @@ jobs:
 
       # Optional: cache the Rust build target directory to speed up repeated CI runs.
       - name: Cache Cargo build target (optional)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: src-tauri/target
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
@@ -213,13 +213,13 @@ jobs:
           export GPG_PASSPHRASE=''
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-artifacts-${{ inputs.version }}
           path: artifacts/*
 
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             artifacts/*.deb
