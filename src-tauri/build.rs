@@ -3,8 +3,8 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() {
-    if let Err(e) = sync_version() {
-        eprintln!("Failed to sync version: {}", e);
+    if let Err(e) = validate_version() {
+        eprintln!("Invalid build version: {}", e);
         std::process::exit(1);
     }
 
@@ -16,11 +16,11 @@ fn main() {
     tauri_build::build();
 }
 
-/// Sync the version from package.json into Cargo.toml.
-fn sync_version() -> Result<(), String> {
+/// Release preparation owns version changes; builds only validate them.
+fn validate_version() -> Result<(), String> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?;
     let package_json_path = Path::new(&manifest_dir).join("../package.json");
-    let cargo_toml_path = Path::new(&manifest_dir).join("Cargo.toml");
+    println!("cargo:rerun-if-changed={}", package_json_path.display());
 
     let package_contents = fs::read_to_string(&package_json_path)
         .map_err(|e| format!("Failed to read package.json: {}", e))?;
@@ -31,21 +31,12 @@ fn sync_version() -> Result<(), String> {
         .and_then(|v| v.as_str())
         .ok_or("Version not found in package.json")?;
 
-    let mut cargo_contents = fs::read_to_string(&cargo_toml_path)
-        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
-
-    let version_regex = regex::RegexBuilder::new(r#"^version = ".*"$"#)
-        .multi_line(true)
-        .build()
-        .map_err(|e| format!("Regex error: {}", e))?;
-    cargo_contents = version_regex
-        .replace(&cargo_contents, format!(r#"version = "{}""#, version))
-        .to_string();
-
-    fs::write(&cargo_toml_path, &cargo_contents)
-        .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
-
-    println!("Synced version {} to Cargo.toml", version);
+    let cargo_version = std::env::var("CARGO_PKG_VERSION").map_err(|e| e.to_string())?;
+    if version != cargo_version {
+        return Err(format!(
+            "package.json version {version} differs from Cargo package version {cargo_version}; synchronize both before building"
+        ));
+    }
     Ok(())
 }
 
