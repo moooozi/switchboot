@@ -7,6 +7,8 @@ import tempfile
 import textwrap
 import unittest
 
+from bash_test_support import BASH, bash_env
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -18,7 +20,7 @@ def action_script(name):
 GPG = os.environ.get("SWITCHBOOT_TEST_GPG") or shutil.which("gpg")
 
 
-@unittest.skipUnless(GPG and shutil.which("bash") and (os.name != "nt" or os.environ.get("SWITCHBOOT_TEST_GPG")),
+@unittest.skipUnless(GPG and BASH and (os.name != "nt" or os.environ.get("SWITCHBOOT_TEST_GPG")),
                      "Native Linux GPG or explicitly configured Windows GPG required")
 class GpgSigningTests(unittest.TestCase):
     def setUp(self):
@@ -46,7 +48,7 @@ class GpgSigningTests(unittest.TestCase):
                         GPG_PASSPHRASE="", TMPDIR=self.scratch.as_posix())
 
     def sign(self):
-        return subprocess.run(["bash", self.script.as_posix()], env=self.env,
+        return subprocess.run([BASH, self.script.as_posix()], env=bash_env(self.env),
                               capture_output=True, text=True, timeout=30)
 
     def test_real_signature_verifies_and_temporary_keyring_is_removed(self):
@@ -77,8 +79,8 @@ class GpgSigningTests(unittest.TestCase):
         return artifacts, packages
 
     def verify_assets(self, artifacts):
-        return subprocess.run(["bash", (ROOT / "scripts/verify-release-assets.sh").as_posix(), artifacts.as_posix()],
-                              env=self.env, capture_output=True, text=True, timeout=30)
+        return subprocess.run([BASH, (ROOT / "scripts/verify-release-assets.sh").as_posix(), artifacts.as_posix()],
+                              env=bash_env(self.env), capture_output=True, text=True, timeout=30)
 
     def test_downloaded_release_assets_verify_with_configured_key(self):
         artifacts, _ = self.prepare_release_assets()

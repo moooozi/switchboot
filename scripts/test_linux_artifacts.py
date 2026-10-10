@@ -1,10 +1,12 @@
 """Test actual artifact-selection script with mocked package metadata tools."""
 import os
 from pathlib import Path
-import shutil
+
 import subprocess
 import tempfile
 import unittest
+
+from bash_test_support import BASH, bash_env
 
 SCRIPT = Path(__file__).resolve().parent / "collect-linux-artifacts.sh"
 MOCKS = r'''
@@ -19,7 +21,7 @@ source "$SCRIPT" "$RELEASE_VERSION"
 '''
 
 
-@unittest.skipUnless(shutil.which("bash"), "Bash required")
+@unittest.skipUnless(BASH, "Bash required")
 class LinuxArtifactTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -35,9 +37,9 @@ class LinuxArtifactTests(unittest.TestCase):
             f"{version} {arch or ('amd64' if kind == 'deb' else 'x86_64')}\n", encoding="utf-8", newline="\n")
 
     def collect(self):
-        return subprocess.run(["bash", "-c", MOCKS], cwd=self.root,
-                              env={**os.environ, "SCRIPT": SCRIPT.as_posix(), "RELEASE_VERSION": "1.0.0",
-                                   "GITHUB_OUTPUT": (self.root / "outputs").as_posix()},
+        return subprocess.run([BASH, "-c", MOCKS], cwd=self.root,
+                              env=bash_env({**os.environ, "SCRIPT": SCRIPT.as_posix(), "RELEASE_VERSION": "1.0.0",
+                                            "GITHUB_OUTPUT": (self.root / "outputs").as_posix()}),
                               capture_output=True, text=True, timeout=10)
 
     def test_exact_version_is_selected_instead_of_stale_cache(self):
@@ -46,7 +48,7 @@ class LinuxArtifactTests(unittest.TestCase):
             self.package(f"stale.{kind}", "0.9.0")
             self.package(f"other-arch.{kind}", arch="arm64")
         result = self.collect()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(sorted(p.name for p in (self.root / "artifacts").iterdir()), ["current.deb", "current.rpm"])
         self.assertIn("deb_artifact=current.deb", (self.root / "outputs").read_text())
 
