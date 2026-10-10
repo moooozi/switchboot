@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -165,6 +165,32 @@ for (const problem of ["missing local entry", "duplicate local entry", "stale ve
     assert.equal(git("tag", "--list"), "");
   });
 }
+
+test("commit failure restores versions while preserving unrelated staged user work", (t) => {
+  const { root, git, release } = fixture(t);
+  writeFileSync(join(root, "unrelated.txt"), "user work\n");
+  git("add", "unrelated.txt");
+  const hook = join(root, ".git/hooks/pre-commit");
+  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+  chmodSync(hook, 0o755);
+  const head = git("rev-parse", "HEAD");
+  const result = release("patch", "--no-push", "--no-sign", "--no-verify");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /original version files restored/);
+  assert.equal(git("rev-parse", "HEAD"), head);
+  assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "1.0.0");
+  assert.equal(git("status", "--porcelain"), "A  unrelated.txt");
+});
+
+test("release commits only version files when unrelated changes are staged", (t) => {
+  const { root, git, release } = fixture(t);
+  writeFileSync(join(root, "unrelated.txt"), "user work\n");
+  git("add", "unrelated.txt");
+  const result = release("patch", "--no-push", "--no-sign", "--no-verify");
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(git("ls-tree", "--name-only", "HEAD"), /unrelated/);
+  assert.equal(git("status", "--porcelain"), "A  unrelated.txt");
+});
 
 test("tag signing failure retains the release commit and provides recovery guidance", (t) => {
   const { git, release } = fixture(t);

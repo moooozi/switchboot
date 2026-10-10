@@ -4,7 +4,7 @@
 //
 // Bumps the version in BOTH package.json and src-tauri/Cargo.toml, commits the
 // change, and creates an annotated git tag `vX.Y.Z`. It does NOT push
-// automatically — after the commit + tag are made locally you are asked to
+// automatically â€” after the commit + tag are made locally you are asked to
 // confirm before anything leaves your machine. Pushing the tag is what triggers
 // the release pipeline (which builds and publishes a *draft* GitHub release).
 //
@@ -229,7 +229,7 @@ console.log(`  package.json : ${PKG_PATH}`);
 console.log(`  Cargo.toml   : ${CARGO_PATH}`);
 console.log(`  tag          : ${tag}   (GPG-signed: ${sign})`);
 
-console.log(`  commit       : ${next === current ? "(none — version unchanged)" : commitMessage}`);
+console.log(`  commit       : ${next === current ? "(none â€” version unchanged)" : commitMessage}`);
 
 if (opts.dryRun) {
   console.log("\n--dry-run: preview only; no files, commits, tags, or remotes changed.");
@@ -241,31 +241,32 @@ if (sh("git", ["--no-optional-locks", "status", "--porcelain", "--", ...addFiles
   die("Version files must be clean, even with --no-verify.");
 }
 const originalHead = sh("git", ["rev-parse", "HEAD"]);
+if (!existsSync(CARGO_LOCK_PATH)) die("Cargo.lock is required for a locked release.");
 const originals = new Map(addFiles.map((file) => [file, readFileSync(resolve(ROOT, file))]));
 try {
-// --- update files ---
-const pkgJson = JSON.parse(readFileSync(PKG_PATH, "utf8"));
-pkgJson.version = next;
-writeFileSync(PKG_PATH, JSON.stringify(pkgJson, null, 2) + "\n");
+  // --- update files ---
+  const pkgJson = JSON.parse(readFileSync(PKG_PATH, "utf8"));
+  pkgJson.version = next;
+  writeFileSync(PKG_PATH, JSON.stringify(pkgJson, null, 2) + "\n");
 
-let cargo = readFileSync(CARGO_PATH, "utf8");
-const cargoNext = cargo.replace(
-  /^(\[package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m,
-  `$1${next}$3`,
-);
-if (cargo === cargoNext) die("Failed to update Cargo.toml [package] version.");
-writeFileSync(CARGO_PATH, cargoNext);
+  let cargo = readFileSync(CARGO_PATH, "utf8");
+  const cargoNext = cargo.replace(
+    /^(\[package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m,
+    `$1${next}$3`,
+  );
+  if (cargo === cargoNext) throw new Error("Failed to update Cargo.toml [package] version.");
+  writeFileSync(CARGO_PATH, cargoNext);
 
-// --- sync Cargo.lock to the new package version ---
-syncCargoLock(next);
+  // --- sync Cargo.lock to the new package version ---
+  syncCargoLock(next);
 
 
-// --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
-run("git", ["add", "--", ...addFiles]);
-run("git", ["commit", "--only", "-m", commitMessage, "--", ...addFiles]);
+  // --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
+  run("git", ["add", "--", ...addFiles]);
+  run("git", ["commit", "--only", "-m", commitMessage, "--", ...addFiles]);
 
-// --- create a new (signed) annotated tag; never replace an existing tag ---
-run("git", ["tag", sign ? "-s" : "-a", "-m", tagMessage, tag]);
+  // --- create a new (signed) annotated tag; never replace an existing tag ---
+  run("git", ["tag", sign ? "-s" : "-a", "-m", tagMessage, tag]);
 } catch (error) {
   if (sh("git", ["rev-parse", "HEAD"]) === originalHead) {
     for (const [file, contents] of originals) writeFileSync(resolve(ROOT, file), contents);
