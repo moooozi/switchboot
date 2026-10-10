@@ -98,7 +98,7 @@ async function rasterizeBuffers(sharp, svgString, sizes = ICO_SIZES) {
     try {
       buffers[s] = await sharp(Buffer.from(svgString))
         .resize({ width: s, height: s, fit: "contain" })
-        .png()
+        .png({ compressionLevel: 9 })
         .toBuffer();
     } catch (e) {
       throw new Error(`Failed to rasterize at ${s}px`, { cause: e });
@@ -126,15 +126,31 @@ async function writeHicolorPngs(sharp, svgString, name) {
   }
 }
 
-async function writeIcoFromBuffers(pngToIco, buffers, name) {
+function writeIcoFromBuffers(buffers, name) {
   try {
     // prefer larger sizes first
     const prefer = [256, 128, 48, 32, 16];
-    const ordered = prefer.map((s) => buffers[s]).filter(Boolean);
+    const ordered = prefer.filter((s) => buffers[s]);
     if (ordered.length === 0) {
       throw new Error(`No PNG buffers available to build ICO for ${name}`);
     }
-    const icoBuf = await pngToIco(ordered);
+    // ICO directory entries can point directly to PNGs. Converting them to
+    // uncompressed DIBs wastes space; PNG frames are supported since Windows Vista.
+    const directory = Buffer.alloc(6 + ordered.length * 16);
+    directory.writeUInt16LE(1, 2); // Image type: icon
+    directory.writeUInt16LE(ordered.length, 4);
+    let offset = directory.length;
+    for (const [i, size] of ordered.entries()) {
+      const entry = 6 + i * 16;
+      directory[entry] = size === 256 ? 0 : size;
+      directory[entry + 1] = size === 256 ? 0 : size;
+      directory.writeUInt16LE(1, entry + 4); // Color planes
+      directory.writeUInt16LE(32, entry + 6); // RGBA bits per pixel
+      directory.writeUInt32LE(buffers[size].length, entry + 8);
+      directory.writeUInt32LE(offset, entry + 12);
+      offset += buffers[size].length;
+    }
+    const icoBuf = Buffer.concat([directory, ...ordered.map((s) => buffers[s])]);
     ensureDir(OUT_ICO_DIR);
     const icoPath = path.join(OUT_ICO_DIR, `${name}.ico`);
     fs.writeFileSync(icoPath, icoBuf);
@@ -202,9 +218,7 @@ async function run() {
 
   // dynamic imports
   const sharp = await tryImport("sharp");
-  const pngToIco = produceIco ? await tryImport("png-to-ico") : null;
   if (!sharp) throw new Error("Required dependency sharp could not be loaded");
-  if (produceIco && !pngToIco) throw new Error("Required dependency png-to-ico could not be loaded");
 
   // process generic first
   const genericCandidates = [
@@ -224,35 +238,8 @@ async function run() {
     }
 
     if (produceIco) {
-      if (!sharp || !pngToIco)
-        console.log(
-          "sharp/png-to-ico not available; skipping generic.ico generation"
-        );
-      else {
-        const buffers = [];
-        for (const s of ICO_SIZES) {
-          try {
-            const buf = await sharp(Buffer.from(genericSvg))
-              .resize({ width: s, height: s, fit: "contain" })
-              .png()
-              .toBuffer();
-            buffers.push(buf);
-          } catch (e) {
-            throw new Error(`Failed to rasterize generic at ${s}px`, { cause: e });
-          }
-        }
-        if (buffers.length) {
-          ensureDir(OUT_ICO_DIR);
-          try {
-            const icoBuf = await pngToIco(buffers);
-            const icoPath = path.join(OUT_ICO_DIR, "generic.ico");
-            fs.writeFileSync(icoPath, icoBuf);
-            console.log(`Wrote ${path.relative(cwd, icoPath)}`);
-          } catch (e) {
-            throw new Error("Failed to create generic ICO", { cause: e });
-          }
-        }
-      }
+      const buffers = await rasterizeBuffers(sharp, genericSvg);
+      writeIcoFromBuffers(buffers, "generic");
     }
   }
 
@@ -286,16 +273,12 @@ async function run() {
       producedBuffers = await rasterizeBuffers(sharp, combined, ICO_SIZES);
     }
 
-    if (!pngToIco) {
-      console.log(
-        "png-to-ico not installed; skipping .ico generation (install png-to-ico)"
-      );
-    } else if (!produceIco) {
+    if (!produceIco) {
       console.log(
         "Platform configured to not produce ICOs; skipping .ico generation"
       );
     } else {
-      await writeIcoFromBuffers(pngToIco, producedBuffers, name);
+      writeIcoFromBuffers(producedBuffers, name);
     }
   }
 }
