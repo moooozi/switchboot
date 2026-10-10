@@ -64,6 +64,43 @@ class GpgSigningTests(unittest.TestCase):
         self.assertIn("missing or empty", result.stderr)
         self.assertFalse(Path(str(self.payload) + ".asc").exists())
 
+    def prepare_release_assets(self):
+        artifacts = self.root / "artifacts"
+        artifacts.mkdir()
+        packages = [artifacts / name for name in (
+            "fixture.deb", "fixture.rpm", "Switchboot_x64-setup.exe", "Switchboot_x64-portable.exe")]
+        for package in packages:
+            package.write_bytes(b"release asset fixture")
+        self.env["FILES_RAW"] = ";".join(package.as_posix() for package in packages)
+        result = self.sign()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return artifacts, packages
+
+    def verify_assets(self, artifacts):
+        return subprocess.run(["bash", (ROOT / "scripts/verify-release-assets.sh").as_posix(), artifacts.as_posix()],
+                              env=self.env, capture_output=True, text=True, timeout=30)
+
+    def test_downloaded_release_assets_verify_with_configured_key(self):
+        artifacts, _ = self.prepare_release_assets()
+        result = self.verify_assets(artifacts)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_tampered_release_asset_is_rejected_and_keyring_is_cleaned(self):
+        artifacts, packages = self.prepare_release_assets()
+        packages[0].write_bytes(b"tampered asset fixture")
+        result = self.verify_assets(artifacts)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_missing_signature_or_key_fails_closed(self):
+        artifacts, packages = self.prepare_release_assets()
+        Path(str(packages[0]) + ".asc").unlink()
+        self.assertNotEqual(self.verify_assets(artifacts).returncode, 0)
+        self.env["GPG_PRIVATE_KEY"] = ""
+        self.assertNotEqual(self.verify_assets(artifacts).returncode, 0)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
     def test_invalid_key_fails_and_cleans_temporary_keyring(self):
         self.env["GPG_PRIVATE_KEY"] = "invalid fixture key"
         self.assertNotEqual(self.sign().returncode, 0)

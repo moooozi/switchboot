@@ -103,6 +103,12 @@ jobs:
           ls -la artifacts
           ls -la artifacts/update-sig
 
+      - name: Verify downloaded release signatures
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: bash scripts/verify-release-assets.sh artifacts
+
       - name: Construct Pages Base URL
         id: construct-url
         shell: bash
