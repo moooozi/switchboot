@@ -302,7 +302,7 @@ fn get_os() -> String {
 fn restart_now() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     Command::new("shutdown")
-        .args(&["/r", "/t", "0"])
+        .args(["/r", "/t", "0"])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .spawn()
         .map_err(|e| format!("Failed to execute shutdown: {e}"))?;

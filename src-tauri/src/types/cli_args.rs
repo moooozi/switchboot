@@ -111,6 +111,13 @@ impl CliCommand {
     }
 }
 
+fn parse_u16_vec(slice: &[String]) -> Result<Vec<u16>, String> {
+    slice
+        .iter()
+        .map(|s| s.parse::<u16>().map_err(|e| format!("Invalid u16: {e}")))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,11 +144,4 @@ mod tests {
         assert!(CliCommand::from_args(&["set-boot-next".into()]).is_err());
         assert!(!CliCommand::GetBootFirmware.allow_non_interactive_exec());
     }
-}
-
-fn parse_u16_vec(slice: &[String]) -> Result<Vec<u16>, String> {
-    slice
-        .iter()
-        .map(|s| s.parse::<u16>().map_err(|e| format!("Invalid u16: {e}")))
-        .collect()
 }

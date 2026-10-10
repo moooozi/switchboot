@@ -207,11 +207,10 @@ pub fn get_service_binary_path(service_name: &str) -> Option<PathBuf> {
     let path_str = path_str.trim();
 
     // Quoted path: take everything up to the closing quote.
-    if path_str.starts_with('"') {
-        if let Some(end_quote_pos) = path_str[1..].find('"') {
-            let exe_path = &path_str[1..end_quote_pos + 1];
-            return Some(PathBuf::from(exe_path));
-        }
+    if let Some(unquoted) = path_str.strip_prefix('"')
+        && let Some(end_quote_pos) = unquoted.find('"')
+    {
+        return Some(PathBuf::from(&unquoted[..end_quote_pos]));
     }
 
     // Otherwise assume the first whitespace-delimited token is the path.

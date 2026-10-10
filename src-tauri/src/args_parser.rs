@@ -88,6 +88,25 @@ pub fn detect_mode(
     }
 }
 
+/// Execute a command in exec mode with optional reboot (command is pre-validated).
+pub fn execute_command(command: &CliCommand, should_reboot: bool) -> Result<(), String> {
+    match command {
+        CliCommand::SetBootNext(entry_id) => {
+            switchboot_lib::handle_bootnext_shortcut_execution(*entry_id, should_reboot)
+        }
+        CliCommand::SetBootFirmware => {
+            switchboot_lib::handle_bootfw_shortcut_execution(true, should_reboot)
+        }
+        CliCommand::UnsetBootFirmware => {
+            switchboot_lib::handle_bootfw_shortcut_execution(false, should_reboot)
+        }
+        _ => Err(format!(
+            "Command {:?} is not supported in exec mode",
+            command
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,24 +215,5 @@ mod tests {
             detect_mode("/usr/bin/switchboot-cli", &mut args).unwrap(),
             AppMode::CliDaemon
         ));
-    }
-}
-
-/// Execute a command in exec mode with optional reboot (command is pre-validated).
-pub fn execute_command(command: &CliCommand, should_reboot: bool) -> Result<(), String> {
-    match command {
-        CliCommand::SetBootNext(entry_id) => {
-            switchboot_lib::handle_bootnext_shortcut_execution(*entry_id, should_reboot)
-        }
-        CliCommand::SetBootFirmware => {
-            switchboot_lib::handle_bootfw_shortcut_execution(true, should_reboot)
-        }
-        CliCommand::UnsetBootFirmware => {
-            switchboot_lib::handle_bootfw_shortcut_execution(false, should_reboot)
-        }
-        _ => Err(format!(
-            "Command {:?} is not supported in exec mode",
-            command
-        )),
     }
 }

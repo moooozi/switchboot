@@ -12,7 +12,7 @@ pub fn is_portable_mode() -> bool {
     };
 
     let service_binary_path = match get_service_binary_path(SERVICE_NAME) {
-        Some(path) => std::path::PathBuf::from(path),
+        Some(path) => path,
         None => return true, // no installed service => portable mode
     };
 
