@@ -18,7 +18,7 @@
 //   pnpm release 1.2.3          # explicit version
 //
 // Flags:
-//   --dry-run       write files but do NOT commit / tag / push
+//   --dry-run       preview the release without changing files, refs, or remotes
 //   --no-push       commit & tag locally, never ask to push
 //   -y, --yes       skip the push confirmation and push immediately
 //   --sign          force a GPG-signed annotated tag
@@ -226,6 +226,11 @@ console.log(`  tag          : ${tag}   (GPG-signed: ${sign})`);
 if (opts.forceRetag) console.log(`  force-retag  : true (existing ${tag} tag will be overwritten)`);
 console.log(`  commit       : ${next === current ? "(none — version unchanged)" : commitMessage}`);
 
+if (opts.dryRun) {
+  console.log("\n--dry-run: preview only; no files, commits, tags, or remotes changed.");
+  process.exit(0);
+}
+
 // --- update files ---
 const pkgJson = JSON.parse(readFileSync(PKG_PATH, "utf8"));
 pkgJson.version = next;
@@ -242,11 +247,6 @@ writeFileSync(CARGO_PATH, cargoNext);
 // --- sync Cargo.lock to the new package version ---
 syncCargoLock(next);
 
-if (opts.dryRun) {
-  console.log("\n--dry-run: files written locally, skipping commit / tag / push.");
-  console.log("Review the changes with: git diff");
-  process.exit(0);
-}
 
 // --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
 const addFiles = ["package.json", "src-tauri/Cargo.toml"];
