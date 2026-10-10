@@ -47,6 +47,37 @@ for (const [argument, expected] of [["patch", "1.0.1"], ["minor", "1.1.0"], ["ma
   });
 }
 
+test("force-retag is rejected without modifying the original tag", (t) => {
+  const { git, release } = fixture(t);
+  git("tag", "v1.0.0");
+  const original = git("rev-parse", "v1.0.0");
+  const result = release("--force-retag", "--no-sign", "--no-push");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /immutable/);
+  assert.equal(git("rev-parse", "v1.0.0"), original);
+  assert.equal(git("status", "--porcelain"), "");
+});
+
+test("existing release tags cannot be reused", (t) => {
+  const { git, release } = fixture(t);
+  git("tag", "v1.0.1");
+  const result = release("patch", "--no-sign", "--no-push");
+  assert.equal(result.status, 2);
+  assert.equal(git("status", "--porcelain"), "");
+});
+
+for (const detached of [false, true]) {
+  test(`release rejects ${detached ? "detached HEAD" : "a feature branch"}`, (t) => {
+    const { git, release } = fixture(t);
+    if (detached) git("checkout", "--detach");
+    else git("checkout", "-b", "feature");
+    const result = release("patch", "--dry-run", "--no-sign");
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /must be made from main/);
+    assert.equal(git("status", "--porcelain"), "");
+  });
+}
+
 test("dry-run still rejects invalid releases", (t) => {
   const { git, release } = fixture(t);
   const result = release("1.0.0", "--dry-run", "--no-sign");

@@ -122,7 +122,8 @@ pnpm tauri build     # Full native build (takes log time, use equivalently dev c
    (or `pnpm release 1.2.3` for an explicit version).
 2. `scripts/release.mjs` is the single source of truth. It bumps `package.json`
    **and** `src-tauri/Cargo.toml` together, commits, creates an annotated
-   (GPG-signed) tag `vX.Y.Z`, and pushes both. `tauri.conf.json` reads its
+   tag `vX.Y.Z` (GPG signing follows local Git configuration or `--sign`), and
+   pushes the branch and tag atomically after confirmation. `tauri.conf.json` reads its
    version from `package.json` (`"version": "../package.json"`), so it needs no
    change.
 3. Pushing the tag triggers `.github/workflows/release-pipeline.yml`, which
@@ -138,9 +139,11 @@ Notes:
   tag — the tag pushed locally is the immutable release source of truth.
 - Build provenance (`actions/attest-build-provenance`) is attached to every
   artifact; verify with `gh attestation verify`.
-- After committing + tagging locally it asks for
-  a `y/N` confirmation. Flags: `--dry-run`, `--no-push`, `-y`/`--yes` (skip
-  prompt), `--sign`/`--no-sign`, `-m "msg"`.
+- Releases are restricted to `main`; existing tags cannot be replaced.
+  Rerun CI on the same tag for failed builds, or release a new version for fixes.
+- After committing + tagging locally it asks for a `y/n` confirmation.
+  `--dry-run` previews without changing files or refs. Other flags: `--no-push`,
+  `-y`/`--yes` (skip prompt), `--sign`/`--no-sign`, `-m "msg"`.
 
 ### Repository Management
 
