@@ -10,7 +10,7 @@
   import { OrderManager } from "../lib/orderManager";
   import { undoRedoStore } from "../lib/stores/undoRedo";
   import type { BootEntry } from "../lib/types";
-  import { ShortcutAction } from "../lib/types";
+  import { FIRMWARE_SETUP_ENTRY_ID, ShortcutAction } from "../lib/types";
 
 
   let bootEntries: BootEntry[] = [];
@@ -59,19 +59,16 @@
 
   $: others = [
     {
-      id: -200,
+      id: FIRMWARE_SETUP_ENTRY_ID,
       description: "EFI Firmware Setup",
       is_bootnext: efiSetupState,
       is_current: false,
     },
     ...discoveredEntries.filter(
-      (e) => !bootEntries.some((b) => b.id === e.id) && e.id !== -200
+      (e) => !bootEntries.some((b) => b.id === e.id) && e.id !== FIRMWARE_SETUP_ENTRY_ID
     ),
   ];
-  $: if (initialized)
-    console.log(
-      `Current Boot order: [${bootEntries.map((e) => e.id).join(",")}]`
-    );
+
   $: changed =
     initialized &&
     JSON.stringify(bootEntries.map((e) => e.id)) !==
@@ -118,7 +115,7 @@
     orderManager.discardToOriginal(originalEntries);
   }
 
-  // Handle events from ApiService (now callback props)
+  // API initialization callbacks
   function handleStatusFetched(portable: boolean) {
     isPortable = portable;
   }
@@ -211,10 +208,10 @@
       await apiService.createShortcut({
         name: config.name,
         action:
-          shortcutEntry.id === -200
+          shortcutEntry.id === FIRMWARE_SETUP_ENTRY_ID
             ? ShortcutAction.SetFirmwareSetup
             : ShortcutAction.SetBootNext,
-        entryId: shortcutEntry.id === -200 ? undefined : shortcutEntry.id,
+        entryId: shortcutEntry.id === FIRMWARE_SETUP_ENTRY_ID ? undefined : shortcutEntry.id,
         reboot: config.reboot,
         iconId,
       });

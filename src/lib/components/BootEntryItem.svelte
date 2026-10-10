@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { BootEntry } from "../types";
+  import { FIRMWARE_SETUP_ENTRY_ID } from "../types";
   import Button from "./Button.svelte";
   import Label from "./Label.svelte";
   import OsIcon from "./OsIcon.svelte";
@@ -102,7 +103,7 @@
       disabled={busy}
       title="Unset BootNext (cancel one-time boot override)"
       onclick={() => {
-        if (entry.id === -200) {
+        if (entry.id === FIRMWARE_SETUP_ENTRY_ID) {
           onunsetboottofirmwaresetup?.();
         } else {
           onunsetbootnext?.();
@@ -127,7 +128,7 @@
       disabled={busy}
       title="Set this entry as BootNext (one-time boot override)"
       onclick={() => {
-        if (entry.id === -200) {
+        if (entry.id === FIRMWARE_SETUP_ENTRY_ID) {
           onsetboottofirmwaresetup?.();
         } else {
           onsetbootnext?.(entry);

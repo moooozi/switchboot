@@ -10,6 +10,7 @@
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import type { BootEntry } from "../types";
+  import { FIRMWARE_SETUP_ENTRY_ID } from "../types";
   import { CrossZoneDragManager } from "../utils/crossZoneDragManager";
   import { smoothHeight } from "../utils/smoothHeight";
   import { isDraggable, haveSameItems, createDndConfig } from "../utils/bootEntryHelpers";
@@ -190,7 +191,7 @@
         >
           {#if discoveredEntriesLoading}
             <!-- Show special entries during loading -->
-            {#each localOthers.filter(e => e.id === -200) as entry, idx (entry.id)}
+            {#each localOthers.filter(e => e.id === FIRMWARE_SETUP_ENTRY_ID) as entry, idx (entry.id)}
               <div class:non-draggable={!isDraggable(entry, false)}>
                 <BootEntryItem {...getEntryProps(entry, idx, true)} />
               </div>

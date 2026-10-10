@@ -1,3 +1,6 @@
+// Synthetic UI entry; real UEFI boot IDs are unsigned 16-bit values.
+export const FIRMWARE_SETUP_ENTRY_ID = -200;
+
 export type BootEntry = {
   id: number;
   description: string;
