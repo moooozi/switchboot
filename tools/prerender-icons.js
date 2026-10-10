@@ -7,7 +7,7 @@ import path from "path";
 
 const cwd = process.cwd();
 const STATIC_OS_ICONS = path.resolve(cwd, "static", "os-icons");
-const RAW_ICON_DIR = path.resolve(cwd, "src-tauri", "icons-raw");
+const RAW_ICON_DIR = path.resolve(cwd, "crates", "switchboot_core", "icons-raw");
 
 const isWin = process.platform === "win32";
 const isLinux = process.platform === "linux";
@@ -16,8 +16,8 @@ const produceIco = isWin || (!isWin && !isLinux);
 
 // Output directories
 const OUT_DIR = isLinux
-  ? path.resolve(cwd, "src-tauri", "icons-linux")
-  : path.resolve(cwd, "src-tauri", "resources", "icons");
+  ? path.resolve(cwd, "crates", "switchboot_core", "icons-linux")
+  : path.resolve(cwd, "crates", "switchboot_core", "resources", "icons");
 const OUT_ICO_DIR = path.join(OUT_DIR, "ico");
 
 // Sizes used

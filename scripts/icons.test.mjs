@@ -14,10 +14,10 @@ function fixture(t, { corrupt = false, generic = true, overlay = true, source = 
   const root = mkdtempSync(join(tmpdir(), "switchboot-icons-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "static/os-icons"), { recursive: true });
-  mkdirSync(join(root, "src-tauri/icons-raw"), { recursive: true });
+  mkdirSync(join(root, "crates/switchboot_core/icons-raw"), { recursive: true });
   if (source) writeFileSync(join(root, "static/os-icons/fixture.svg"), corrupt ? "invalid svg" : svg);
-  if (generic) writeFileSync(join(root, "src-tauri/icons-raw/shortcut-generic.svg"), svg);
-  if (overlay) writeFileSync(join(root, "src-tauri/icons-raw/shortcut-overlay.svg"), svg);
+  if (generic) writeFileSync(join(root, "crates/switchboot_core/icons-raw/shortcut-generic.svg"), svg);
+  if (overlay) writeFileSync(join(root, "crates/switchboot_core/icons-raw/shortcut-overlay.svg"), svg);
   return { root, result: spawnSync(process.execPath, [script], { cwd: root, encoding: "utf8", timeout: 30000 }) };
 }
 
@@ -27,8 +27,8 @@ test("valid sources produce all required platform icons", async (t) => {
   assert.equal(result.status, 0, result.stderr);
   for (const name of ["fixture", "generic"]) {
     const outputs = process.platform === "linux"
-      ? [32, 128, 512].map((size) => `src-tauri/icons-linux/hicolor/${size}x${size}/apps/swboot-${name}.png`)
-      : [`src-tauri/resources/icons/ico/${name}.ico`];
+      ? [32, 128, 512].map((size) => `crates/switchboot_core/icons-linux/hicolor/${size}x${size}/apps/swboot-${name}.png`)
+      : [`crates/switchboot_core/resources/icons/ico/${name}.ico`];
     for (const output of outputs) {
       assert.ok(statSync(join(root, output)).size > 0);
       if (!output.endsWith(".ico")) continue;
