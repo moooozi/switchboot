@@ -28,7 +28,7 @@
 // Release tags are immutable. Rerun CI for a failed build; use a new version
 // when changing the source of an already tagged release.
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import * as readline from "node:readline/promises";
@@ -43,11 +43,11 @@ const CARGO_DIR = resolve(ROOT, "src-tauri");
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
-function sh(cmd, cwd = ROOT) {
-  return execSync(cmd, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", cwd }).trim();
+function sh(command, args, cwd = ROOT) {
+  return execFileSync(command, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", cwd }).trim();
 }
-function run(cmd, cwd = ROOT) {
-  execSync(cmd, { stdio: "inherit", cwd });
+function run(command, args, cwd = ROOT) {
+  execFileSync(command, args, { stdio: "inherit", cwd, env: { ...process.env, GIT_EDITOR: "true" } });
 }
 function escapeReg(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -106,8 +106,8 @@ function syncCargoLock(version) {
   }
   const name = readCargoName();
   try {
-    sh("cargo --version");
-    run(`cargo update -p ${name} --precise ${version}`, CARGO_DIR);
+    sh("cargo", ["--version"]);
+    run("cargo", ["update", "-p", name, "--precise", version], CARGO_DIR);
     return;
   } catch {
     // cargo unavailable — patch the lock entry directly.
@@ -138,7 +138,7 @@ function compare(a, b) {
 }
 function latestTagVersion() {
   try {
-    const out = sh("git tag --list --sort=-v:refname 'v[0-9]*.[0-9]*.[0-9]*'");
+    const out = sh("git", ["tag", "--list", "--sort=-v:refname", "v[0-9]*.[0-9]*.[0-9]*"]);
     const first = out.split("\n").map((s) => s.trim()).find(Boolean);
     return first ? first.replace(/^v/, "") : null;
   } catch {
@@ -146,12 +146,12 @@ function latestTagVersion() {
   }
 }
 function isCleanTree() {
-  return sh("git status --porcelain") === "";
+  return sh("git", ["--no-optional-locks", "status", "--porcelain"]) === "";
 }
 function gitSigningEnabled() {
   try {
-    const gpg = sh("git config --get commit.gpgsign") === "true";
-    const key = sh("git config --get user.signingkey");
+    const gpg = sh("git", ["config", "--get", "commit.gpgsign"]) === "true";
+    const key = sh("git", ["config", "--get", "user.signingkey"]);
     return gpg && key.length > 0;
   } catch {
     return false;
@@ -159,7 +159,7 @@ function gitSigningEnabled() {
 }
 function originUrl() {
   try {
-    let url = sh("git config --get remote.origin.url").replace(/\.git$/, "");
+    let url = sh("git", ["config", "--get", "remote.origin.url"]).replace(/\.git$/, "");
     url = url.replace(/^git@github\.com:/, "https://github.com/");
     return url;
   } catch {
@@ -193,13 +193,13 @@ const latest = latestTagVersion();
 if (latest && compare(next, latest) <= 0) {
   die(`New version ${next} must be greater than the latest existing tag v${latest}.`);
 }
-const branch = sh("git rev-parse --abbrev-ref HEAD");
+const branch = sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
 if (branch !== "main") die(`Releases must be made from main, not '${branch}'.`);
-if (sh(`git tag --list v${next}`)) die(`Tag v${next} already exists; release tags are immutable.`);
+if (sh("git", ["tag", "--list", `v${next}`])) die(`Tag v${next} already exists; release tags are immutable.`);
 
 if (opts.verify && !isCleanTree()) {
   console.error("Working tree is not clean. Commit or stash your changes first (or pass --no-verify).");
-  run("git status --short");
+  run("git", ["--no-optional-locks", "status", "--short"]);
   process.exit(1);
 }
 
@@ -241,15 +241,12 @@ syncCargoLock(next);
 // --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
 const addFiles = ["package.json", "src-tauri/Cargo.toml"];
 if (existsSync(CARGO_LOCK_PATH)) addFiles.push("src-tauri/Cargo.lock");
-run(`git add ${addFiles.join(" ")}`);
+run("git", ["add", "--", ...addFiles]);
 
-run(`git commit -m ${JSON.stringify(commitMessage)}`);
+run("git", ["commit", "-m", commitMessage]);
 
 // --- create a new (signed) annotated tag; never replace an existing tag ---
-const tagArgs = [sign ? "-s" : "-a", "-m", JSON.stringify(tagMessage), tag]
-  .filter(Boolean)
-  .join(" ");
-run(`git tag ${tagArgs}`);
+run("git", ["tag", sign ? "-s" : "-a", "-m", tagMessage, tag]);
 
 console.log(`\nCommitted '${commitMessage}' on '${branch}' and created tag ${tag}.`);
 console.log("(Nothing has been pushed yet.)");
@@ -276,7 +273,7 @@ const tagPush = `git push --atomic origin ${branch} ${tag}`;
 
 if (pushNow) {
   console.log(`\nPushing to origin...`);
-  run(tagPush);
+  run("git", ["push", "--atomic", "origin", branch, tag]);
 
   const url = originUrl();
   console.log("\nDone. The pipeline will now build and open a DRAFT release:");

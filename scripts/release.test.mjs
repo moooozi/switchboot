@@ -78,6 +78,22 @@ for (const detached of [false, true]) {
   });
 }
 
+test("local release synchronizes manifests, commits, and creates an annotated tag", (t) => {
+  const { root, git, release } = fixture(t);
+  const message = 'Release "quoted" & literal $HOME';
+  const result = release("patch", "--no-push", "--no-sign", "-m", message);
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "1.0.1");
+  for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) {
+    assert.match(readFileSync(join(root, file), "utf8"), /version = "1\.0\.1"/);
+  }
+  assert.equal(git("log", "-1", "--format=%s"), message);
+  assert.equal(git("cat-file", "-t", "v1.0.1"), "tag");
+  assert.equal(git("rev-parse", "v1.0.1^{commit}"), git("rev-parse", "HEAD"));
+  assert.equal(git("status", "--porcelain"), "");
+});
+
 test("dry-run still rejects invalid releases", (t) => {
   const { git, release } = fixture(t);
   const result = release("1.0.0", "--dry-run", "--no-sign");
