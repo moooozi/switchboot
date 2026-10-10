@@ -30,7 +30,7 @@ class BuildVersionTests(unittest.TestCase):
     def build(self, version):
         (self.root / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
         before = self.manifest.read_bytes()
-        result = subprocess.run(["cargo", "build", "--offline", "--manifest-path", str(self.manifest)],
+        result = subprocess.run(["cargo", "build", "--manifest-path", str(self.manifest)],
                                 env={**os.environ, "CARGO_TARGET_DIR": str(self.root / "target")},
                                 capture_output=True, text=True, timeout=120)
         self.assertEqual(self.manifest.read_bytes(), before)
