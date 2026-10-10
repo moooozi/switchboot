@@ -1,116 +1,70 @@
 # Switchboot
 
-<div style="display:flex;align-items:flex-start;gap:12px">
-   <img src="./app-icon.svg" alt="Switchboot app icon" width="64" height="64" />
-   <p style="margin:0">SwitchBoot is a tiny tool that lets you manage EFI boot entries on your machine.</p>
-</div>
-<div style="margin-top: 12px;"></div>
-<img src="./others\screenshot_switchboot_color_modes.png" alt="Switchboot app icon" />
+Switchboot manages EFI boot entries on Windows and Linux with a native Rust UI built using [iced](https://iced.rs/).
 
-## Quick links
+Reorder boot entries, choose the default or next boot target, schedule firmware setup, create boot shortcuts, and undo or redo changes. Boot-order edits are saved explicitly; BootNext and firmware-setup changes are applied immediately. Restart always requires confirmation.
 
-- [Latest Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe)
-- [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe) (See [limitations](#portable-limitations))
-- [Set up APT repository (Debian/Ubuntu)](#deb)
-- [Set up RPM repository (Fedora/OpenSUSE)](#rpm)
+## Development
 
-## Install
+Install a current stable Rust toolchain, then run:
 
-### Windows (installer / portable)
-
-See [Quick links](#quick-links) above or visit the [Releases page](https://github.com/moooozi/switchboot/releases/latest):
-
-<a id="deb"></a>
-
-### Debian / Ubuntu & derivatives (APT)
-
-Add the repository and key, then install:
-
-```bash
-# Download the repository keyring into the system keyrings directory
-sudo wget -qO /usr/share/keyrings/switchboot-archive-keyring.gpg \
-   https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg
-
-# Add the repository
-echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] https://moooozi.github.io/switchboot/deb stable main" | sudo tee /etc/apt/sources.list.d/switchboot.list
-
-# Update and install
-sudo apt update
-sudo apt install switchboot
+```sh
+cargo run -- --demo
 ```
 
-Or get the latest `.deb` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
+Demo mode uses an in-memory backend and never accesses EFI, requests elevation, creates system shortcuts, or restarts the machine. For real firmware access, use `cargo run`. The real GUI runs without elevation and delegates privileged operations to the existing CLI transport.
 
-<a id="rpm"></a>
+On Linux, install polkit and run a graphical authentication agent. Development builds need a sibling CLI symlink:
 
-### Fedora & openSUSE (RPM)
-
-On Fedora & derivatives:
-
-```bash
-# Add repo
-sudo dnf install dnf-plugins-core
-sudo dnf config-manager addrepo --from-repofile=https://moooozi.github.io/switchboot/rpm/switchboot.repo
-
-# Install
-sudo dnf install switchboot
+```sh
+cargo build
+ln -sf switchboot target/debug/switchboot-cli
+cargo run
 ```
 
-On openSUSE & derivatives:
+Packaged installations supply the symlink and polkit policy. Do not run the real GUI as root. Windows portable builds request UAC when needed; installed builds use the service. Shortcuts require installed mode on Windows.
 
-```bash
-# Add repo
-sudo zypper addrepo https://moooozi.github.io/switchboot/rpm/switchboot.repo
+## Workspace
 
-# Refresh and install
-sudo zypper refresh
-sudo zypper install switchboot
+| Package | Responsibility |
+| --- | --- |
+| `switchboot` | Executable mode routing and backend adapter |
+| `switchboot_ui` | iced UI, typed messages/tasks, state/history and demo backend |
+| `switchboot_core` | EFI CLI, privileged IPC, services and platform shortcuts |
+
+The UI crate exposes a typed backend interface, allowing state tests without firmware access. Blocking platform calls run on worker threads. Successful firmware writes advance undo/redo history; failures retain the previous state and cursor.
+
+## Build and verify
+
+```sh
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace --all-targets
+cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
+cargo build --locked --release --bin switchboot
 ```
 
-Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
+Node and pnpm are optional development tools for icon generation and release preparation:
 
-<a id="portable-limitations"></a>
-
-## Portable Windows Limitations
-
-Limitations of the portable Windows version:
-
-- **No shortcut creation**: Creating desktop shortcuts (e.g. for rebooting to a specific EFI boot entry) is not supported.
-- **No updates**: Built-in updates are not available.
-- **WebView2 dependency**: Cannot install [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if it is not already preinstalled on the system.
-
-## How to compile
-
-Prerequisites:
-
-- Node.js and pnpm
-- Rust toolchain (rustup)
-
-Common commands (from project root):
-
-```bash
-# Install deps
-pnpm install
-
-# Generate icons
+```sh
+pnpm install --frozen-lockfile
 pnpm icons
-pnpm tauri icon ./app-icon.svg
-
-# Build native Tauri app
-pnpm tauri build
+node packaging/generate-app-icons.mjs
+node --test scripts/release.test.mjs scripts/icons.test.mjs
+python -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-## Software stack
+Linux release packages are built by `packaging/linux.sh`; Windows installers by `packaging/windows.nsi`. Release workflows use Cargo and native package tools. WebKit, WebView2, Svelte, Vite and Tauri are no longer runtime or build dependencies.
 
-This repository contains the Switchboot web UI (Svelte), Tauri code, and packaging/helpers to produce Windows installers, DEB, and RPM packages. All release and repository files are built automatically by GitHub Actions, using open-source [workflow scripts](https://github.com/moooozi/switchboot/tree/main/.github/workflows).
+## Releases
 
-### Repo layout
+From a clean working tree on `main`, run `pnpm release patch` (or `minor`, `major`, or an explicit version). The script updates the root Cargo manifest, lockfile and tooling metadata, commits and creates an annotated tag. It asks before pushing branch and tag atomically; `--dry-run` previews without changes.
 
-- `src/` — Svelte frontend
-- `src-tauri/` — Rust + Tauri code
-- `repo-config/` — static content published to Pages to host APT/RPM repo
-- `.github/workflows/` — CI and release pipelines
+Tags are immutable. Failed builds can be rerun on the same tag; source changes require a new release. Tag pushes create a draft GitHub Release. Publishing the draft updates the signed APT/RPM repositories. Artifacts carry GPG signatures and build provenance; verify provenance with `gh attestation verify <asset> --repo moooozi/switchboot`.
 
-## Support
+## Native migration status
 
-Open an issue: https://github.com/moooozi/switchboot/issues
+The first iced UI covers the firmware management workflow, order editing, save/discard, bounded undo/redo, SVG OS icons, shortcuts, refresh, restart confirmation, and Ctrl+S / Ctrl+Z / Ctrl+Shift+Z shortcuts. Up/Down controls replace drag-and-drop during this phase.
+
+Native drag-and-drop, single-instance window focusing, and the automatic updater UI remain follow-ups. Existing signed updater feed compatibility is retained for previous releases. Native users can install updates through the package manager or download the signed installer.
