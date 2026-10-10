@@ -131,7 +131,10 @@ pnpm tauri build     # Full native build (takes log time, use equivalently dev c
    Release.
 4. Test the draft. When you publish it, the `release: published` event runs
    `.github/workflows/update-repository.yml`, which downloads the release
-   assets and updates the APT/RPM repos on GitHub Pages.
+   assets and updates the APT/RPM repos on GitHub Pages. The first deployment
+   requires manually running that workflow with `bootstrap=true`; bootstrap is
+   rejected if an updater feed already exists. Normal updates fail if existing
+   state cannot be restored, and cannot downgrade the updater feed.
 
 Notes:
 

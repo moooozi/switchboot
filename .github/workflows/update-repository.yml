@@ -12,6 +12,10 @@ on:
       tag:
         description: "Release tag to (re)publish the repo from (e.g. v0.2.7)"
         required: true
+      bootstrap:
+        description: "First deployment only: require that no updater feed exists"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -68,9 +72,22 @@ jobs:
           # Recreate the update-sig layout expected by the steps below.
           mkdir -p artifacts/update-sig
           find artifacts -maxdepth 1 -name '*.sig' -exec mv -t artifacts/update-sig/ {} + 2>/dev/null || true
-          echo "Downloaded assets:"
-          ls -la artifacts || true
-          ls -la artifacts/update-sig || true
+          shopt -s nullglob
+          debs=(artifacts/*.deb)
+          rpms=(artifacts/*.rpm)
+          if [ "${#debs[@]}" -ne 1 ] || [ "${#rpms[@]}" -ne 1 ]; then
+            echo "::error::Release must contain exactly one DEB and one RPM package"
+            exit 1
+          fi
+          packages=("${debs[@]}" "${rpms[@]}" artifacts/Switchboot_x64-setup.exe artifacts/Switchboot_x64-portable.exe)
+          for package in "${packages[@]}"; do
+            test -s "$package"
+            test -s "${package}.asc"
+          done
+          test -s artifacts/update-sig/Switchboot_x64-setup.exe.sig
+          echo "Validated required release assets and signature files."
+          ls -la artifacts
+          ls -la artifacts/update-sig
 
       - name: Construct Pages Base URL
         id: construct-url
@@ -84,6 +101,8 @@ jobs:
 
       - name: Download existing repository
         shell: bash
+        env:
+          BOOTSTRAP: ${{ inputs.bootstrap || false }}
         run: |
           set -e
           echo "Downloading existing repository from GitHub Pages..."
@@ -92,21 +111,37 @@ jobs:
           PAGES_BASE_URL="${{ steps.construct-url.outputs.pages_base_url }}"
           mkdir -p repo/rpm/x86_64
           mkdir -p repo/deb/pool/main/s/switchboot
-          mkdir -p repo/deb/dists/stable/main/binary-amd64
+          mkdir -p repo/deb/dists/stable/main/binary-amd64 repo/updates repo/signatures
 
-          # Try to download existing packages (ignore failures for first release)
+          # Bootstrap is explicit; network failures must never look like an empty repository.
+          status=$(curl --silent --show-error --location --output /tmp/current-latest.json \
+            --write-out '%{http_code}' "${PAGES_BASE_URL}/updates/latest.json")
+          if [ "$BOOTSTRAP" = "true" ]; then
+            if [ "$status" != "404" ]; then
+              echo "::error::Bootstrap requires a missing feed (HTTP 404), got HTTP $status"
+              exit 1
+            fi
+            echo "Explicit first deployment: no existing repository to restore."
+            exit 0
+          fi
+          if [ "$status" != "200" ]; then
+            echo "::error::Cannot restore existing updater feed (HTTP $status). For the first deployment, use workflow_dispatch with bootstrap=true."
+            exit 1
+          fi
+
+          # All existing state must be restored before publishing a replacement.
           echo "Attempting to download existing RPM packages..."
           # NOTE: Do NOT exclude repodata here. We need existing repodata when present
           # so we can update/merge repository metadata instead of replacing it.
           wget -r -np -nH --cut-dirs=1 -R "index.html*" \
-            ${PAGES_BASE_URL}/rpm/x86_64/ -P repo || echo "No existing RPM packages found (this is OK for first release)"
+            "${PAGES_BASE_URL}/rpm/x86_64/" -P repo
 
           echo "Attempting to download existing DEB packages..."
           wget -r -np -nH --cut-dirs=1 -R "index.html*" -A "*.deb" \
-            ${PAGES_BASE_URL}/deb/pool/main/s/switchboot/ -P repo || echo "No existing DEB packages found (this is OK for first release)"
+            "${PAGES_BASE_URL}/deb/pool/main/s/switchboot/" -P repo
 
           echo "Attempting to download existing signatures archive..."
-          if wget -q ${PAGES_BASE_URL}/signatures.tar.xz -O /tmp/signatures.tar.xz; then
+          if wget -q "${PAGES_BASE_URL}/signatures.tar.xz" -O /tmp/signatures.tar.xz; then
             echo "Signatures archive found, extracting..."
             mkdir -p repo/signatures
             tar -xJf /tmp/signatures.tar.xz -C repo/
@@ -114,12 +149,12 @@ jobs:
             echo "Extracted existing signatures:"
             find repo/signatures -type f | head -20
           else
-            echo "No existing signatures archive found (this is OK for first release)"
-            mkdir -p repo/signatures
+            echo "::error::Failed to restore existing signatures archive"
+            exit 1
           fi
 
           echo "Attempting to download existing updates archive..."
-          if wget -q ${PAGES_BASE_URL}/updates.tar.xz -O /tmp/updates.tar.xz; then
+          if wget -q "${PAGES_BASE_URL}/updates.tar.xz" -O /tmp/updates.tar.xz; then
             echo "Updates archive found, extracting..."
             mkdir -p repo/updates
             tar -xJf /tmp/updates.tar.xz -C repo/
@@ -127,9 +162,11 @@ jobs:
             echo "Extracted existing updates:"
             find repo/updates -type f | head -20
           else
-            echo "No existing updates archive found (this is OK for first release)"
-            mkdir -p repo/updates
+            echo "::error::Failed to restore existing updates archive"
+            exit 1
           fi
+          # The live feed is authoritative even if the archived copy is stale.
+          cp /tmp/current-latest.json repo/updates/latest.json
 
       - name: Setup repository structure
         shell: bash
@@ -204,7 +241,8 @@ jobs:
         run: |
           set -e
           echo "Generating latest.json for updates..."
-          python3 scripts/generate_latest_json.py "${{ steps.init.outputs.version }}" "${{ steps.construct-url.outputs.pages_base_url }}"
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/generate_latest_json.py "${{ steps.init.outputs.version }}" "$GITHUB_REPOSITORY"
 
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
@@ -238,7 +276,7 @@ jobs:
             echo "FORCE_DISABLE_PRUNE present: skipping pruning step"
           else
             echo "Running prune script with current version: ${INPUTS_VERSION:-${{ steps.init.outputs.version }}}"
-            python3 scripts/prune_repo.py repo "switchboot" "${{ steps.init.outputs.version }}" $PRUNE_ALLOW_GREATER || true
+            python3 scripts/prune_repo.py repo "switchboot" "${{ steps.init.outputs.version }}" $PRUNE_ALLOW_GREATER
           fi
 
       - name: Generate RPM repository metadata
@@ -382,7 +420,7 @@ jobs:
           echo "Generating final index.html files for repo/rpm and repo/deb only (not root repo/)"
           node --version || true
           chmod +x scripts/generate_indexes.js || true
-          node scripts/generate_indexes.js repo/rpm repo/deb || true
+          node scripts/generate_indexes.js repo/rpm repo/deb
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
