@@ -1,6 +1,7 @@
 <script lang="ts">
   import { toggleContextMenu as toggleGlobalContextMenu } from "../stores/contextMenu";
   import { undoRedoStore } from "../stores/undoRedo";
+  import type { Update } from "@tauri-apps/plugin-updater";
   import Button from "./Button.svelte";
 
   export let changed: boolean;
@@ -10,19 +11,8 @@
   export let onundo: (() => void) | undefined = undefined;
   export let onredo: (() => void) | undefined = undefined;
   export let onupdateclick: (() => void) | undefined = undefined;
-  export let availableUpdate: any = null;
-
-  let undoRedoState = {
-    canUndo: false,
-    canRedo: false,
-    undoDescription: "",
-    redoDescription: "",
-  };
-
-  // Subscribe to undo/redo state
-  undoRedoStore.subscribe((state) => {
-    undoRedoState = state;
-  });
+  export let availableUpdate: Update | null = null;
+  $: undoRedoState = $undoRedoStore;
 
   function toggleContextMenu(event: MouseEvent) {
     event.stopPropagation(); // Prevent the click from bubbling to document

@@ -1,28 +1,22 @@
 import { undoRedoStore } from "./stores/undoRedo";
 import type { BootEntry, ChangeEvent } from "./types";
+import type { FirmwareApi } from "./api";
 import { OrderActions } from "./types";
 
 export class OrderManager {
-  private bootEntries: BootEntry[] = [];
+  private bootEntries: BootEntry[];
   private discoveredEntries: BootEntry[] = [];
-  private onEntriesChanged?: (entries: BootEntry[]) => void;
-  private onDiscoveredEntriesChanged?: (discoveredEntries: BootEntry[]) => void;
-  private onEfiSetupStateChanged?: (state: boolean) => void;
-  private apiService?: any; // We'll inject the API service
+  private efiSetupState = false;
   private dragStartOrder: number[] | null = null;
 
   constructor(
     initialEntries: BootEntry[],
-    onEntriesChanged?: (entries: BootEntry[]) => void,
-    onDiscoveredEntriesChanged?: (discoveredEntries: BootEntry[]) => void,
-    onEfiSetupStateChanged?: (state: boolean) => void,
-    apiService?: any
+    private onEntriesChanged?: (entries: BootEntry[]) => void,
+    private onDiscoveredEntriesChanged?: (entries: BootEntry[]) => void,
+    private onEfiSetupStateChanged?: (state: boolean) => void,
+    private apiService?: FirmwareApi
   ) {
     this.bootEntries = [...initialEntries];
-    this.onEntriesChanged = onEntriesChanged;
-    this.onDiscoveredEntriesChanged = onDiscoveredEntriesChanged;
-    this.onEfiSetupStateChanged = onEfiSetupStateChanged;
-    this.apiService = apiService;
   }
 
   getBootEntries(): BootEntry[] {
@@ -38,423 +32,151 @@ export class OrderManager {
     this.discoveredEntries = [...entries];
   }
 
-  /**
-   * Set boot next for an entry
-   */
-  async setBootNext(entryId: number): Promise<void> {
-    if (!this.apiService) return;
-
-    // Store current bootnext state
-    const currentBootNext = this.discoveredEntries.find(
-      (e) => e.is_bootnext
-    )?.id;
-
-    // Perform the API call
-    try {
-      await this.apiService.setBootNext(entryId);
-    } catch (e) {
-      // Error handled by ApiService's onerror callback
-      return;
-    }
-
-    // Update discovered entries
-    const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
-      ...e,
-      is_bootnext: e.id === entryId,
-    }));
-    this.discoveredEntries = newDiscoveredEntries;
-    this.onDiscoveredEntriesChanged?.(newDiscoveredEntries);
-
-    // Create undo event
-    const undoCommand = async () => {
-      if (currentBootNext !== undefined) {
-        try {
-          await this.apiService.setBootNext(currentBootNext);
-        } catch (e) {
-          return;
-        }
-        const undoEntries = this.discoveredEntries.map((e) => ({
-          ...e,
-          is_bootnext: e.id === currentBootNext,
-        }));
-        this.discoveredEntries = undoEntries;
-        this.onDiscoveredEntriesChanged?.(undoEntries);
-      } else {
-        try {
-          await this.apiService.unsetBootNext();
-        } catch (e) {
-          return;
-        }
-        const undoEntries = this.discoveredEntries.map((e) => ({
-          ...e,
-          is_bootnext: false,
-        }));
-        this.discoveredEntries = undoEntries;
-        this.onDiscoveredEntriesChanged?.(undoEntries);
-      }
-    };
-
-    const redoCommand = async () => {
-      try {
-        await this.apiService.setBootNext(entryId);
-      } catch (e) {
-        return;
-      }
-      const redoEntries = this.discoveredEntries.map((e) => ({
-        ...e,
-        is_bootnext: e.id === entryId,
-      }));
-      this.discoveredEntries = redoEntries;
-      this.onDiscoveredEntriesChanged?.(redoEntries);
-    };
-
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.SetBootNext,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.SetBootNext,
-    };
-
-    undoRedoStore.addChange(changeEvent);
+  setFirmwareSetupState(state: boolean): void {
+    this.efiSetupState = state;
   }
 
-  /**
-   * Unset boot next
-   */
-  async unsetBootNext(): Promise<void> {
-    if (!this.apiService) return;
-
-    // Store current bootnext state
-    const currentBootNext = this.discoveredEntries.find(
-      (e) => e.is_bootnext
-    )?.id;
-
-    // Perform the API call
-    try {
-      await this.apiService.unsetBootNext();
-    } catch (e) {
-      // Error handled by ApiService's onerror callback
-      return;
-    }
-
-    // Update discovered entries
-    const newDiscoveredEntries = this.discoveredEntries.map((e) => ({
-      ...e,
-      is_bootnext: false,
+  private async applyBootNext(entryId: number | undefined): Promise<void> {
+    if (!this.apiService) throw new Error("Firmware API is not initialized");
+    if (entryId === undefined) await this.apiService.unsetBootNext();
+    else await this.apiService.setBootNext(entryId);
+    this.discoveredEntries = this.discoveredEntries.map((entry) => ({
+      ...entry,
+      is_bootnext: entry.id === entryId,
     }));
-    this.discoveredEntries = newDiscoveredEntries;
-    this.onDiscoveredEntriesChanged?.(newDiscoveredEntries);
-
-    // Create undo event
-    const undoCommand = async () => {
-      if (currentBootNext !== undefined) {
-        try {
-          await this.apiService.setBootNext(currentBootNext);
-        } catch (e) {
-          return;
-        }
-        const undoEntries = this.discoveredEntries.map((e) => ({
-          ...e,
-          is_bootnext: e.id === currentBootNext,
-        }));
-        this.discoveredEntries = undoEntries;
-        this.onDiscoveredEntriesChanged?.(undoEntries);
-      }
-    };
-
-    const redoCommand = async () => {
-      try {
-        await this.apiService.unsetBootNext();
-      } catch (e) {
-        return;
-      }
-      const redoEntries = this.discoveredEntries.map((e) => ({
-        ...e,
-        is_bootnext: false,
-      }));
-      this.discoveredEntries = redoEntries;
-      this.onDiscoveredEntriesChanged?.(redoEntries);
-    };
-
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.UnsetBootNext,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.UnsetBootNext,
-    };
-
-    undoRedoStore.addChange(changeEvent);
+    this.onDiscoveredEntriesChanged?.([...this.discoveredEntries]);
   }
 
-  /**
-   * Centralized function to handle order changes and create undo/redo events
-   */
-  changeOrder(
-    action: OrderActions,
-    originalOrder: number[],
-    newOrder: number[]
-  ): ChangeEvent {
-    const originalEntries = this.getBootEntries();
+  private async changeBootNext(entryId: number | undefined, action: OrderActions): Promise<void> {
+    await undoRedoStore.runExclusive(async () => {
+      const previous = this.discoveredEntries.find((entry) => entry.is_bootnext)?.id;
+      if (previous === entryId) return;
+      await this.applyBootNext(entryId);
+      undoRedoStore.addChange({
+        action,
+        description: action,
+        undoCommand: () => this.applyBootNext(previous),
+        redoCommand: () => this.applyBootNext(entryId),
+      });
+    });
+  }
 
-    // Create new order based on the provided order IDs
-    const newEntries = newOrder.map(
-      (id) => originalEntries.find((entry) => entry.id === id)!
-    );
+  setBootNext(entryId: number): Promise<void> {
+    return this.changeBootNext(entryId, OrderActions.SetBootNext);
+  }
 
-    // Undo command: restore to original order
-    const undoCommand = () => {
-      const undoEntries = originalOrder.map(
-        (id) => originalEntries.find((entry) => entry.id === id)!
-      );
-      this.setBootEntries(undoEntries);
-    };
+  unsetBootNext(): Promise<void> {
+    return this.changeBootNext(undefined, OrderActions.UnsetBootNext);
+  }
 
-    // Redo command: apply the new order
-    const redoCommand = () => {
-      this.setBootEntries(newEntries);
-    };
+  private async applyFirmwareSetup(state: boolean): Promise<void> {
+    if (!this.apiService) throw new Error("Firmware API is not initialized");
+    if (state) await this.apiService.setBootToFirmwareSetup();
+    else await this.apiService.unsetBootToFirmwareSetup();
+    this.efiSetupState = state;
+    this.onEfiSetupStateChanged?.(state);
+  }
 
-    // Apply the change immediately
-    this.setBootEntries(newEntries);
+  private async changeFirmwareSetup(state: boolean, action: OrderActions): Promise<void> {
+    await undoRedoStore.runExclusive(async () => {
+      const previous = this.efiSetupState;
+      if (previous === state) return;
+      await this.applyFirmwareSetup(state);
+      undoRedoStore.addChange({
+        action,
+        description: action,
+        undoCommand: () => this.applyFirmwareSetup(previous),
+        redoCommand: () => this.applyFirmwareSetup(state),
+      });
+    });
+  }
 
-    // Create and register the change event
-    const changeEvent: ChangeEvent = {
+  setBootToFirmwareSetup(): Promise<void> {
+    return this.changeFirmwareSetup(true, OrderActions.SetBootToFirmwareSetup);
+  }
+
+  unsetBootToFirmwareSetup(): Promise<void> {
+    return this.changeFirmwareSetup(false, OrderActions.UnsetBootToFirmwareSetup);
+  }
+
+  private recordOrder(action: OrderActions, before: BootEntry[], after: BootEntry[]): ChangeEvent {
+    const change: ChangeEvent = {
       action,
-      undoCommand,
-      redoCommand,
       description: action,
+      undoCommand: () => this.setBootEntries(before),
+      redoCommand: () => this.setBootEntries(after),
     };
-
-    undoRedoStore.addChange(changeEvent);
-
-    return changeEvent;
+    this.setBootEntries(after);
+    undoRedoStore.addChange(change);
+    return change;
   }
 
-  /**
-   * Move an entry up or down in the boot order
-   */
+  changeOrder(action: OrderActions, originalOrder: number[], newOrder: number[]): ChangeEvent | undefined {
+    if (undoRedoStore.isBusy) return;
+    const available = [...this.bootEntries, ...this.discoveredEntries];
+    const entriesFor = (order: number[]) => order.map((id) => {
+      const entry = available.find((entry) => entry.id === id);
+      if (!entry) throw new Error(`Boot entry ${id} is not available`);
+      return entry;
+    });
+    return this.recordOrder(action, entriesFor(originalOrder), entriesFor(newOrder));
+  }
+
   moveEntry(index: number, direction: "up" | "down"): void {
-    if (direction === "up" && index === 0) return;
-    if (direction === "down" && index === this.bootEntries.length - 1) return;
-
-    const originalOrder = this.getBootEntries().map((e) => e.id);
+    if (undoRedoStore.isBusy || index < 0 || index >= this.bootEntries.length) return;
     const newIndex = direction === "up" ? index - 1 : index + 1;
-
-    // Swap entries
-    const newEntries = [...this.getBootEntries()];
-    [newEntries[index], newEntries[newIndex]] = [
-      newEntries[newIndex],
-      newEntries[index],
-    ];
-
-    const newOrder = newEntries.map((e) => e.id);
-    const action =
-      direction === "up" ? OrderActions.MoveUp : OrderActions.MoveDown;
-
-    this.changeOrder(action, originalOrder, newOrder);
+    if (newIndex < 0 || newIndex >= this.bootEntries.length) return;
+    const before = this.getBootEntries();
+    const after = [...before];
+    [after[index], after[newIndex]] = [after[newIndex], after[index]];
+    this.recordOrder(direction === "up" ? OrderActions.MoveUp : OrderActions.MoveDown, before, after);
   }
 
-  /**
-   * Set boot entries directly (used for drag and drop)
-   */
   setEntriesFromDragDrop(entries: BootEntry[]): void {
-    const originalOrder = this.getBootEntries().map((e) => e.id);
-    const newOrder = entries.map((e) => e.id);
-
-    this.changeOrder(OrderActions.ReorderByDrag, originalOrder, newOrder);
+    if (undoRedoStore.isBusy) return;
+    this.recordOrder(OrderActions.ReorderByDrag, this.getBootEntries(), [...entries]);
   }
 
-  /**
-   * Capture the original order when drag starts
-   */
   startDrag(): void {
-    this.dragStartOrder = this.getBootEntries().map((e) => e.id);
+    if (undoRedoStore.isBusy) return;
+    this.dragStartOrder = this.bootEntries.map((entry) => entry.id);
   }
 
-  /**
-   * Apply drag and drop changes using the captured start order
-   */
   endDrag(entries: BootEntry[]): void {
-    if (!this.dragStartOrder) return;
-
-    const newOrder = entries.map((e) => e.id);
-
-    // Only create a change event if the order actually changed
-    if (JSON.stringify(this.dragStartOrder) !== JSON.stringify(newOrder)) {
-      this.changeOrder(
-        OrderActions.ReorderByDrag,
-        this.dragStartOrder,
-        newOrder
-      );
-    }
-
+    const original = this.dragStartOrder;
     this.dragStartOrder = null;
+    if (!original || undoRedoStore.isBusy) return;
+    const next = entries.map((entry) => entry.id);
+    if (JSON.stringify(original) !== JSON.stringify(next)) {
+      this.changeOrder(OrderActions.ReorderByDrag, original, next);
+    }
   }
 
-  /**
-   * Make an entry the default (move to first position)
-   */
   makeDefault(entryId: number): void {
-    const originalOrder = this.getBootEntries().map((e) => e.id);
-    const entryIndex = this.getBootEntries().findIndex((e) => e.id === entryId);
-
-    if (entryIndex === -1 || entryIndex === 0) return;
-
-    // Create new order with selected entry first
-    const newOrder = [
-      entryId,
-      ...originalOrder.slice(0, entryIndex),
-      ...originalOrder.slice(entryIndex + 1),
-    ];
-
-    this.changeOrder(OrderActions.MakeDefault, originalOrder, newOrder);
+    if (undoRedoStore.isBusy) return;
+    const index = this.bootEntries.findIndex((entry) => entry.id === entryId);
+    if (index <= 0) return;
+    const before = this.getBootEntries();
+    this.recordOrder(OrderActions.MakeDefault, before, [before[index], ...before.filter((entry) => entry.id !== entryId)]);
   }
 
-  /**
-   * Add an entry to the boot order
-   * @param entry The entry to add
-   * @param position Optional position index where to insert the entry. If not provided, adds to end.
-   */
   addToBootOrder(entry: BootEntry, position?: number): void {
-    const originalOrder = this.getBootEntries().map((e) => e.id);
-    
-    // Add the entry at specified position or at the end
-    if (position !== undefined && position >= 0 && position <= this.bootEntries.length) {
-      this.bootEntries = [
-        ...this.bootEntries.slice(0, position),
-        entry,
-        ...this.bootEntries.slice(position)
-      ];
-    } else {
-      this.bootEntries = [...this.bootEntries, entry];
-    }
-    
-    const newOrder = this.getBootEntries().map((e) => e.id);
-    this.changeOrder(OrderActions.AddToBootOrder, originalOrder, newOrder);
+    if (undoRedoStore.isBusy || this.bootEntries.some((item) => item.id === entry.id)) return;
+    const before = this.getBootEntries();
+    const after = [...before];
+    const index = position !== undefined && position >= 0 && position <= after.length ? position : after.length;
+    after.splice(index, 0, entry);
+    this.recordOrder(OrderActions.AddToBootOrder, before, after);
   }
 
-  /**
-   * Remove an entry from the boot order
-   */
   removeFromBootOrder(entryId: number): void {
-    const originalOrder = this.getBootEntries().map((e) => e.id);
-    const newOrder = originalOrder.filter((id) => id !== entryId);
-
-    this.changeOrder(OrderActions.RemoveFromBootOrder, originalOrder, newOrder);
+    if (undoRedoStore.isBusy || !this.bootEntries.some((entry) => entry.id === entryId)) return;
+    const before = this.getBootEntries();
+    this.recordOrder(OrderActions.RemoveFromBootOrder, before, before.filter((entry) => entry.id !== entryId));
   }
 
-  /**
-   * Set boot to firmware setup
-   */
-  async setBootToFirmwareSetup(): Promise<void> {
-    if (!this.apiService) return;
-
-    // Perform the API call
-    try {
-      await this.apiService.setBootToFirmwareSetup();
-    } catch (e) {
-      // Error handled by ApiService's onerror callback
-      return;
-    }
-    this.onEfiSetupStateChanged?.(true);
-
-    // Note: efiSetupState is managed separately in the main component
-    // This action changes EFI state immediately and is undoable
-    const undoCommand = async () => {
-      try {
-        await this.apiService.unsetBootToFirmwareSetup();
-      } catch (e) {
-        return;
-      }
-      this.onEfiSetupStateChanged?.(false);
-    };
-
-    const redoCommand = async () => {
-      try {
-        await this.apiService.setBootToFirmwareSetup();
-      } catch (e) {
-        return;
-      }
-      this.onEfiSetupStateChanged?.(true);
-    };
-
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.SetBootToFirmwareSetup,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.SetBootToFirmwareSetup,
-    };
-
-    undoRedoStore.addChange(changeEvent);
-  }
-
-  /**
-   * Unset boot to firmware setup
-   */
-  async unsetBootToFirmwareSetup(): Promise<void> {
-    if (!this.apiService) return;
-
-    // Perform the API call
-    try {
-      await this.apiService.unsetBootToFirmwareSetup();
-    } catch (e) {
-      // Error handled by ApiService's onerror callback
-      return;
-    }
-    this.onEfiSetupStateChanged?.(false);
-
-    const undoCommand = async () => {
-      try {
-        await this.apiService.setBootToFirmwareSetup();
-      } catch (e) {
-        return;
-      }
-      this.onEfiSetupStateChanged?.(true);
-    };
-
-    const redoCommand = async () => {
-      try {
-        await this.apiService.unsetBootToFirmwareSetup();
-      } catch (e) {
-        return;
-      }
-      this.onEfiSetupStateChanged?.(false);
-    };
-
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.UnsetBootToFirmwareSetup,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.UnsetBootToFirmwareSetup,
-    };
-
-    undoRedoStore.addChange(changeEvent);
-  }
-
-  /**
-   * Discard changes and restore to original state
-   */
   discardToOriginal(originalEntries: BootEntry[]): void {
-    const currentEntries = this.getBootEntries();
-
-    const undoCommand = () => {
-      this.setBootEntries(currentEntries);
-    };
-
-    const redoCommand = () => {
-      this.setBootEntries([...originalEntries]);
-    };
-
-    // Execute the discard
-    redoCommand();
-
-    const changeEvent: ChangeEvent = {
-      action: OrderActions.DiscardChanges,
-      undoCommand,
-      redoCommand,
-      description: OrderActions.DiscardChanges,
-    };
-
-    undoRedoStore.addChange(changeEvent);
+    if (undoRedoStore.isBusy) return;
+    this.recordOrder(OrderActions.DiscardChanges, this.getBootEntries(), [...originalEntries]);
   }
 }

@@ -125,7 +125,7 @@ jobs:
       - name: Validate frontend and release tooling
         run: |
           pnpm check
-          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs
+          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs scripts/frontend.test.mjs
           python3 -B -m unittest discover -s scripts -p 'test_*.py'
 
       - name: Build frontend

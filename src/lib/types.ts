@@ -29,8 +29,8 @@ export enum OrderActions {
 
 export interface ChangeEvent {
   action: OrderActions;
-  undoCommand: () => void;
-  redoCommand: () => void;
+  undoCommand: () => void | Promise<void>;
+  redoCommand: () => void | Promise<void>;
   description: string;
 }
 

@@ -91,7 +91,7 @@ jobs:
         run: |
           pnpm check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs
+          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs scripts/frontend.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B -m unittest discover -s scripts -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

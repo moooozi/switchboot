@@ -7,9 +7,9 @@ Switchboot is a Tauri + Svelte desktop application for managing EFI boot entries
 **Frontend (Svelte/TypeScript):**
 
 - `src/routes/+page.svelte` - Main boot management interface
-- `src/lib/components/` - UI components (BootEntriesList, BootEntryItem, ApiService)
+- `src/lib/components/` - UI components (BootEntriesList, BootEntryItem)
 - Drag-and-drop boot order management with `svelte-dnd-action`
-- Tauri invoke calls to Rust backend via `ApiService.svelte`
+- Typed Tauri calls via `src/lib/api.ts`; errors propagate and busy state counts active requests
 
 **Backend (Rust/Tauri):**
 
@@ -30,12 +30,9 @@ Switchboot is a Tauri + Svelte desktop application for managing EFI boot entries
 ### Component Communication
 
 ```typescript
-// ApiService.svelte - Central hub for all Tauri invokes
-export async function fetchBootEntries() {
-  const entries = (await invoke("get_boot_entries")) as BootEntry[];
-  onbootentriesfetched?.(entries);
-  return entries;
-}
+// api.ts - Central hub for Tauri invokes, with callbacks for UI state
+const api = new ApiService({ onerror: handleError, onbusychange: handleBusy });
+const entries = await api.fetchBootEntries();
 ```
 
 ### Platform-Specific Code
@@ -172,7 +169,9 @@ pub struct CommandResponse {
 
 - Reactive Svelte stores for UI state
 - Boot order changes tracked with `changed` flag
-- Original order preserved for revert operations
+- Original order preserved for revert operations; saves retain the submitted snapshot
+- Firmware mutations and undo/redo share an exclusive operation guard; history advances only on success
+- `node --test scripts/frontend.test.mjs` tests frontend state with mocked firmware APIs
 
 ### Boot Entry Types
 

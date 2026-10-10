@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import ApiService from "../lib/components/ApiService.svelte";
+  import { ApiService } from "../lib/api";
+  import type { Update } from "@tauri-apps/plugin-updater";
   import BootEntriesList from "../lib/components/BootEntriesList.svelte";
   import Header from "../lib/components/Header.svelte";
   import ShortcutDialog from "../lib/components/ShortcutDialog.svelte";
@@ -10,7 +11,7 @@
   import { undoRedoStore } from "../lib/stores/undoRedo";
   import type { BootEntry } from "../lib/types";
   import { ShortcutAction } from "../lib/types";
-  import { mockBootEntries } from "./mockBootEntries";
+
 
   let bootEntries: BootEntry[] = [];
   let discoveredEntries: BootEntry[] = [];
@@ -18,14 +19,22 @@
   let originalEntries: BootEntry[] = [];
   let error = "";
   let changed = false;
-  let busy = false;
+  let busy = true;
+  let apiBusy = false;
+  let updateBusy = false;
+  $: busy = apiBusy || updateBusy || $undoRedoStore.busy || !initialized;
   let isPortable: boolean | null = null;
   let os: string = "unknown";
-  let apiService: ApiService;
+  const apiService = new ApiService({
+    onstatusfetched: handleStatusFetched,
+    onbootentriesfetched: handleBootEntriesFetched,
+    onerror: handleError,
+    onbusychange: (value) => { apiBusy = value; },
+  });
   let initialized = false;
   let discoveredEntriesLoading = true;
   let efiSetupState = false;
-  let availableUpdate: any = null;
+  let availableUpdate: Update | null = null;
   let showUpdateDialog = false;
   let updateProgress = 0;
   let updateStatus = "";
@@ -71,27 +80,12 @@
   // Derive default entry ID from original order
   $: defaultEntryId = originalOrder[0] ?? null;
 
-  // Initialize order manager when boot entries are fetched
-  $: if (bootEntries.length > 0 && !orderManager && apiService) {
-    orderManager = new OrderManager(
-      bootEntries,
-      (entries) => {
-        bootEntries = entries;
-      },
-      (updatedDiscovered) => {
-        discoveredEntries = updatedDiscovered;
-      },
-      (newEfiState) => {
-        efiSetupState = newEfiState;
-      },
-      apiService
-    );
-  }
 
   // Update order manager's discovered entries when they change
   $: if (orderManager && discoveredEntries) {
     orderManager.setDiscoveredEntries(discoveredEntries);
   }
+  $: if (orderManager) orderManager.setFirmwareSetupState(efiSetupState);
 
   // Move entry up/down
   function moveEntry(idx: number, dir: "up" | "down") {
@@ -100,12 +94,21 @@
   }
   // Save boot order
   async function saveOrder() {
+    if (busy || !changed) return;
+    const submittedEntries = bootEntries.map((entry) => ({ ...entry }));
+    const submittedOrder = submittedEntries.map((entry) => entry.id);
+    await runUiOperation(() => undoRedoStore.runExclusive(async () => {
+      await apiService.setBootOrder(submittedOrder);
+      originalOrder = submittedOrder;
+      originalEntries = submittedEntries;
+    }));
+  }
+
+  async function runUiOperation(operation: () => Promise<unknown>) {
     try {
-      await apiService.setBootOrder(bootEntries.map((e) => e.id));
-      originalOrder = bootEntries.map((e) => e.id);
-      originalEntries = [...bootEntries];
-    } catch (e) {
-      // Error is already handled by ApiService's onerror callback
+      await operation();
+    } catch (error) {
+      handleError(String(error));
     }
   }
 
@@ -128,6 +131,7 @@
     // Initialize discovered entries with boot entries
     discoveredEntries = [...entries];
 
+    undoRedoStore.clear();
     // Initialize order manager
     orderManager = new OrderManager(
       entries,
@@ -171,27 +175,23 @@
   }
 
   async function handleSetBootNext(entry: BootEntry) {
-    if (!orderManager) return;
-    await orderManager.setBootNext(entry.id);
+    if (busy || !orderManager) return;
+    await runUiOperation(() => orderManager.setBootNext(entry.id));
   }
 
   async function handleUnsetBootNext() {
-    if (!orderManager) return;
-    await orderManager.unsetBootNext();
+    if (busy || !orderManager) return;
+    await runUiOperation(() => orderManager.unsetBootNext());
   }
 
   async function handleRestartNow() {
-    await apiService.restartNow();
+    if (busy) return;
+    await runUiOperation(() => apiService.restartNow());
   }
 
   async function handleMakeDefault(entry: BootEntry) {
-    if (!orderManager) return;
+    if (busy || !orderManager) return;
     orderManager.makeDefault(entry.id);
-
-    // // Save the new boot order immediately (this action itself is not undoable)
-    // await apiService.setBootOrder(bootEntries.map((e) => e.id));
-    // originalOrder = bootEntries.map((e) => e.id);
-    // originalEntries = [...bootEntries];
   }
 
   async function handleAddShortcut(entry: BootEntry) {
@@ -203,22 +203,26 @@
     name: string;
     reboot: boolean;
   }) {
-    if (!shortcutEntry) return;
+    if (busy || !shortcutEntry) return;
 
     const iconId = getIconId(shortcutEntry.description) || "generic";
 
-    await apiService.createShortcut({
-      name: config.name,
-      action:
-        shortcutEntry.id === -200
-          ? ShortcutAction.SetFirmwareSetup
-          : ShortcutAction.SetBootNext,
-      entryId: shortcutEntry.id === -200 ? undefined : shortcutEntry.id,
-      reboot: config.reboot,
-      iconId,
-    });
-    showShortcutDialog = false;
-    shortcutEntry = null;
+    try {
+      await apiService.createShortcut({
+        name: config.name,
+        action:
+          shortcutEntry.id === -200
+            ? ShortcutAction.SetFirmwareSetup
+            : ShortcutAction.SetBootNext,
+        entryId: shortcutEntry.id === -200 ? undefined : shortcutEntry.id,
+        reboot: config.reboot,
+        iconId,
+      });
+      showShortcutDialog = false;
+      shortcutEntry = null;
+    } catch (error) {
+      handleError(String(error));
+    }
   }
 
   async function handleShortcutCancel() {
@@ -227,48 +231,50 @@
   }
 
   async function handleRebootToFirmwareSetup() {
-    if (!orderManager) return;
-    await orderManager.setBootToFirmwareSetup();
+    if (busy || !orderManager) return;
+    await runUiOperation(() => orderManager.setBootToFirmwareSetup());
   }
 
   async function handleUnsetBootToFirmwareSetup() {
-    if (!orderManager) return;
-    await orderManager.unsetBootToFirmwareSetup();
+    if (busy || !orderManager) return;
+    await runUiOperation(() => orderManager.unsetBootToFirmwareSetup());
   }
 
   async function handleAddToBootOrder(entry: BootEntry, position?: number) {
-    if (!orderManager) return;
+    if (busy || !orderManager) return;
     orderManager.addToBootOrder(entry, position);
   }
 
   async function handleRemoveFromBootOrder(entry: BootEntry) {
-    if (!orderManager) return;
+    if (busy || !orderManager) return;
     orderManager.removeFromBootOrder(entry.id);
   }
 
   // Undo/Redo functionality
-  function handleUndo() {
-    undoRedoStore.undo();
+  async function handleUndo() {
+    if (busy) return;
+    await runUiOperation(() => undoRedoStore.undo());
   }
 
-  function handleRedo() {
-    undoRedoStore.redo();
+  async function handleRedo() {
+    if (busy) return;
+    await runUiOperation(() => undoRedoStore.redo());
   }
 
   async function handleUpdateClick() {
-    if (!availableUpdate) return;
+    if (busy || !availableUpdate) return;
     try {
       showUpdateDialog = true;
       updateProgress = 0;
       updateTotalSize = 0;
       updateStatus = "Starting download...";
-      busy = true;
+      updateBusy = true;
 
-      await availableUpdate.downloadAndInstall((event: any) => {
+      await availableUpdate.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
-            updateTotalSize = event.data.contentLength;
-            updateStatus = `Downloading ${(event.data.contentLength / (1024 * 1024)).toFixed(1)} MB...`;
+            updateTotalSize = event.data.contentLength ?? 0;
+            updateStatus = `Downloading ${(updateTotalSize / (1024 * 1024)).toFixed(1)} MB...`;
             break;
           case "Progress":
             updateProgress += event.data.chunkLength;
@@ -300,7 +306,7 @@
         showUpdateDialog = false;
       }, 2000);
     } finally {
-      busy = false;
+      updateBusy = false;
     }
   }
 
@@ -320,69 +326,41 @@
     }
   }
 
-  if (false) {
-    bootEntries = mockBootEntries;
-    originalOrder = bootEntries.map((e) => e.id);
-
-    // Mock portable status promise that resolves after 3 seconds
-    setTimeout(() => {
-      handleStatusFetched(false);
-    }, 3000);
-  } else {
-    onMount(async () => {
-      // Add keyboard shortcuts
-      document.addEventListener("keydown", handleKeydown);
-
+  onMount(async () => {
+    document.addEventListener("keydown", handleKeydown);
+    try {
       await apiService.fetchPortableStatus();
       os = await apiService.getOS();
-
-      // Load boot entries first (fast)
       await apiService.fetchBootEntries();
-
-      // Get EFI Setup state
       efiSetupState = await apiService.getBootToFirmwareSetupState();
+      orderManager.setFirmwareSetupState(efiSetupState);
 
-      // Check for updates (not in portable mode and not on Linux)
       if (!isPortable && os !== "linux") {
         try {
           availableUpdate = await apiService.checkForUpdates();
-        } catch (e) {
-          console.log("Update check failed:", e);
+        } catch (error) {
+          console.log("Update check failed:", error);
         }
       }
-
       initialized = true;
 
-      // Load discovered entries asynchronously (slow)
-      (async () => {
-        try {
-          const fetchedEntries = await apiService.fetchDiscoveredEntries();
-          // Merge new entries without overwriting existing ones
-          const existingIds = new Set(discoveredEntries.map((e) => e.id));
-          const newEntries = fetchedEntries.filter(
-            (e) => !existingIds.has(e.id)
-          );
-          discoveredEntries = [...discoveredEntries, ...newEntries];
-        } catch (e) {
-          onerror?.(String(e));
-        } finally {
-          discoveredEntriesLoading = false;
-        }
-      })();
-    });
+      const fetchedEntries = await apiService.fetchDiscoveredEntries();
+      const existingIds = new Set(discoveredEntries.map((entry) => entry.id));
+      discoveredEntries = [
+        ...discoveredEntries,
+        ...fetchedEntries.filter((entry) => !existingIds.has(entry.id)),
+      ];
+    } catch (error) {
+      handleError(String(error));
+    } finally {
+      discoveredEntriesLoading = false;
+    }
+  });
 
-    onDestroy(() => {
-      document.removeEventListener("keydown", handleKeydown);
-    });
-  }
+  onDestroy(() => {
+    document.removeEventListener("keydown", handleKeydown);
+  });
 </script>
-
-<ApiService
-  bind:this={apiService}
-  onstatusfetched={handleStatusFetched}
-  onbootentriesfetched={handleBootEntriesFetched}
-  onerror={handleError}
-/>
 
 <!-- Reduced right padding (pr-3 = 12px) to match scrollbar width and prevent layout shift -->
 <main
