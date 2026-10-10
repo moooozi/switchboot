@@ -92,35 +92,182 @@ pub fn install_service(config: ServiceConfig) -> Result<()> {
     Ok(())
 }
 
-/// Stop (if running) and remove a service, waiting up to 10s for removal.
-pub fn uninstall_service(service_name: &str, stop_if_running: bool) -> Result<()> {
-    if stop_if_running {
-        // The service may already be stopped or stopping; ignore those errors.
-        let _ = stop_service(service_name);
+const LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn has_code(error: &ServiceManagementError, code: windows::Win32::Foundation::WIN32_ERROR) -> bool {
+    matches!(error, ServiceManagementError::WindowsService(windows_service::Error::Winapi(error))
+        if error.raw_os_error() == Some(code.0 as i32))
+}
+
+fn removal_status(result: Result<()>) -> Result<bool> {
+    use windows::Win32::Foundation::{
+        ERROR_SERVICE_DOES_NOT_EXIST, ERROR_SERVICE_MARKED_FOR_DELETE,
+    };
+    match result {
+        Ok(()) => Ok(false),
+        Err(error) if has_code(&error, ERROR_SERVICE_DOES_NOT_EXIST) => Ok(true),
+        Err(error) if has_code(&error, ERROR_SERVICE_MARKED_FOR_DELETE) => Ok(false),
+        Err(error) => Err(error),
     }
+}
 
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-
-    let service = manager.open_service(service_name, ServiceAccess::DELETE)?;
-
-    service.delete()?;
-
-    // Release the handle so the SCM can actually delete the service.
-    drop(service);
-
-    let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(10) {
-        let service_exists = manager
-            .open_service(service_name, ServiceAccess::QUERY_STATUS)
-            .is_ok();
-
-        if !service_exists {
-            break;
+fn wait_until(
+    description: &str,
+    timeout: Duration,
+    mut ready: impl FnMut() -> Result<bool>,
+    mut pause: impl FnMut(Duration),
+) -> Result<()> {
+    let started = Instant::now();
+    loop {
+        if ready()? {
+            return Ok(());
         }
-        sleep(Duration::from_millis(200));
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Err(ServiceManagementError::Timeout(description.to_owned()));
+        }
+        pause(remaining.min(Duration::from_millis(200)));
     }
+}
 
-    Ok(())
+trait StopControl {
+    fn state(&self) -> Result<ServiceState>;
+    fn request_stop(&self) -> Result<()>;
+}
+
+impl StopControl for windows_service::service::Service {
+    fn state(&self) -> Result<ServiceState> {
+        Ok(self.query_status()?.current_state)
+    }
+    fn request_stop(&self) -> Result<()> {
+        self.stop()?;
+        Ok(())
+    }
+}
+
+fn stop_existing(
+    service: &impl StopControl,
+    timeout: Duration,
+    pause: impl FnMut(Duration),
+) -> Result<()> {
+    use windows::Win32::Foundation::{ERROR_SERVICE_CANNOT_ACCEPT_CTRL, ERROR_SERVICE_NOT_ACTIVE};
+    match service.state()? {
+        ServiceState::Stopped => return Ok(()),
+        ServiceState::StopPending => {}
+        _ => {
+            if let Err(error) = service.request_stop() {
+                // A concurrent stop can race our query. Accept it only after
+                // confirming the service is actually stopped or stopping.
+                if !(has_code(&error, ERROR_SERVICE_NOT_ACTIVE)
+                    || has_code(&error, ERROR_SERVICE_CANNOT_ACCEPT_CTRL))
+                    || !matches!(
+                        service.state()?,
+                        ServiceState::Stopped | ServiceState::StopPending
+                    )
+                {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    wait_until(
+        "Service did not reach STOPPED state within 10 seconds",
+        timeout,
+        || Ok(service.state()? == ServiceState::Stopped),
+        pause,
+    )
+}
+
+trait Removal {
+    fn stop(&self) -> Result<()>;
+    fn delete(&self) -> Result<()>;
+    fn release(&mut self);
+    fn is_removed(&self) -> Result<bool>;
+}
+
+struct ManagedRemoval<'a> {
+    manager: ServiceManager,
+    service: Option<windows_service::service::Service>,
+    name: &'a str,
+}
+
+impl Removal for ManagedRemoval<'_> {
+    fn stop(&self) -> Result<()> {
+        if let Some(service) = &self.service {
+            stop_existing(service, LIFECYCLE_TIMEOUT, sleep)?;
+        }
+        Ok(())
+    }
+    fn delete(&self) -> Result<()> {
+        use windows::Win32::Foundation::ERROR_SERVICE_MARKED_FOR_DELETE;
+        if let Some(service) = &self.service {
+            match service.delete().map_err(ServiceManagementError::from) {
+                Ok(()) => {}
+                Err(error) if has_code(&error, ERROR_SERVICE_MARKED_FOR_DELETE) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+    fn release(&mut self) {
+        // SCM cannot finish deletion while this handle is still open.
+        self.service = None;
+    }
+    fn is_removed(&self) -> Result<bool> {
+        removal_status(
+            self.manager
+                .open_service(self.name, ServiceAccess::QUERY_STATUS)
+                .map(|_| ())
+                .map_err(ServiceManagementError::from),
+        )
+    }
+}
+
+fn remove_existing(
+    removal: &mut impl Removal,
+    stop_if_running: bool,
+    timeout: Duration,
+    pause: impl FnMut(Duration),
+) -> Result<()> {
+    if stop_if_running {
+        removal.stop()?;
+    }
+    removal.delete()?;
+    removal.release();
+    wait_until(
+        "Service was not removed within 10 seconds",
+        timeout,
+        || removal.is_removed(),
+        pause,
+    )
+}
+
+/// Stop (if requested) and remove a service. Each phase has a 10-second deadline.
+/// Missing services are already uninstalled; pending deletion must finish first.
+pub fn uninstall_service(service_name: &str, stop_if_running: bool) -> Result<()> {
+    use windows::Win32::Foundation::{
+        ERROR_SERVICE_DOES_NOT_EXIST, ERROR_SERVICE_MARKED_FOR_DELETE,
+    };
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let mut access = ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS;
+    if stop_if_running {
+        access |= ServiceAccess::STOP;
+    }
+    let service = match manager
+        .open_service(service_name, access)
+        .map_err(ServiceManagementError::from)
+    {
+        Ok(service) => Some(service),
+        Err(error) if has_code(&error, ERROR_SERVICE_DOES_NOT_EXIST) => return Ok(()),
+        Err(error) if has_code(&error, ERROR_SERVICE_MARKED_FOR_DELETE) => None,
+        Err(error) => return Err(error),
+    };
+    let mut removal = ManagedRemoval {
+        manager,
+        service,
+        name: service_name,
+    };
+    remove_existing(&mut removal, stop_if_running, LIFECYCLE_TIMEOUT, sleep)
 }
 
 /// Start a service, optionally waiting up to `timeout_secs` for the Running state.
@@ -161,32 +308,22 @@ pub fn start_service(service_name: &str, timeout_secs: Option<u64>) -> Result<()
     Ok(())
 }
 
-/// Stop a running service, waiting up to 10s for it to stop.
+/// Stop a service, confirming STOPPED within 10 seconds. Absence is idempotent.
 pub fn stop_service(service_name: &str) -> Result<()> {
+    use windows::Win32::Foundation::ERROR_SERVICE_DOES_NOT_EXIST;
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-
-    let service = manager.open_service(
-        service_name,
-        ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
-    )?;
-
-    let status = service.query_status()?;
-    if status.current_state == ServiceState::Stopped {
-        return Ok(());
-    }
-
-    service.stop()?;
-
-    let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(10) {
-        let status = service.query_status()?;
-        if status.current_state == ServiceState::Stopped {
-            return Ok(());
-        }
-        sleep(Duration::from_millis(200));
-    }
-
-    Ok(())
+    let service = match manager
+        .open_service(
+            service_name,
+            ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
+        )
+        .map_err(ServiceManagementError::from)
+    {
+        Ok(service) => service,
+        Err(error) if has_code(&error, ERROR_SERVICE_DOES_NOT_EXIST) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    stop_existing(&service, LIFECYCLE_TIMEOUT, sleep)
 }
 
 /// Resolve a service's executable path, stripping any bundled arguments.
@@ -340,4 +477,193 @@ fn grant_start_permission_to_everyone(service: &windows_service::service::Servic
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::collections::VecDeque;
+
+    fn winapi_error(code: i32) -> ServiceManagementError {
+        windows_service::Error::Winapi(std::io::Error::from_raw_os_error(code)).into()
+    }
+
+    struct FakeStop {
+        states: RefCell<VecDeque<ServiceState>>,
+        last: Cell<ServiceState>,
+        stop_error: Option<i32>,
+        stops: Cell<usize>,
+    }
+    impl FakeStop {
+        fn new(states: &[ServiceState], stop_error: Option<i32>) -> Self {
+            Self {
+                states: RefCell::new(states.iter().copied().collect()),
+                last: Cell::new(ServiceState::Running),
+                stop_error,
+                stops: Cell::new(0),
+            }
+        }
+    }
+    impl StopControl for FakeStop {
+        fn state(&self) -> Result<ServiceState> {
+            let state = self
+                .states
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(self.last.get());
+            self.last.set(state);
+            Ok(state)
+        }
+        fn request_stop(&self) -> Result<()> {
+            self.stops.set(self.stops.get() + 1);
+            self.stop_error
+                .map_or(Ok(()), |code| Err(winapi_error(code)))
+        }
+    }
+
+    #[test]
+    fn stopped_or_stopping_service_does_not_receive_duplicate_stop() {
+        for states in [
+            vec![ServiceState::Stopped],
+            vec![ServiceState::StopPending, ServiceState::Stopped],
+        ] {
+            let service = FakeStop::new(&states, None);
+            stop_existing(&service, Duration::ZERO, |_| {}).unwrap();
+            assert_eq!(service.stops.get(), 0);
+        }
+    }
+
+    #[test]
+    fn stop_is_sent_once_and_confirmed_before_success() {
+        let service = FakeStop::new(
+            &[
+                ServiceState::Running,
+                ServiceState::StopPending,
+                ServiceState::Stopped,
+            ],
+            None,
+        );
+        stop_existing(&service, Duration::from_secs(1), |_| {}).unwrap();
+        assert_eq!(service.stops.get(), 1);
+        assert_eq!(service.last.get(), ServiceState::Stopped);
+    }
+
+    #[test]
+    fn stop_failure_or_deadline_is_not_reported_as_success() {
+        let denied = FakeStop::new(&[ServiceState::Running], Some(5));
+        let error = stop_existing(&denied, Duration::ZERO, |_| {}).unwrap_err();
+        assert!(has_code(
+            &error,
+            windows::Win32::Foundation::ERROR_ACCESS_DENIED
+        ));
+        let pending = FakeStop::new(&[ServiceState::Running, ServiceState::StopPending], None);
+        assert!(matches!(
+            stop_existing(&pending, Duration::ZERO, |_| {}),
+            Err(ServiceManagementError::Timeout(_))
+        ));
+    }
+
+    #[test]
+    fn concurrent_stop_error_requires_confirmed_stopping_state() {
+        let stopping = FakeStop::new(
+            &[
+                ServiceState::Running,
+                ServiceState::StopPending,
+                ServiceState::Stopped,
+            ],
+            Some(1061),
+        );
+        stop_existing(&stopping, Duration::ZERO, |_| {}).unwrap();
+        let running = FakeStop::new(&[ServiceState::Running, ServiceState::Running], Some(1061));
+        assert!(stop_existing(&running, Duration::ZERO, |_| {}).is_err());
+    }
+
+    #[test]
+    fn missing_service_is_absent_but_pending_deletion_and_permission_errors_are_not() {
+        assert!(removal_status(Err(winapi_error(1060))).unwrap());
+        assert!(!removal_status(Err(winapi_error(1072))).unwrap());
+        assert!(removal_status(Err(winapi_error(5))).is_err());
+        assert!(!removal_status(Ok(())).unwrap());
+    }
+
+    struct FakeRemoval {
+        actions: RefCell<Vec<&'static str>>,
+        stop_error: Option<i32>,
+        delete_error: Option<i32>,
+        states: RefCell<VecDeque<Result<bool>>>,
+        released: bool,
+    }
+    impl FakeRemoval {
+        fn new(states: Vec<Result<bool>>) -> Self {
+            Self {
+                actions: RefCell::new(Vec::new()),
+                stop_error: None,
+                delete_error: None,
+                states: RefCell::new(states.into()),
+                released: false,
+            }
+        }
+    }
+    impl Removal for FakeRemoval {
+        fn stop(&self) -> Result<()> {
+            self.actions.borrow_mut().push("stop");
+            self.stop_error
+                .map_or(Ok(()), |code| Err(winapi_error(code)))
+        }
+        fn delete(&self) -> Result<()> {
+            self.actions.borrow_mut().push("delete");
+            self.delete_error
+                .map_or(Ok(()), |code| Err(winapi_error(code)))
+        }
+        fn release(&mut self) {
+            self.actions.borrow_mut().push("release");
+            self.released = true;
+        }
+        fn is_removed(&self) -> Result<bool> {
+            assert!(
+                self.released,
+                "SCM handle must close before checking removal"
+            );
+            self.actions.borrow_mut().push("query");
+            self.states.borrow_mut().pop_front().unwrap_or(Ok(false))
+        }
+    }
+
+    #[test]
+    fn failed_stop_prevents_delete_and_failed_delete_prevents_success() {
+        let mut removal = FakeRemoval::new(vec![]);
+        removal.stop_error = Some(5);
+        assert!(remove_existing(&mut removal, true, Duration::ZERO, |_| {}).is_err());
+        assert_eq!(*removal.actions.borrow(), ["stop"]);
+        let mut removal = FakeRemoval::new(vec![]);
+        removal.delete_error = Some(5);
+        assert!(remove_existing(&mut removal, true, Duration::ZERO, |_| {}).is_err());
+        assert_eq!(*removal.actions.borrow(), ["stop", "delete"]);
+    }
+
+    #[test]
+    fn removal_releases_handle_and_waits_for_confirmed_absence() {
+        let mut removal = FakeRemoval::new(vec![Ok(false), Ok(true)]);
+        remove_existing(&mut removal, true, Duration::from_secs(1), |_| {}).unwrap();
+        assert_eq!(
+            *removal.actions.borrow(),
+            ["stop", "delete", "release", "query", "query"]
+        );
+    }
+
+    #[test]
+    fn persistent_service_and_query_permission_failure_abort_removal() {
+        let mut pending = FakeRemoval::new(vec![Ok(false)]);
+        assert!(matches!(
+            remove_existing(&mut pending, false, Duration::ZERO, |_| {}),
+            Err(ServiceManagementError::Timeout(_))
+        ));
+        let mut denied = FakeRemoval::new(vec![Err(winapi_error(5))]);
+        let error = remove_existing(&mut denied, false, Duration::ZERO, |_| {}).unwrap_err();
+        assert!(has_code(
+            &error,
+            windows::Win32::Foundation::ERROR_ACCESS_DENIED
+        ));
+    }
 }

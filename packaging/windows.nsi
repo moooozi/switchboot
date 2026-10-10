@@ -23,17 +23,25 @@ Function un.onInit
 FunctionEnd
 Section "Switchboot"
   SetOutPath "$INSTDIR"
+  IfFileExists "$INSTDIR\switchboot.exe" 0 install_files
   nsExec::Exec '"$INSTDIR\switchboot.exe" --cli /uninstall_service'
   Pop $0
+  StrCmp $0 "0" install_files
+    MessageBox MB_ICONSTOP "Unable to stop and remove the existing Switchboot service (error $0). Installation has stopped before replacing application files." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  install_files:
   File "..\target\release\switchboot.exe"
   SetOutPath "$INSTDIR\resources\icons\ico"
   File "..\crates\switchboot_core\resources\icons\ico\*.ico"
   SetOutPath "$INSTDIR"
   nsExec::Exec '"$INSTDIR\switchboot.exe" --cli /install_service'
   Pop $0
-  IntCmp $0 0 +3
-    MessageBox MB_ICONSTOP "Unable to install the Switchboot service (error $0)."
+  StrCmp $0 "0" service_installed
+    MessageBox MB_ICONSTOP "Unable to install the Switchboot service (error $0)." /SD IDOK
+    SetErrorLevel 1
     Abort
+  service_installed:
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateShortcut "$SMPROGRAMS\Switchboot.lnk" "$INSTDIR\switchboot.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Switchboot" "DisplayName" "Switchboot"
@@ -43,6 +51,11 @@ SectionEnd
 Section "Uninstall"
   nsExec::Exec '"$INSTDIR\switchboot.exe" --cli /uninstall_service'
   Pop $0
+  StrCmp $0 "0" service_removed
+    MessageBox MB_ICONSTOP "Unable to stop and remove the Switchboot service (error $0). Application files have been kept." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  service_removed:
   Delete "$SMPROGRAMS\Switchboot.lnk"
   Delete "$INSTDIR\resources\icons\ico\*.ico"
   RMDir "$INSTDIR\resources\icons\ico"
