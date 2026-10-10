@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Switchboot
+Comment=Manage EFI boot entries
+Exec=switchboot
+Icon=switchboot
+Terminal=false
+Categories=System;Settings;

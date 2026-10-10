@@ -2,14 +2,11 @@
 // scripts/release.mjs
 // Single-source version bumper for Switchboot.
 //
-// Bumps the version in BOTH package.json and src-tauri/Cargo.toml, commits the
+// Bumps the version in BOTH package.json and Cargo.toml, commits the
 // change, and creates an annotated git tag `vX.Y.Z`. It does NOT push
 // automatically â€” after the commit + tag are made locally you are asked to
 // confirm before anything leaves your machine. Pushing the tag is what triggers
 // the release pipeline (which builds and publishes a *draft* GitHub release).
-//
-//   tauri.conf.json already reads its version from package.json
-//   (`"version": "../package.json"`), so it needs no change.
 //
 // Usage:
 //   pnpm release patch          # 0.2.7 -> 0.2.8
@@ -37,9 +34,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG_PATH = resolve(ROOT, "package.json");
-const CARGO_PATH = resolve(ROOT, "src-tauri/Cargo.toml");
-const CARGO_LOCK_PATH = resolve(ROOT, "src-tauri/Cargo.lock");
-const CARGO_DIR = resolve(ROOT, "src-tauri");
+const CARGO_PATH = resolve(ROOT, "Cargo.toml");
+const CARGO_LOCK_PATH = resolve(ROOT, "Cargo.lock");
+const CARGO_DIR = ROOT;
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
@@ -236,7 +233,7 @@ if (opts.dryRun) {
   process.exit(0);
 }
 
-const addFiles = ["package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+const addFiles = ["package.json", "Cargo.toml", "Cargo.lock"];
 if (sh("git", ["--no-optional-locks", "status", "--porcelain", "--", ...addFiles])) {
   die("Version files must be clean, even with --no-verify.");
 }

@@ -9,12 +9,12 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "switchboot-release-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
-  mkdirSync(join(root, "src-tauri/src"), { recursive: true });
-  writeFileSync(join(root, "src-tauri/src/lib.rs"), "// fixture\n");
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src/lib.rs"), "// fixture\n");
   copyFileSync(new URL("./release.mjs", import.meta.url), join(root, "scripts/release.mjs"));
   writeFileSync(join(root, "package.json"), '{"version":"1.0.0"}\n');
-  writeFileSync(join(root, "src-tauri/Cargo.toml"), '[package]\nname = "fixture"\nversion = "1.0.0"\n');
-  writeFileSync(join(root, "src-tauri/Cargo.lock"), 'version = 4\n\n[[package]]\nname = "fixture"\nversion = "1.0.0"\n');
+  writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "fixture"\nversion = "1.0.0"\n');
+  writeFileSync(join(root, "Cargo.lock"), 'version = 4\n\n[[package]]\nname = "fixture"\nversion = "1.0.0"\n');
   const git = (...args) => execFileSync("git", ["--no-pager", ...args], {
     cwd: root, encoding: "utf8", env: { ...process.env, GIT_EDITOR: "true", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "" },
   }).trim();
@@ -34,7 +34,7 @@ function fixture(t) {
 for (const [argument, expected] of [["patch", "1.0.1"], ["minor", "1.1.0"], ["major", "2.0.0"], ["1.2.3", "1.2.3"]]) {
   test(`dry-run ${argument} previews ${expected} without side effects`, (t) => {
     const { root, git, release } = fixture(t);
-    const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+    const files = ["package.json", "Cargo.toml", "Cargo.lock"];
     const before = files.map((file) => readFileSync(join(root, file), "utf8"));
     const head = git("rev-parse", "HEAD");
     const result = release(argument, "--dry-run", "--yes", "--no-sign");
@@ -86,7 +86,7 @@ test("local release synchronizes manifests, commits, and creates an annotated ta
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "1.0.1");
-  for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) {
+  for (const file of ["Cargo.toml", "Cargo.lock"]) {
     assert.match(readFileSync(join(root, file), "utf8"), /version = "1\.0\.1"/);
   }
   assert.equal(git("log", "-1", "--format=%s"), message);
@@ -145,16 +145,16 @@ test("diverged remote main fails before changing files or refs", (t) => {
 for (const problem of ["missing local entry", "duplicate local entry", "stale version", "Cargo error"]) {
   test(`release restores versions after ${problem}`, (t) => {
     const { root, git, release } = fixture(t);
-    const lockPath = join(root, "src-tauri/Cargo.lock");
+    const lockPath = join(root, "Cargo.lock");
     const originalLock = readFileSync(lockPath, "utf8");
     if (problem === "missing local entry") writeFileSync(lockPath, originalLock.replace('name = "fixture"', 'name = "other"'));
     if (problem === "duplicate local entry") writeFileSync(lockPath, originalLock + originalLock.slice(originalLock.indexOf("[[package]]")));
     if (problem === "stale version") writeFileSync(lockPath, originalLock.replace('version = "1.0.0"', 'version = "0.9.0"'));
-    if (problem === "Cargo error") writeFileSync(join(root, "src-tauri/Cargo.toml"), readFileSync(join(root, "src-tauri/Cargo.toml"), "utf8") + '\n[dependencies\n');
+    if (problem === "Cargo error") writeFileSync(join(root, "Cargo.toml"), readFileSync(join(root, "Cargo.toml"), "utf8") + '\n[dependencies\n');
     git("add", ".");
     git("commit", "-m", problem);
     const head = git("rev-parse", "HEAD");
-    const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+    const files = ["package.json", "Cargo.toml", "Cargo.lock"];
     const before = files.map((file) => readFileSync(join(root, file), "utf8"));
     const result = release("patch", "--no-push", "--no-sign");
     assert.equal(result.status, 1, result.stdout);
