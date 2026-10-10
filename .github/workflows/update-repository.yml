@@ -2,7 +2,7 @@ name: Update Package Repository
 
 # Runs when a DRAFT release is published (manually). The build artifacts
 # (packages, .asc and .sig signatures) are pulled straight from the published
-# release assets — there is no CI artifact to expire. Can also be re-run
+# release assets â€” there is no CI artifact to expire. Can also be re-run
 # manually for a published stable release tag via workflow_dispatch.
 on:
   release:
@@ -64,8 +64,10 @@ jobs:
       - name: Check for GPG secrets
         id: secrets_check
         shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
             echo "have_gpg=true" >> $GITHUB_OUTPUT
           else
             echo "have_gpg=" >> $GITHUB_OUTPUT
@@ -259,11 +261,16 @@ jobs:
       - name: Export GPG public key
         if: steps.secrets_check.outputs.have_gpg == 'true'
         shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          set -e
+          set -euo pipefail
+          GNUPGHOME=$(mktemp -d)
+          export GNUPGHOME
+          trap 'gpgconf --kill gpg-agent >/dev/null 2>&1 || true; rm -rf "$GNUPGHOME"' EXIT
           echo "Setting up GPG and exporting public key..."
           # import private key so we can export the public part
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
           # Export RPM-style ASCII public key for RPM consumers
           gpg --armor --export > repo/rpm/RPM-GPG-KEY-switchboot
@@ -360,17 +367,21 @@ jobs:
         if: steps.secrets_check.outputs.have_gpg == 'true'
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          GNUPGHOME=$(mktemp -d)
+          export GNUPGHOME
+          trap 'gpgconf --kill gpg-agent >/dev/null 2>&1 || true; rm -rf "$GNUPGHOME"' EXIT
           echo "Setting up GPG for signing..."
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
           # Sign RPM repository if it exists
           if [ -f "repo/rpm/x86_64/repodata/repomd.xml" ]; then
             echo "Signing RPM repository metadata..."
             # Remove old signature if it exists
             rm -f repo/rpm/x86_64/repodata/repomd.xml.asc repo/rpm/x86_64/repodata/repomd.xml.gpg
-            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
               --detach-sign --armor repo/rpm/x86_64/repodata/repomd.xml
+            gpg --batch --verify repo/rpm/x86_64/repodata/repomd.xml.asc repo/rpm/x86_64/repodata/repomd.xml
             echo "RPM repository signed successfully"
           else
             echo "No RPM repository metadata found, skipping RPM signing"
@@ -379,10 +390,12 @@ jobs:
           # Sign DEB repository if it exists
           if [ -f "repo/deb/dists/stable/Release" ]; then
             echo "Signing DEB repository metadata..."
-            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
               --clearsign --output repo/deb/dists/stable/InRelease repo/deb/dists/stable/Release
-            gpg --batch --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
               --detach-sign --armor --output repo/deb/dists/stable/Release.gpg repo/deb/dists/stable/Release
+            gpg --batch --verify repo/deb/dists/stable/InRelease
+            gpg --batch --verify repo/deb/dists/stable/Release.gpg repo/deb/dists/stable/Release
             echo "DEB repository signed successfully"
           else
             echo "No DEB repository metadata found, skipping DEB signing"

@@ -1,7 +1,7 @@
 name: Linux Build
 
 permissions:
-  contents: write
+  contents: read
   id-token: write # request OIDC token for signing
   attestations: write # persist build provenance attestation
 
@@ -12,6 +12,13 @@ on:
         description: "version (e.g. 0.1.1)"
         required: true
         type: string
+    secrets:
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
 
 concurrency:
   group: linux-build-${{ github.ref }}
@@ -31,8 +38,10 @@ jobs:
       - name: Check for GPG secret
         id: secrets_check
         shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
             echo "have_gpg=true" >> $GITHUB_OUTPUT
           else
             echo "have_gpg=" >> $GITHUB_OUTPUT
@@ -77,6 +86,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: Update Rust
+        run: rustup update stable
+
       - name: Capture Rust toolchain version
         id: rustver
         shell: bash
@@ -104,8 +116,6 @@ jobs:
           path: src-tauri/target
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
 
-      - name: Update Rust
-        run: rustup update stable
 
       - name: Generate icons
         run: |
@@ -183,9 +193,18 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          set -e
-          echo "Importing GPG private key for RPM signing..."
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          set -euo pipefail
+          umask 077
+          GNUPGHOME=$(mktemp -d)
+          export GNUPGHOME
+          cleanup() {
+            gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+            rm -rf "$GNUPGHOME"
+            rm -f "$HOME/.rpmmacros"
+          }
+          trap cleanup EXIT
+          printf '%s\n' "$GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
           # Determine GPG user name from the imported secret key
           GPG_KEY_NAME=$(gpg --list-secret-keys --with-colons | awk -F: '/^uid:/ {print $10; exit}')
@@ -195,18 +214,17 @@ jobs:
           fi
 
           echo "Configuring rpm macros for GPG: $GPG_KEY_NAME"
-          mkdir -p ~/.gnupg
           # Ensure gpg uses loopback pinentry for non-interactive passphrase
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf || true
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
           gpgconf --kill gpg-agent || true
           echo "%_signature gpg" > ~/.rpmmacros
           echo "%_gpg_name $GPG_KEY_NAME" >> ~/.rpmmacros
-          # Force RPM to use gpg with loopback pinentry and supply passphrase non-interactively
+          # The macro contains only the path to the private passphrase file, not its value.
           echo "%__gpg /usr/bin/gpg" >> ~/.rpmmacros
-          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase \"$GPG_PASSPHRASE\" -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
+          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file \"$GNUPGHOME/passphrase\" -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
 
           # Use absolute path for RPM files and sign directly (no expect)
-          for rpm in $(ls -1 "$(pwd)/artifacts"/*.rpm 2>/dev/null); do
+          for rpm in artifacts/*.rpm; do
             if [ -f "$rpm" ]; then
               echo "Signing $rpm"
               rpm --addsign "$rpm"
@@ -217,7 +235,7 @@ jobs:
 
           # Cleanup sensitive signing artifacts and environment
           echo "Cleaning up signing artifacts"
-          # securely remove rpmmacros which contains the passphrase
+          # Remove temporary RPM configuration; the EXIT trap also handles failures.
           if [ -f "$HOME/.rpmmacros" ]; then
             shred -u -z "$HOME/.rpmmacros" 2>/dev/null || rm -f "$HOME/.rpmmacros" || true
           fi

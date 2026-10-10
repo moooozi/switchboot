@@ -1,7 +1,7 @@
 name: Windows Build
 
 permissions:
-  contents: write
+  contents: read
   id-token: write # request OIDC token for build provenance
   attestations: write # persist build provenance attestation
 
@@ -12,6 +12,9 @@ on:
         description: "version (e.g. 0.1.1)"
         required: true
         type: string
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
 
 concurrency:
   group: windows-build-${{ github.ref }}
