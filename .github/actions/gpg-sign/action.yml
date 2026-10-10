@@ -1,6 +1,5 @@
 name: "GPG Sign"
-description: "Composite action to create detached ASCII-armored GPG signatures for files.
-Requires GPG_PRIVATE_KEY (ASCII armoured) and optionally GPG_PASSPHRASE as secrets."
+description: "Create and verify detached GPG signatures for required release files."
 inputs:
   files:
     description: "Semicolon-separated list of file paths to sign (relative to workspace)."
@@ -11,38 +10,32 @@ runs:
     - name: Import key and sign files (POSIX)
       if: runner.os != 'Windows'
       shell: bash
+      env:
+        FILES_RAW: ${{ inputs.files }}
       run: |
         set -euo pipefail
-        filesRaw='${{ inputs.files }}'
-        IFS=';'
-        read -ra filesArr <<< "$filesRaw"
-
-        if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
-          echo "Environment variable GPG_PRIVATE_KEY must be provided." >&2
-          exit 1
-        fi
-
-        gnupghome=$(mktemp -d)
-        export GNUPGHOME="$gnupghome"
-
-        echo "$GPG_PRIVATE_KEY" > "$gnupghome/private.key"
-        gpg --batch --import "$gnupghome/private.key"
-
+        : "${FILES_RAW:?No files provided}"
+        : "${GPG_PRIVATE_KEY:?GPG_PRIVATE_KEY must be provided}"
+        IFS=';' read -r -a filesArr <<< "$FILES_RAW"
         for f in "${filesArr[@]}"; do
-          # trim
-          f="$(echo "$f" | xargs)"
-          [ -z "$f" ] && continue
-          if [ -f "$f" ]; then
-            echo "Signing $f"
-            if [ -n "${GPG_PASSPHRASE:-}" ]; then
-              gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign -o "$f.asc" "$f"
-            else
-              gpg --batch --yes --armor --detach-sign -o "$f.asc" "$f"
-            fi
-          else
-            echo "Not found, skipping: $f"
+          if [ ! -s "$f" ]; then
+            echo "Required signing input is missing or empty: $f" >&2
+            exit 1
           fi
         done
 
-        # cleanup private key file
-        rm -f "$gnupghome/private.key"
+        GNUPGHOME=$(mktemp -d)
+        export GNUPGHOME
+        cleanup() {
+          gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+          rm -rf "$GNUPGHOME"
+        }
+        trap cleanup EXIT
+        printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+        for f in "${filesArr[@]}"; do
+          echo "Signing $f"
+          printf '%s\n' "${GPG_PASSPHRASE:-}" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --armor --detach-sign -o "$f.asc" "$f"
+          gpg --batch --verify "$f.asc" "$f"
+        done
