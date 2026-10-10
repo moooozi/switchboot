@@ -3,7 +3,7 @@ name: Update Package Repository
 # Runs when a DRAFT release is published (manually). The build artifacts
 # (packages, .asc and .sig signatures) are pulled straight from the published
 # release assets — there is no CI artifact to expire. Can also be re-run
-# manually for a given tag via workflow_dispatch.
+# manually for a published stable release tag via workflow_dispatch.
 on:
   release:
     types: [published]
@@ -35,9 +35,10 @@ jobs:
       - name: Resolve release tag and version
         id: init
         shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [ -z "$TAG" ]; then echo "::error::No tag resolved"; exit 1; fi
           VERSION="${TAG#v}"
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -48,6 +49,17 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Require a published stable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.init.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,publishedAt > release-metadata.json
+          python3 scripts/validate_repository_release.py "$TAG" < release-metadata.json
 
       - name: Check for GPG secrets
         id: secrets_check

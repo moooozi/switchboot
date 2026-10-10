@@ -134,7 +134,9 @@ pnpm tauri build     # Full native build (takes log time, use equivalently dev c
    assets and updates the APT/RPM repos on GitHub Pages. The first deployment
    requires manually running that workflow with `bootstrap=true`; bootstrap is
    rejected if an updater feed already exists. Normal updates fail if existing
-   state cannot be restored, and cannot downgrade the updater feed.
+   state cannot be restored, and cannot downgrade the updater feed. Both published-event
+   and manual runs require a published, non-draft, non-prerelease GitHub release;
+   missing or invalid release metadata fails before downloading assets.
 
 Notes:
 
