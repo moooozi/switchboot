@@ -197,6 +197,20 @@ const branch = sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
 if (branch !== "main") die(`Releases must be made from main, not '${branch}'.`);
 if (sh("git", ["tag", "--list", `v${next}`])) die(`Tag v${next} already exists; release tags are immutable.`);
 
+// Check the remote before changing files, not after committing and tagging.
+if (opts.push && !opts.dryRun) {
+  let remoteHead;
+  try {
+    const remoteTag = sh("git", ["ls-remote", "--tags", "origin", `refs/tags/v${next}`]);
+    if (remoteTag) die(`Remote tag v${next} already exists; release tags are immutable.`);
+    remoteHead = sh("git", ["ls-remote", "--heads", "origin", "refs/heads/main"]).split(/\s+/)[0];
+    if (!remoteHead) die("origin/main does not exist; initialize it before releasing.");
+    sh("git", ["merge-base", "--is-ancestor", remoteHead, "HEAD"]);
+  } catch {
+    die("Cannot verify origin/main. Fetch origin and resolve any divergence before releasing.");
+  }
+}
+
 if (opts.verify && !isCleanTree()) {
   console.error("Working tree is not clean. Commit or stash your changes first (or pass --no-verify).");
   run("git", ["--no-optional-locks", "status", "--short"]);

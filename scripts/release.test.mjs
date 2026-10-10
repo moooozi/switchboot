@@ -94,6 +94,53 @@ test("local release synchronizes manifests, commits, and creates an annotated ta
   assert.equal(git("status", "--porcelain"), "");
 });
 
+function remoteFixture(t) {
+  const fixtureData = fixture(t);
+  const remote = mkdtempSync(join(tmpdir(), "switchboot-remote-"));
+  t.after(() => rmSync(remote, { recursive: true, force: true }));
+  fixtureData.git("init", "--bare", "--initial-branch=main", remote);
+  fixtureData.git("remote", "add", "origin", remote);
+  fixtureData.git("push", "origin", "main");
+  return { ...fixtureData, remote };
+}
+
+test("release atomically publishes its commit and annotated tag to a local remote", (t) => {
+  const { git, release, remote } = remoteFixture(t);
+  const result = release("patch", "--yes", "--no-sign");
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  const head = git("rev-parse", "HEAD");
+  assert.equal(git("-C", remote, "rev-parse", "refs/heads/main"), head);
+  assert.equal(git("-C", remote, "rev-parse", "v1.0.1^{commit}"), head);
+  assert.equal(git("-C", remote, "cat-file", "-t", "v1.0.1"), "tag");
+  assert.equal(git("status", "--porcelain"), "");
+});
+
+test("remote-only tag collision fails before changing files or refs", (t) => {
+  const { git, release, remote } = remoteFixture(t);
+  const head = git("rev-parse", "HEAD");
+  git("-C", remote, "update-ref", "refs/tags/v1.0.1", head);
+  const result = release("patch", "--yes", "--no-sign");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Remote tag.*already exists/);
+  assert.equal(git("rev-parse", "HEAD"), head);
+  assert.equal(git("status", "--porcelain"), "");
+  assert.equal(git("tag", "--list"), "");
+});
+
+test("diverged remote main fails before changing files or refs", (t) => {
+  const { git, release, remote } = remoteFixture(t);
+  const head = git("rev-parse", "HEAD");
+  const divergent = git("commit-tree", "HEAD^{tree}", "-m", "divergent root");
+  git("push", "origin", `${divergent}:refs/heads/main`, "--force");
+  const result = release("patch", "--yes", "--no-sign");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /resolve any divergence/);
+  assert.equal(git("rev-parse", "HEAD"), head);
+  assert.equal(git("status", "--porcelain"), "");
+  assert.equal(git("-C", remote, "rev-parse", "refs/heads/main"), divergent);
+});
+
 test("dry-run still rejects invalid releases", (t) => {
   const { git, release } = fixture(t);
   const result = release("1.0.0", "--dry-run", "--no-sign");
