@@ -272,8 +272,12 @@ pub fn handle_bootnext_shortcut_execution(
     Ok(())
 }
 
-pub fn handle_bootfw_shortcut_execution(should_reboot: bool) -> Result<(), String> {
-    set_boot_fw()?;
+pub fn handle_bootfw_shortcut_execution(enable: bool, should_reboot: bool) -> Result<(), String> {
+    if enable {
+        set_boot_fw()?;
+    } else {
+        unset_boot_fw()?;
+    }
     if should_reboot {
         restart_now()?;
     }

@@ -20,7 +20,6 @@ impl CliCommand {
             CliCommand::SetBootNext(_)
                 | CliCommand::SetBootFirmware
                 | CliCommand::UnsetBootFirmware
-                | CliCommand::GetBootFirmware
         )
     }
 
@@ -72,7 +71,25 @@ impl CliCommand {
         if args.is_empty() {
             return Ok(CliCommand::Unknown);
         }
-        match args[0].as_str() {
+        let command = args[0].as_str();
+        let expected = match command {
+            Self::SET_BOOT_ORDER => None,
+            Self::SET_BOOT_NEXT => Some(2),
+            Self::GET_BOOT_ORDER
+            | Self::GET_BOOT_NEXT
+            | Self::GET_BOOT_ENTRIES
+            | Self::DISCOVER_ENTRIES
+            | Self::UNSET_BOOT_NEXT
+            | Self::GET_BOOT_CURRENT
+            | Self::SET_BOOT_FW
+            | Self::UNSET_BOOT_FW
+            | Self::GET_BOOT_FW => Some(1),
+            _ => return Ok(CliCommand::Unknown),
+        };
+        if expected.is_some_and(|count| args.len() != count) {
+            return Err(format!("Invalid argument count for {command}"));
+        }
+        match command {
             Self::GET_BOOT_ORDER => Ok(CliCommand::GetBootOrder),
             Self::SET_BOOT_ORDER => Ok(CliCommand::SetBootOrder(parse_u16_vec(&args[1..])?)),
             Self::GET_BOOT_NEXT => Ok(CliCommand::GetBootNext),
@@ -91,6 +108,34 @@ impl CliCommand {
             Self::GET_BOOT_FW => Ok(CliCommand::GetBootFirmware),
             _ => Ok(CliCommand::Unknown),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commands_round_trip_and_reject_extra_arguments() {
+        for command in [
+            CliCommand::GetBootOrder,
+            CliCommand::GetBootNext,
+            CliCommand::GetBootEntries,
+            CliCommand::DiscoverEntries,
+            CliCommand::UnsetBootNext,
+            CliCommand::GetBootCurrent,
+            CliCommand::SetBootFirmware,
+            CliCommand::UnsetBootFirmware,
+            CliCommand::GetBootFirmware,
+            CliCommand::SetBootNext(42),
+        ] {
+            let mut args = command.to_args();
+            assert_eq!(CliCommand::from_args(&args).unwrap().to_args(), args);
+            args.push("unexpected".into());
+            assert!(CliCommand::from_args(&args).is_err());
+        }
+        assert!(CliCommand::from_args(&["set-boot-next".into()]).is_err());
+        assert!(!CliCommand::GetBootFirmware.allow_non_interactive_exec());
     }
 }
 

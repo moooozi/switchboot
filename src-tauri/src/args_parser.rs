@@ -56,8 +56,11 @@ pub fn detect_mode(
                 return Err("--exec requires a command".to_string());
             }
 
-            let has_reboot = remaining.iter().any(|a| a == "reboot");
-            let cmd_args: Vec<String> = remaining.into_iter().filter(|a| a != "reboot").collect();
+            let mut cmd_args = remaining;
+            let has_reboot = cmd_args.last().is_some_and(|arg| arg == "reboot");
+            if has_reboot {
+                cmd_args.pop();
+            }
             if cmd_args.is_empty() {
                 return Err("--exec requires a command".to_string());
             }
@@ -149,6 +152,11 @@ mod tests {
             vec!["--exec", "set-boot-next"],
             vec!["--exec", "set-boot-next", "65536"],
             vec!["--exec", "get-boot-order"],
+            vec!["--exec", "get-boot-fw"],
+            vec!["--exec", "set-boot-fw", "extra"],
+            vec!["--exec", "set-boot-next", "42", "43"],
+            vec!["--exec", "reboot", "set-boot-fw"],
+            vec!["--exec", "set-boot-fw", "reboot", "reboot"],
             vec!["--exec", "unknown"],
         ] {
             assert!(detect(&args).is_err(), "unexpected success for {args:?}");
@@ -198,10 +206,10 @@ pub fn execute_command(command: &CliCommand, should_reboot: bool) -> Result<(), 
             switchboot_lib::handle_bootnext_shortcut_execution(*entry_id, should_reboot)
         }
         CliCommand::SetBootFirmware => {
-            switchboot_lib::handle_bootfw_shortcut_execution(should_reboot)
+            switchboot_lib::handle_bootfw_shortcut_execution(true, should_reboot)
         }
         CliCommand::UnsetBootFirmware => {
-            switchboot_lib::handle_bootfw_shortcut_execution(should_reboot)
+            switchboot_lib::handle_bootfw_shortcut_execution(false, should_reboot)
         }
         _ => Err(format!(
             "Command {:?} is not supported in exec mode",
