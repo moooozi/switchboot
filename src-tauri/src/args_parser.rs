@@ -19,6 +19,9 @@ pub fn detect_mode(
     argv0: &str,
     args: &mut impl Iterator<Item = String>,
 ) -> Result<AppMode, String> {
+    #[cfg(not(target_os = "linux"))]
+    let _ = argv0;
+
     // Linux: a `switchboot-cli` symlink invocation is the optimized CLI route.
     #[cfg(target_os = "linux")]
     if argv0.ends_with("switchboot-cli") {
@@ -36,6 +39,10 @@ pub fn detect_mode(
     match first_arg.as_str() {
         "--cli" => {
             let cli_args: Vec<String> = args.collect();
+            #[cfg(windows)]
+            if let Some(arg) = cli_args.first().filter(|arg| arg.starts_with('/')) {
+                return Ok(AppMode::WindowsService(arg.clone()));
+            }
             if cli_args.len() == 1 && cli_args[0] == "--daemon" {
                 Ok(AppMode::CliDaemon)
             } else {
@@ -51,6 +58,9 @@ pub fn detect_mode(
 
             let has_reboot = remaining.iter().any(|a| a == "reboot");
             let cmd_args: Vec<String> = remaining.into_iter().filter(|a| a != "reboot").collect();
+            if cmd_args.is_empty() {
+                return Err("--exec requires a command".to_string());
+            }
 
             let command = CliCommand::from_args(&cmd_args)
                 .map_err(|e| format!("Invalid --exec command: {}", e))?;
@@ -72,6 +82,112 @@ pub fn detect_mode(
         arg if arg.starts_with('/') => Ok(AppMode::WindowsService(arg.to_string())),
 
         _ => Ok(AppMode::Gui),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn detect(args: &[&str]) -> Result<AppMode, String> {
+        detect_mode("switchboot", &mut args.iter().map(|arg| arg.to_string()))
+    }
+
+    #[test]
+    fn ipc_build_version_is_a_version_not_a_config_path() {
+        use switchboot_lib::build_info::{APP_IDENTIFIER, APP_IDENTIFIER_VERSION, APP_VERSION};
+        assert_eq!(APP_VERSION, env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            APP_IDENTIFIER_VERSION,
+            format!("{APP_IDENTIFIER}-{}", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(!APP_IDENTIFIER_VERSION.contains(['/', '\\']));
+    }
+
+    #[test]
+    fn gui_is_the_default() {
+        assert!(matches!(detect(&[]).unwrap(), AppMode::Gui));
+        assert!(matches!(detect(&["unknown"]).unwrap(), AppMode::Gui));
+    }
+
+    #[test]
+    fn cli_commands_and_daemon_are_preserved() {
+        assert!(matches!(
+            detect(&["--cli", "--daemon"]).unwrap(),
+            AppMode::CliDaemon
+        ));
+        let AppMode::CliCommand(args) = detect(&["--cli", "get-boot-entries"]).unwrap() else {
+            panic!("expected CLI command");
+        };
+        assert_eq!(args, ["get-boot-entries"]);
+    }
+
+    #[test]
+    fn shortcuts_parse_without_executing() {
+        for (args, expected_reboot) in [
+            (vec!["--exec", "set-boot-next", "42"], false),
+            (vec!["--exec", "set-boot-next", "42", "reboot"], true),
+        ] {
+            assert!(matches!(detect(&args).unwrap(), AppMode::Exec {
+                command: CliCommand::SetBootNext(42), should_reboot
+            } if should_reboot == expected_reboot));
+        }
+        assert!(matches!(
+            detect(&["--exec", "set-boot-fw", "reboot"]).unwrap(),
+            AppMode::Exec {
+                command: CliCommand::SetBootFirmware,
+                should_reboot: true
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_exec_arguments_return_errors() {
+        for args in [
+            vec!["--exec"],
+            vec!["--exec", "reboot"],
+            vec!["--exec", "set-boot-next"],
+            vec!["--exec", "set-boot-next", "65536"],
+            vec!["--exec", "get-boot-order"],
+            vec!["--exec", "unknown"],
+        ] {
+            assert!(detect(&args).is_err(), "unexpected success for {args:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_service_routes_work_with_and_without_cli_prefix() {
+        for service_arg in [
+            "/service_connector",
+            "/pipe_server",
+            "/pipe_server_test",
+            "/elevated_connector",
+            "/service_manager",
+            "/install_service",
+            "/uninstall_service",
+        ] {
+            for args in [vec![service_arg], vec!["--cli", service_arg]] {
+                assert!(
+                    matches!(detect(&args).unwrap(), AppMode::WindowsService(arg) if arg == service_arg)
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_symlink_routes_commands_and_daemon() {
+        let mut args = ["get-boot-entries".to_string()].into_iter();
+        assert!(
+            matches!(detect_mode("/usr/bin/switchboot-cli", &mut args).unwrap(),
+            AppMode::CliCommand(args) if args == ["get-boot-entries"])
+        );
+        let mut args = ["--daemon".to_string()].into_iter();
+        assert!(matches!(
+            detect_mode("/usr/bin/switchboot-cli", &mut args).unwrap(),
+            AppMode::CliDaemon
+        ));
     }
 }
 

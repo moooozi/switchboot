@@ -67,7 +67,8 @@ fn generate_build_info() -> Result<(), String> {
         .get("productName")
         .and_then(|s| s.as_str())
         .unwrap_or("Unknown");
-    let version = v.get("version").and_then(|s| s.as_str()).unwrap_or("0.0.0");
+    // Tauri's version field can be a package.json path, not a version string.
+    let version = std::env::var("CARGO_PKG_VERSION").map_err(|e| e.to_string())?;
 
     let out_dir = std::env::var_os("OUT_DIR").ok_or_else(|| "OUT_DIR not set".to_string())?;
     let dest_path = Path::new(&out_dir).join("app_build_info.rs");
@@ -100,5 +101,9 @@ fn generate_build_info() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     println!("cargo:rerun-if-changed={}", tauri_conf_path.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        Path::new(&manifest_dir).join("../package.json").display()
+    );
     Ok(())
 }
