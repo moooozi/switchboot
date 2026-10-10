@@ -38,6 +38,25 @@ use windows::{
     core::{Interface, PCWSTR},
 };
 
+struct ComApartment;
+
+impl ComApartment {
+    fn initialize() -> Result<Self, String> {
+        let result =
+            unsafe { CoInitializeEx(Some(std::ptr::null_mut()), COINIT_APARTMENTTHREADED) };
+        if result.is_err() {
+            return Err(format!("CoInitializeEx failed: {result:?}"));
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        unsafe { CoUninitialize() };
+    }
+}
+
 fn to_wide<S: AsRef<std::ffi::OsStr>>(s: S) -> Vec<u16> {
     std::ffi::OsStr::new(s.as_ref())
         .encode_wide()
@@ -70,10 +89,7 @@ pub fn create_shortcut_on_desktop(
     use windows::Win32::UI::Shell::{FOLDERID_Desktop, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
 
     unsafe {
-        let hr = CoInitializeEx(Some(std::ptr::null_mut()), COINIT_APARTMENTTHREADED);
-        if hr.is_err() {
-            return Err(format!("CoInitializeEx failed: {hr:?}"));
-        }
+        let _apartment = ComApartment::initialize()?;
 
         let desktop_ptr = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)
             .map_err(|_| "Could not get Desktop directory".to_string())?;
@@ -91,7 +107,7 @@ pub fn create_shortcut_on_desktop(
 
         windows::Win32::System::Com::CoTaskMemFree(Some(desktop_ptr.0 as _));
 
-        let mut shortcut_path = PathBuf::from(desktop);
+        let mut shortcut_path = desktop;
         shortcut_path.push(format!("{}.lnk", sanitize_filename(shortcut_name)));
 
         let mut args = match action {
@@ -185,9 +201,32 @@ pub fn create_shortcut_on_desktop(
         persist_file
             .Save(PCWSTR::from_raw(to_wide(shortcut_path).as_ptr()), true)
             .map_err(|e| format!("Failed to save shortcut: {e}"))?;
-
-        CoUninitialize();
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn com_apartment_is_released_on_error() {
+        std::thread::spawn(|| {
+            let fail = || -> Result<(), String> {
+                let _apartment = ComApartment::initialize()?;
+                Err("fixture failure".to_string())
+            };
+            assert_eq!(fail().unwrap_err(), "fixture failure");
+            unsafe {
+                // Changing apartment models succeeds only if our STA was released.
+                CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED)
+                    .ok()
+                    .unwrap();
+                CoUninitialize();
+            }
+        })
+        .join()
+        .unwrap();
+    }
 }
