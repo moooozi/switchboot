@@ -1,6 +1,7 @@
 name: Release Pipeline
 
-# Triggered when a signed `vX.Y.Z` tag is pushed (created by `pnpm release`).
+# Triggered when a `vX.Y.Z` tag is pushed (created by `pnpm release`).
+# Tag signing is optional; CI checks ancestry, not the signer's identity.
 # The tag IS the release source of truth — there is no release branch and no
 # tag is (re)created here. The pipeline only builds, signs and opens a DRAFT
 # GitHub release. Publishing that draft (manually) then updates the package
@@ -31,6 +32,12 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Verify tagged commit belongs to main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          bash scripts/verify-release-tag.sh "$GITHUB_REF_NAME"
 
       - name: Verify tag matches committed versions
         id: verify
@@ -141,10 +148,10 @@ jobs:
             echo ""
             echo "## Verification"
             echo ""
-            echo "Each asset is GPG-signed (`.asc` attached to this release) and has build provenance."
+            echo 'Each asset is GPG-signed (`.asc` attached to this release) and has build provenance.'
             echo ""
             echo "- **GPG public key:** https://github.com/moooozi.gpg"
-            echo "- **Verify build provenance:** \`gh attestation verify ${GITHUB_REPOSITORY}@${TAG}\`"
+            echo "- **Verify build provenance:** download an asset from this release, then run \`gh attestation verify <downloaded-asset> --repo ${GITHUB_REPOSITORY}\`."
           } > release_body.md
           echo "=== release body ==="
           cat release_body.md
