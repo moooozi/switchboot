@@ -1,27 +1,51 @@
 //! Native Switchboot UI. Firmware services are supplied by the host through [`Backend`].
+mod drag;
 mod model;
 
 use std::sync::{Arc, Mutex};
 
 use iced::widget::{
-    Column, button, checkbox, column, container, row, scrollable, text, text_input,
+    Column, button, checkbox, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Element, Length, Task};
+use iced::{Element, Length, Subscription, Task};
 pub use model::{Backend, BootTarget, Entry, Shortcut, Snapshot};
-use model::{Change, Model, Operation};
+use model::{Change, DropTarget, Model, Operation};
 
 /// Opens the native window. Run this on the process's main thread.
 pub fn run(backend: Arc<dyn Backend>) -> iced::Result {
-    iced::application(move || App::new(backend.clone()), App::update, App::view)
-        .title("Switchboot")
-        .subscription(|_| iced::keyboard::listen().map(Message::Keyboard))
-        .window(iced::window::Settings {
-            size: iced::Size::new(1000.0, 720.0),
-            min_size: Some(iced::Size::new(800.0, 520.0)),
-            ..iced::window::Settings::default()
-        })
-        .centered()
-        .run()
+    run_application(backend, None)
+}
+
+/// Run with a lightweight activation callback supplied by the process singleton.
+pub fn run_with_events(
+    backend: Arc<dyn Backend>,
+    activation: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> iced::Result {
+    run_application(backend, Some(activation))
+}
+
+fn run_application(
+    backend: Arc<dyn Backend>,
+    activation: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+) -> iced::Result {
+    iced::application(
+        move || {
+            let (mut app, task) = App::new(backend.clone());
+            app.activation = activation.clone();
+            (app, task)
+        },
+        App::update,
+        App::view,
+    )
+    .title("Switchboot")
+    .subscription(App::subscription)
+    .window(iced::window::Settings {
+        size: iced::Size::new(1000.0, 720.0),
+        min_size: Some(iced::Size::new(800.0, 520.0)),
+        ..iced::window::Settings::default()
+    })
+    .centered()
+    .run()
 }
 
 struct App {
@@ -29,6 +53,15 @@ struct App {
     model: Model,
     dialog: Option<Dialog>,
     notice: Option<String>,
+    drag: Option<DragState>,
+    activation: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DragState {
+    entry: u16,
+    target: Option<DropTarget>,
+    scroll_velocity: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +98,13 @@ enum Message {
     ConfirmRestart,
     CancelDialog,
     Keyboard(iced::keyboard::Event),
+    DragStart(u16),
+    DragHover(DropTarget),
+    DragDrop(DropTarget),
+    DragCancel,
+    DragScrollVelocity(f32),
+    DragScrollTick,
+    PollActivation,
 }
 
 fn worker<T: Send + 'static>(
@@ -88,6 +128,8 @@ impl App {
             model: Model::default(),
             dialog: None,
             notice: None,
+            drag: None,
+            activation: None,
         };
         let task = app.load();
         (app, task)
@@ -101,7 +143,7 @@ impl App {
     }
 
     fn operation(&mut self, operation: Operation) -> Task<Message> {
-        if !self.model.begin(operation.clone()) {
+        if self.drag.is_some() || !self.model.begin(operation.clone()) {
             return Task::none();
         }
         self.notice = None;
@@ -112,8 +154,95 @@ impl App {
         )
     }
 
+    fn subscription(&self) -> Subscription<Message> {
+        let mut subscriptions = vec![
+            iced::keyboard::listen().map(Message::Keyboard),
+            iced::event::listen_with(|event, status, _| match event {
+                iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                    iced::mouse::Button::Left,
+                )) if status == iced::event::Status::Ignored => Some(Message::DragCancel),
+                iced::Event::Mouse(
+                    iced::mouse::Event::CursorLeft
+                    | iced::mouse::Event::ButtonPressed(iced::mouse::Button::Right),
+                )
+                | iced::Event::Window(iced::window::Event::Unfocused)
+                | iced::Event::Touch(
+                    iced::touch::Event::FingerLost { .. } | iced::touch::Event::FingerLifted { .. },
+                ) => Some(Message::DragCancel),
+                _ => None,
+            }),
+        ];
+        if self.activation.is_some() {
+            subscriptions.push(
+                iced::time::every(std::time::Duration::from_millis(150))
+                    .map(|_| Message::PollActivation),
+            );
+        }
+        if self.drag.is_some_and(|drag| drag.scroll_velocity != 0.0) {
+            subscriptions.push(
+                iced::time::every(std::time::Duration::from_millis(32))
+                    .map(|_| Message::DragScrollTick),
+            );
+        }
+        Subscription::batch(subscriptions)
+    }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::PollActivation => {
+                if self.activation.as_ref().is_some_and(|poll| poll()) {
+                    return iced::window::oldest().then(|window| match window {
+                        Some(id) => {
+                            iced::window::minimize(id, false).chain(iced::window::gain_focus(id))
+                        }
+                        None => Task::none(),
+                    });
+                }
+            }
+            Message::DragCancel => self.drag = None,
+            Message::DragScrollVelocity(velocity) => {
+                if let Some(drag) = &mut self.drag {
+                    drag.scroll_velocity = velocity;
+                }
+            }
+            Message::DragScrollTick => {
+                if let Some(drag) = self.drag
+                    && !self.model.busy()
+                    && drag.scroll_velocity != 0.0
+                {
+                    return iced::widget::operation::scroll_by(
+                        "boot-entries",
+                        iced::widget::operation::AbsoluteOffset {
+                            x: 0.0,
+                            y: drag.scroll_velocity,
+                        },
+                    );
+                }
+            }
+            Message::DragStart(entry)
+                if !self.model.busy()
+                    && self.dialog.is_none()
+                    && self.drag.is_none()
+                    && self.model.entries.contains_key(&entry) =>
+            {
+                self.drag = Some(DragState {
+                    entry,
+                    target: None,
+                    scroll_velocity: 0.0,
+                });
+            }
+            Message::DragHover(target) if !self.model.busy() && self.dialog.is_none() => {
+                if let Some(drag) = &mut self.drag {
+                    drag.target = Some(target);
+                }
+            }
+            Message::DragDrop(target) => {
+                if let Some(drag) = self.drag.take()
+                    && self.dialog.is_none()
+                {
+                    self.model.drop_entry(drag.entry, target);
+                }
+            }
             Message::Loaded(result) => {
                 self.model.loading = false;
                 match result.and_then(|snapshot| self.model.initialize(snapshot)) {
@@ -158,6 +287,7 @@ impl App {
             }
             Message::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
+                    self.drag = None;
                     return self.update(Message::CancelDialog);
                 }
                 if self.dialog.is_none()
@@ -181,7 +311,8 @@ impl App {
                     && self.model.pending.is_none()
                     && !self.model.discovering
                     && !self.model.changed()
-                    && self.dialog.is_none() =>
+                    && self.dialog.is_none()
+                    && self.drag.is_none() =>
             {
                 return self.load();
             }
@@ -221,57 +352,59 @@ impl App {
                 self.dialog = None;
                 return self.operation(Operation::Restart);
             }
-            message if !self.model.busy() && self.dialog.is_none() => match message {
-                Message::Move(id, direction) => self.model.move_entry(id, direction),
-                Message::MakeDefault(id) => self.model.make_default(id),
-                Message::Include(id) => self.model.include(id),
-                Message::Exclude(id) => self.model.exclude(id),
-                Message::Discard => self.model.record_order(self.model.baseline.clone()),
-                Message::Save if self.model.changed() => {
-                    return self.operation(Operation::Save(self.model.order.clone()));
+            message if !self.model.busy() && self.dialog.is_none() && self.drag.is_none() => {
+                match message {
+                    Message::Move(id, direction) => self.model.move_entry(id, direction),
+                    Message::MakeDefault(id) => self.model.make_default(id),
+                    Message::Include(id) => self.model.include(id),
+                    Message::Exclude(id) => self.model.exclude(id),
+                    Message::Discard => self.model.record_order(self.model.baseline.clone()),
+                    Message::Save if self.model.changed() => {
+                        return self.operation(Operation::Save(self.model.order.clone()));
+                    }
+                    Message::Undo if self.model.cursor > 0 => {
+                        let change = self.model.history[self.model.cursor - 1].clone();
+                        return self.operation(Operation::Undo(change));
+                    }
+                    Message::Redo if self.model.cursor < self.model.history.len() => {
+                        let change = self.model.history[self.model.cursor].clone();
+                        return self.operation(Operation::Redo(change));
+                    }
+                    Message::BootNext(next)
+                        if next != self.model.boot_next
+                            && next.is_none_or(|id| self.model.entries.contains_key(&id)) =>
+                    {
+                        return self.operation(Operation::Change(Change::BootNext {
+                            before: self.model.boot_next,
+                            after: next,
+                        }));
+                    }
+                    Message::Firmware(after) if after != self.model.firmware_setup => {
+                        return self.operation(Operation::Change(Change::Firmware {
+                            before: self.model.firmware_setup,
+                            after,
+                        }));
+                    }
+                    Message::OpenShortcut(target) if !self.model.portable => {
+                        let description = match target {
+                            BootTarget::Entry(id) => self
+                                .model
+                                .entries
+                                .get(&id)
+                                .map(|entry| entry.description.as_str())
+                                .unwrap_or("boot entry"),
+                            BootTarget::FirmwareSetup => "EFI Firmware Setup",
+                        };
+                        self.dialog = Some(Dialog::Shortcut {
+                            target,
+                            name: format!("Reboot to {description}"),
+                            reboot: true,
+                        });
+                    }
+                    Message::RequestRestart => self.dialog = Some(Dialog::Restart),
+                    _ => {}
                 }
-                Message::Undo if self.model.cursor > 0 => {
-                    let change = self.model.history[self.model.cursor - 1].clone();
-                    return self.operation(Operation::Undo(change));
-                }
-                Message::Redo if self.model.cursor < self.model.history.len() => {
-                    let change = self.model.history[self.model.cursor].clone();
-                    return self.operation(Operation::Redo(change));
-                }
-                Message::BootNext(next)
-                    if next != self.model.boot_next
-                        && next.is_none_or(|id| self.model.entries.contains_key(&id)) =>
-                {
-                    return self.operation(Operation::Change(Change::BootNext {
-                        before: self.model.boot_next,
-                        after: next,
-                    }));
-                }
-                Message::Firmware(after) if after != self.model.firmware_setup => {
-                    return self.operation(Operation::Change(Change::Firmware {
-                        before: self.model.firmware_setup,
-                        after,
-                    }));
-                }
-                Message::OpenShortcut(target) if !self.model.portable => {
-                    let description = match target {
-                        BootTarget::Entry(id) => self
-                            .model
-                            .entries
-                            .get(&id)
-                            .map(|entry| entry.description.as_str())
-                            .unwrap_or("boot entry"),
-                        BootTarget::FirmwareSetup => "EFI Firmware Setup",
-                    };
-                    self.dialog = Some(Dialog::Shortcut {
-                        target,
-                        name: format!("Reboot to {description}"),
-                        reboot: true,
-                    });
-                }
-                Message::RequestRestart => self.dialog = Some(Dialog::Restart),
-                _ => {}
-            },
+            }
             _ => {}
         }
         Task::none()
@@ -326,7 +459,7 @@ impl App {
     }
 
     fn entry_view(&self, entry: &Entry, position: Option<usize>) -> Element<'_, Message> {
-        let enabled = !self.model.busy() && self.dialog.is_none();
+        let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
         let mut badges = String::new();
         if self.model.current == Some(entry.id) {
             badges.push_str("   Current");
@@ -340,7 +473,14 @@ impl App {
         let prefix = position
             .map(|index| format!("{}. ", index + 1))
             .unwrap_or_default();
+        let mut handle = mouse_area(text("⠿").size(24));
+        if enabled && (position.is_none() || self.model.order.len() > 1) {
+            handle = handle
+                .on_press(Message::DragStart(entry.id))
+                .interaction(iced::mouse::Interaction::Grab);
+        }
         let title = row![
+            handle,
             os_icon(self.icon_id(BootTarget::Entry(entry.id))),
             text(format!("{prefix}{}", entry.description)).size(19),
             text(badges).size(14)
@@ -393,15 +533,25 @@ impl App {
                 enabled,
             ));
         }
-        container(column![title, actions].spacing(10))
+        let card: Element<'_, Message> = container(column![title, actions].spacing(10))
             .padding(14)
             .width(Length::Fill)
             .style(container::rounded_box)
-            .into()
+            .into();
+        if position.is_some() {
+            drag::zone(
+                card,
+                drag::Zone::Row(entry.id),
+                self.drag.is_some() && !self.model.busy(),
+                self.drag.and_then(|state| state.target),
+            )
+        } else {
+            card
+        }
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let enabled = !self.model.busy() && self.dialog.is_none();
+        let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
         let undo = self
             .model
             .history
@@ -445,10 +595,12 @@ impl App {
         } else if self.model.initialized {
             let mut entries = Column::new().spacing(10).push(text("Boot order").size(24));
             entries = entries.push(
-                text(if self.model.changed() {
+                text(if self.drag.is_some() {
+                    "Drop between boot entries or into Other entries. Escape cancels."
+                } else if self.model.changed() {
                     "Unsaved changes. Save to update firmware."
                 } else {
-                    "Move entries to choose the default and fallback order."
+                    "Drag the handle or use Up/Down to choose the default and fallback order."
                 })
                 .size(14),
             );
@@ -457,7 +609,19 @@ impl App {
                     entries = entries.push(self.entry_view(entry, Some(index)));
                 }
             }
-            entries = entries.push(text("Other entries").size(24));
+            let append = container(text("Drop here to add to the end of the boot order").size(13))
+                .padding(12)
+                .width(Length::Fill);
+            // Keep this zone in the layout when idle so beginning a drag does not move rows.
+            entries = entries.push(drag::zone(
+                append,
+                drag::Zone::End,
+                self.drag.is_some() && !self.model.busy(),
+                self.drag.and_then(|state| state.target),
+            ));
+            let mut other_entries = Column::new()
+                .spacing(10)
+                .push(text("Other entries").size(24));
             let firmware = container(
                 column![
                     text("EFI Firmware Setup").size(19),
@@ -484,9 +648,9 @@ impl App {
             .padding(14)
             .width(Length::Fill)
             .style(container::rounded_box);
-            entries = entries.push(firmware);
+            other_entries = other_entries.push(firmware);
             if self.model.discovering {
-                entries = entries.push(text("Discovering other boot entries…"));
+                other_entries = other_entries.push(text("Discovering other boot entries…"));
             }
             let mut others: Vec<_> = self
                 .model
@@ -496,9 +660,24 @@ impl App {
                 .collect();
             others.sort_by_key(|entry| entry.id);
             for entry in others {
-                entries = entries.push(self.entry_view(entry, None));
+                other_entries = other_entries.push(self.entry_view(entry, None));
             }
-            content = content.push(scrollable(entries).height(Length::Fill));
+            let can_remove = self
+                .drag
+                .is_some_and(|state| self.model.order.contains(&state.entry))
+                && self.model.order.len() > 1
+                && !self.model.busy();
+            entries = entries.push(drag::zone(
+                other_entries,
+                drag::Zone::Others,
+                can_remove,
+                self.drag.and_then(|state| state.target),
+            ));
+            content = content.push(drag::viewport(
+                scrollable(entries).id("boot-entries").height(Length::Fill),
+                self.drag.is_some(),
+                self.drag.map_or(0.0, |drag| drag.scroll_velocity),
+            ));
         }
         content = content.push(
             row![
@@ -510,6 +689,7 @@ impl App {
                         && !self.model.discovering
                         && !self.model.changed()
                         && self.dialog.is_none()
+                        && self.drag.is_none()
                 ),
                 self.control("Restart…", Message::RequestRestart, enabled),
                 text("Ctrl+S save · Ctrl+Z undo · Ctrl+Shift+Z redo").size(13),
@@ -720,5 +900,49 @@ mod tests {
         let _ = app.update(Message::Firmware(false));
         assert!(app.model.pending.is_none());
         assert!(app.model.history.is_empty());
+    }
+
+    #[test]
+    fn drag_preview_is_transactional_and_cancel_preserves_draft_and_history() {
+        let mut app = app();
+        let _ = app.update(Message::DragStart(0));
+        let _ = app.update(Message::DragHover(DropTarget::After(1)));
+        assert_eq!(app.model.order, vec![0, 1]);
+        assert!(app.model.history.is_empty());
+        let _ = app.update(Message::Save);
+        let _ = app.update(Message::Move(0, 1));
+        let _ = app.update(Message::BootNext(Some(1)));
+        let _ = app.update(Message::Undo);
+        assert_eq!(app.model.order, vec![0, 1]);
+        assert!(app.model.pending.is_none());
+        let _ = app.update(Message::DragCancel);
+        assert!(app.drag.is_none());
+        assert_eq!(app.model.order, vec![0, 1]);
+        assert!(app.model.history.is_empty());
+    }
+
+    #[test]
+    fn drop_commits_exactly_once_and_never_starts_firmware_operation() {
+        let mut app = app();
+        let _ = app.update(Message::DragStart(0));
+        let _ = app.update(Message::DragDrop(DropTarget::After(1)));
+        let _ = app.update(Message::DragDrop(DropTarget::Before(1)));
+        assert_eq!(app.model.order, vec![1, 0]);
+        assert_eq!(app.model.baseline, vec![0, 1]);
+        assert_eq!(app.model.cursor, 1);
+        assert!(app.model.pending.is_none());
+        assert!(app.drag.is_none());
+    }
+
+    #[test]
+    fn delayed_drop_is_ignored_after_cancel_and_busy_state_rejects_drag() {
+        let mut app = app();
+        let _ = app.update(Message::DragStart(0));
+        let _ = app.update(Message::DragCancel);
+        let _ = app.update(Message::DragDrop(DropTarget::After(1)));
+        assert_eq!(app.model.order, vec![0, 1]);
+        app.model.begin(Operation::Restart);
+        let _ = app.update(Message::DragStart(0));
+        assert!(app.drag.is_none());
     }
 }

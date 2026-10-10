@@ -3,6 +3,7 @@
 
 mod args_parser;
 mod backend;
+mod instance;
 
 use switchboot_core::cli::logic;
 
@@ -14,7 +15,10 @@ use switchboot_core::constants::PIPE_SERVER_WAIT_TIMEOUT;
 fn main() {
     // Demo mode never opens a firmware transport or requests elevation.
     if std::env::args().skip(1).eq(["--demo".to_owned()]) {
-        run_ui(std::sync::Arc::new(switchboot_ui::DemoBackend::default()));
+        run_ui(
+            std::sync::Arc::new(switchboot_ui::DemoBackend::default()),
+            true,
+        );
         return;
     }
     let mut args = std::env::args();
@@ -40,7 +44,7 @@ fn main() {
                 }
             }
 
-            run_ui(std::sync::Arc::new(backend::FirmwareBackend));
+            run_ui(std::sync::Arc::new(backend::FirmwareBackend), false);
         }
 
         args_parser::AppMode::CliDaemon => {
@@ -69,8 +73,16 @@ fn main() {
     }
 }
 
-fn run_ui(backend: std::sync::Arc<dyn switchboot_ui::Backend>) {
-    if let Err(error) = switchboot_ui::run(backend) {
+fn run_ui(backend: std::sync::Arc<dyn switchboot_ui::Backend>, demo: bool) {
+    let owner = match instance::acquire(demo) {
+        Ok(instance::Launch::Primary(owner)) => owner,
+        Ok(instance::Launch::ActivatedExisting) => return,
+        Err(error) => {
+            eprintln!("Failed to initialize GUI ownership: {error}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(error) = switchboot_ui::run_with_events(backend, owner.activation_source()) {
         eprintln!("Failed to start Switchboot: {error}");
         std::process::exit(1);
     }

@@ -22,6 +22,15 @@ pub enum BootTarget {
     FirmwareSetup,
 }
 
+/// A position in the draft boot order, or the unordered discovery catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DropTarget {
+    Before(u16),
+    After(u16),
+    End,
+    Others,
+}
+
 #[derive(Debug, Clone)]
 pub struct Shortcut {
     pub name: String,
@@ -213,6 +222,39 @@ impl Model {
                 .filter(|value| *value != id)
                 .collect(),
         );
+    }
+
+    /// Commit a complete drag as one local, undoable change. No firmware call is made.
+    pub fn drop_entry(&mut self, id: u16, target: DropTarget) {
+        if self.busy() || !self.entries.contains_key(&id) {
+            return;
+        }
+        if matches!(target, DropTarget::Before(anchor) | DropTarget::After(anchor) if anchor == id)
+        {
+            return;
+        }
+        let mut after = self.order.clone();
+        match target {
+            DropTarget::Others => {
+                if after.len() <= 1 {
+                    return;
+                }
+                after.retain(|value| *value != id);
+            }
+            DropTarget::Before(anchor) | DropTarget::After(anchor) => {
+                after.retain(|value| *value != id);
+                let Some(index) = after.iter().position(|value| *value == anchor) else {
+                    return;
+                };
+                let offset = usize::from(matches!(target, DropTarget::After(_)));
+                after.insert(index + offset, id);
+            }
+            DropTarget::End => {
+                after.retain(|value| *value != id);
+                after.push(id);
+            }
+        }
+        self.record_order(after);
     }
 
     pub fn begin(&mut self, operation: Operation) -> bool {
@@ -410,5 +452,63 @@ mod tests {
         assert!(
             matches!(model.history.last(), Some(Change::Order { after, .. }) if after.contains(&2))
         );
+    }
+
+    #[test]
+    fn drag_reorder_is_one_local_change_and_undo_restores_original_order() {
+        let mut model = model();
+        model.include(2);
+        let cursor = model.cursor;
+        model.drop_entry(0, DropTarget::After(2));
+        assert_eq!(model.order, vec![1, 2, 0]);
+        assert_eq!(model.baseline, vec![0, 1]);
+        assert_eq!(model.cursor, cursor + 1);
+        assert!(model.pending.is_none());
+        let change = model.history[model.cursor - 1].clone();
+        model.begin(Operation::Undo(change));
+        model.complete(Ok(()));
+        assert_eq!(model.order, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn cross_zone_drag_adds_at_target_and_removes_without_losing_catalog() {
+        let mut model = model();
+        model.drop_entry(2, DropTarget::Before(0));
+        assert_eq!(model.order, vec![2, 0, 1]);
+        model.drop_entry(0, DropTarget::Others);
+        assert_eq!(model.order, vec![2, 1]);
+        assert!(model.entries.contains_key(&0));
+        assert_eq!(model.cursor, 2);
+        model.drop_entry(0, DropTarget::End);
+        assert_eq!(model.order, vec![2, 1, 0]);
+        assert_eq!(model.cursor, 3);
+    }
+
+    #[test]
+    fn drag_no_ops_and_invalid_targets_do_not_enter_history() {
+        let mut model = model();
+        model.drop_entry(0, DropTarget::Before(0));
+        model.drop_entry(0, DropTarget::After(0));
+        model.drop_entry(1, DropTarget::End);
+        model.drop_entry(0, DropTarget::Before(1));
+        model.drop_entry(2, DropTarget::Others);
+        model.drop_entry(2, DropTarget::Before(65535));
+        model.drop_entry(65535, DropTarget::End);
+        assert_eq!(model.order, vec![0, 1]);
+        assert_eq!(model.cursor, 0);
+    }
+
+    #[test]
+    fn drag_cannot_remove_final_entry_or_modify_during_firmware_operation() {
+        let mut model = model();
+        model.exclude(1);
+        let cursor = model.cursor;
+        model.drop_entry(0, DropTarget::Others);
+        assert_eq!(model.order, vec![0]);
+        assert_eq!(model.cursor, cursor);
+        model.begin(Operation::Restart);
+        model.drop_entry(2, DropTarget::Before(0));
+        assert_eq!(model.order, vec![0]);
+        assert_eq!(model.cursor, cursor);
     }
 }
