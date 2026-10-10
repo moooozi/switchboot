@@ -26,7 +26,7 @@ class BashSelectionTests(unittest.TestCase):
                 git.touch()
                 with self.subTest(directory=directory), patch.object(support, "WINDOWS", True), patch.object(
                         support.shutil, "which", return_value=str(git)) as which:
-                    self.assertEqual(Path(support.find_bash()), bash)
+                    self.assertTrue(Path(support.find_bash()).samefile(bash))
                     which.assert_called_once_with("git")
 
     def test_windows_fails_if_git_bash_is_unavailable(self):
