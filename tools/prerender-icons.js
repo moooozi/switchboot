@@ -41,7 +41,11 @@ function ensureDir(dir) {
 }
 
 function readSvg(file) {
-  return fs.readFileSync(file, "utf8");
+  const svg = fs.readFileSync(file, "utf8");
+  if (!/<svg\b[^>]*>/i.test(svg)) {
+    throw new Error(`Source does not contain an SVG root: ${file}`);
+  }
+  return svg;
 }
 
 function stripSvgWrapper(svg) {
@@ -97,7 +101,7 @@ async function rasterizeBuffers(sharp, svgString, sizes = ICO_SIZES) {
         .png()
         .toBuffer();
     } catch (e) {
-      console.error(`Failed to rasterize at ${s}px:`, e.message || e);
+      throw new Error(`Failed to rasterize at ${s}px`, { cause: e });
     }
   }
   return buffers;
@@ -117,10 +121,7 @@ async function writeHicolorPngs(sharp, svgString, name) {
       fs.writeFileSync(outPath, buf);
       console.log(`Wrote ${path.relative(cwd, outPath)}`);
     } catch (e) {
-      console.error(
-        `Failed to write hicolor PNG ${name} ${s.px}px:`,
-        e.message || e
-      );
+      throw new Error(`Failed to write hicolor PNG ${name} ${s.px}px`, { cause: e });
     }
   }
 }
@@ -131,8 +132,7 @@ async function writeIcoFromBuffers(pngToIco, buffers, name) {
     const prefer = [256, 128, 48, 32, 16];
     const ordered = prefer.map((s) => buffers[s]).filter(Boolean);
     if (ordered.length === 0) {
-      console.warn("No PNG buffers available to build ICO for", name);
-      return;
+      throw new Error(`No PNG buffers available to build ICO for ${name}`);
     }
     const icoBuf = await pngToIco(ordered);
     ensureDir(OUT_ICO_DIR);
@@ -140,7 +140,7 @@ async function writeIcoFromBuffers(pngToIco, buffers, name) {
     fs.writeFileSync(icoPath, icoBuf);
     console.log(`Wrote ${path.relative(cwd, icoPath)}`);
   } catch (e) {
-    console.error("Failed to create ICO for", name, e.message || e);
+    throw new Error(`Failed to create ICO for ${name}`, { cause: e });
   }
 }
 
@@ -198,10 +198,13 @@ async function run() {
   const files = fs
     .readdirSync(STATIC_OS_ICONS)
     .filter((f) => f.endsWith(".svg") && f !== "shortcut-overlay.svg");
+  if (files.length === 0) throw new Error("No source OS icons found");
 
   // dynamic imports
   const sharp = await tryImport("sharp");
-  const pngToIco = await tryImport("png-to-ico");
+  const pngToIco = produceIco ? await tryImport("png-to-ico") : null;
+  if (!sharp) throw new Error("Required dependency sharp could not be loaded");
+  if (produceIco && !pngToIco) throw new Error("Required dependency png-to-ico could not be loaded");
 
   // process generic first
   const genericCandidates = [
@@ -209,6 +212,7 @@ async function run() {
     path.join(cwd, "static", "shortcut-generic.svg"),
   ];
   const genericPath = genericCandidates.find((p) => fs.existsSync(p));
+  if (!genericPath) throw new Error("Required generic shortcut icon is missing");
   if (genericPath) {
     const genericSvg = readSvg(genericPath);
     if (produceLinuxPngs) {
@@ -234,10 +238,7 @@ async function run() {
               .toBuffer();
             buffers.push(buf);
           } catch (e) {
-            console.error(
-              `Failed to rasterize generic at ${s}px:`,
-              e.message || e
-            );
+            throw new Error(`Failed to rasterize generic at ${s}px`, { cause: e });
           }
         }
         if (buffers.length) {
@@ -248,7 +249,7 @@ async function run() {
             fs.writeFileSync(icoPath, icoBuf);
             console.log(`Wrote ${path.relative(cwd, icoPath)}`);
           } catch (e) {
-            console.error("Failed to create generic ICO:", e.message || e);
+            throw new Error("Failed to create generic ICO", { cause: e });
           }
         }
       }
