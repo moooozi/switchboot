@@ -29,6 +29,7 @@ pub fn launch_windows_service_connector() {
 
 fn service_main(_arguments: Vec<OsString>) {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let connector_shutdown_tx = shutdown_tx.clone();
 
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
@@ -84,6 +85,9 @@ fn service_main(_arguments: Vec<OsString>) {
         if let Err(e) = run_elevated_connector_async(Some(shutdown_notify_clone)).await {
             eprintln!("[SERVICE ERROR] Elevated connector failed: {}", e);
         }
+        // A disconnected connector cannot serve another GUI session. Stop so a
+        // later explicit request can start a fresh service/connection pair.
+        let _ = connector_shutdown_tx.send(());
     });
 
     // Report Running to the SCM.
@@ -164,7 +168,7 @@ pub fn run_service_manager() {
     }
 
     eprintln!("[SERVICE_MANAGER] Starting pipe server...");
-    run_unelevated_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false);
+    let pipe_result = run_unelevated_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false);
 
     // Stop the service when the user-facing app (and thus the pipe server) exits.
     eprintln!("[SERVICE_MANAGER] Pipe server exited, stopping service...");
@@ -175,6 +179,10 @@ pub fn run_service_manager() {
         Err(e) => {
             eprintln!("[SERVICE_MANAGER] Warning: Could not stop service: {}", e);
         }
+    }
+    if let Err(error) = pipe_result {
+        eprintln!("[SERVICE_MANAGER ERROR] Pipe server failed: {error}");
+        std::process::exit(1);
     }
 }
 

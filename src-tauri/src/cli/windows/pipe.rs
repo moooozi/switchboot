@@ -2,27 +2,51 @@ use crate::build_info;
 use pipeguard::{NamedPipeClientStruct, NamedPipeServerStruct};
 use std::io::Write;
 
+macro_rules! ipc_debug {
+    ($($args:tt)*) => {
+        if std::env::var_os("SWITCHBOOT_DEBUG_IPC").is_some() {
+            eprintln!($($args)*);
+        }
+    };
+}
+
 pub const PIPE_NAME: &str = build_info::APP_IDENTIFIER_VERSION;
+const COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+struct AbortOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn with_deadline<T>(
+    duration: std::time::Duration,
+    operation: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    tokio::time::timeout(duration, operation)
+        .await
+        .map_err(|_| "IPC operation timed out; command outcome may be unknown".to_string())?
+}
 
 /// User instance: run the pipe server, forwarding stdin commands to the elevated
 /// instance and writing responses to stdout. Blocks until the connection closes.
 #[cfg(windows)]
-pub fn run_unelevated_pipe_server(timeout: Option<u64>, _wait_for_new_client: bool) {
+pub fn run_unelevated_pipe_server(
+    timeout: Option<u64>,
+    _wait_for_new_client: bool,
+) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
-    eprintln!("[PIPE_SERVER] Starting unelevated pipe server...");
-    eprintln!("[PIPE_SERVER] Pipe name: {}", PIPE_NAME);
+    ipc_debug!("[PIPE_SERVER] Starting unelevated pipe server...");
+    ipc_debug!("[PIPE_SERVER] Pipe name: {}", PIPE_NAME);
 
-    if let Err(e) = rt.block_on(run_unelevated_pipe_server_async(timeout)) {
-        eprintln!("[PIPE_SERVER ERROR] Pipe server failed: {}", e);
-        std::process::exit(1);
-    }
-
-    eprintln!("[PIPE_SERVER] Pipe server exited normally");
+    rt.block_on(run_unelevated_pipe_server_async(timeout))
 }
 
 #[cfg(windows)]
-async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), String> {
+async fn run_unelevated_pipe_server_async(timeout: Option<u64>) -> Result<(), String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::sync::mpsc;
 
@@ -30,14 +54,14 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
 
     let mut server = NamedPipeServerStruct::new_encrypted(PIPE_NAME, None);
 
-    eprintln!("[PIPE_SERVER] Pipe server created, waiting for elevated client to connect...");
+    ipc_debug!("[PIPE_SERVER] Pipe server created, waiting for elevated client to connect...");
 
     let server_handle = tokio::spawn(async move {
         server
             .start(move |connection| {
                 let connection_tx = connection_tx.clone();
                 async move {
-                    eprintln!(
+                    ipc_debug!(
                         "[PIPE_SERVER] Elevated client connected with ID: {}",
                         connection.id()
                     );
@@ -51,26 +75,29 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
                     }
 
                     // Keep this handler alive for the connection's lifetime.
-                    tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
+                    std::future::pending::<()>().await;
                     Ok(())
                 }
             })
             .await
     });
 
-    eprintln!("[PIPE_SERVER] Waiting for elevated client connection...");
-    let mut connection = match connection_rx.recv().await {
-        Some(conn) => {
-            eprintln!("[PIPE_SERVER] Elevated client connected successfully");
-            conn
-        }
-        None => {
-            eprintln!("[PIPE_SERVER ERROR] Server closed without accepting connection");
-            return Err("Server closed without accepting connection".to_string());
-        }
+    let _server_guard = AbortOnDrop(server_handle.abort_handle());
+    ipc_debug!("[PIPE_SERVER] Waiting for elevated client connection...");
+    let incoming = async {
+        connection_rx
+            .recv()
+            .await
+            .ok_or_else(|| "Server closed without accepting connection".to_string())
     };
+    let connected = if let Some(seconds) = timeout {
+        with_deadline(std::time::Duration::from_secs(seconds), incoming).await?
+    } else {
+        incoming.await?
+    };
+    let mut connection = connected;
 
-    eprintln!("[PIPE_SERVER] Starting command processing loop");
+    ipc_debug!("[PIPE_SERVER] Starting command processing loop");
 
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
@@ -81,41 +108,46 @@ async fn run_unelevated_pipe_server_async(_timeout: Option<u64>) -> Result<(), S
 
         match reader.read_line(&mut line_buffer).await {
             Ok(0) => {
-                eprintln!("[PIPE_SERVER] EOF on stdin, disconnecting...");
+                ipc_debug!("[PIPE_SERVER] EOF on stdin, disconnecting...");
                 break;
             }
             Ok(n) => {
-                eprintln!("[PIPE_SERVER] Read {} bytes from stdin", n);
+                ipc_debug!("[PIPE_SERVER] Read {} bytes from stdin", n);
                 let line = line_buffer.trim();
                 if line.is_empty() {
-                    eprintln!("[PIPE_SERVER] Empty line, skipping");
+                    ipc_debug!("[PIPE_SERVER] Empty line, skipping");
                     continue;
                 }
 
-                eprintln!("[PIPE_SERVER] Processing command: {}", line);
-                match send_command_and_get_response(&mut connection, line).await {
+                ipc_debug!("[PIPE_SERVER] Processing command: {}", line);
+                match with_deadline(
+                    COMMAND_TIMEOUT,
+                    send_command_and_get_response(&mut connection, line),
+                )
+                .await
+                {
                     Ok(response) => {
-                        eprintln!("[PIPE_SERVER] Received response, outputting to stdout");
-                        let _ = std::io::stdout().write_all(format!("{}\n", response).as_bytes());
+                        ipc_debug!("[PIPE_SERVER] Received response, outputting to stdout");
+                        let mut stdout = std::io::stdout().lock();
+                        writeln!(stdout, "{response}").map_err(|e| e.to_string())?;
+                        stdout.flush().map_err(|e| e.to_string())?;
                     }
                     Err(e) => {
-                        eprintln!("[PIPE_SERVER ERROR] Failed to process command: {}", e);
-                        break;
+                        return Err(format!("Failed to process command: {e}"));
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[PIPE_SERVER ERROR] Failed to read input: {}", e);
-                break;
+                return Err(format!("Failed to read input: {e}"));
             }
         }
     }
 
-    eprintln!("[PIPE_SERVER] Disconnecting and cleaning up");
+    ipc_debug!("[PIPE_SERVER] Disconnecting and cleaning up");
     drop(connection);
     server_handle.abort();
 
-    eprintln!("[PIPE_SERVER] Pipe server stopped");
+    ipc_debug!("[PIPE_SERVER] Pipe server stopped");
     Ok(())
 }
 
@@ -127,18 +159,18 @@ async fn send_command_and_get_response(
     use super::CliCommand;
     use crate::types::CommandResponse;
 
-    eprintln!("[PIPE_SERVER] Parsing JSON args from: {}", line);
+    ipc_debug!("[PIPE_SERVER] Parsing JSON args from: {}", line);
     let args: Vec<String> =
         serde_json::from_str(line).map_err(|e| format!("Invalid JSON input: {}", e))?;
 
-    eprintln!("[PIPE_SERVER] Creating command from args: {:?}", args);
+    ipc_debug!("[PIPE_SERVER] Creating command from args: {:?}", args);
     let command = CliCommand::from_args(&args).map_err(|e| format!("Invalid command: {}", e))?;
 
-    eprintln!("[PIPE_SERVER] Serializing command");
+    ipc_debug!("[PIPE_SERVER] Serializing command");
     let command_bytes =
         bincode::serialize(&command).map_err(|e| format!("Serialization error: {}", e))?;
 
-    eprintln!(
+    ipc_debug!(
         "[PIPE_SERVER] Sending {} bytes to elevated client",
         command_bytes.len()
     );
@@ -147,20 +179,20 @@ async fn send_command_and_get_response(
         .await
         .map_err(|e| format!("Failed to send command: {}", e))?;
 
-    eprintln!("[PIPE_SERVER] Waiting for response from elevated client...");
+    ipc_debug!("[PIPE_SERVER] Waiting for response from elevated client...");
     let response_bytes = connection
         .receive_bytes()
         .await
         .map_err(|e| format!("Failed to receive response: {}", e))?;
 
-    eprintln!(
+    ipc_debug!(
         "[PIPE_SERVER] Received {} bytes response",
         response_bytes.len()
     );
     let response: CommandResponse = bincode::deserialize(&response_bytes)
         .map_err(|e| format!("Failed to deserialize response: {}", e))?;
 
-    eprintln!("[PIPE_SERVER] Response deserialized successfully");
+    ipc_debug!("[PIPE_SERVER] Response deserialized successfully");
     let response_json = serde_json::to_string(&response)
         .map_err(|e| format!("Failed to serialize response to JSON: {}", e))?;
 
@@ -172,15 +204,15 @@ async fn send_command_and_get_response(
 pub fn run_elevated_connector() {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
-    eprintln!("[PIPE_CLIENT] Starting elevated pipe client (connector)...");
-    eprintln!("[PIPE_CLIENT] Pipe name: {}", PIPE_NAME);
+    ipc_debug!("[PIPE_CLIENT] Starting elevated pipe client (connector)...");
+    ipc_debug!("[PIPE_CLIENT] Pipe name: {}", PIPE_NAME);
 
     if let Err(e) = rt.block_on(run_elevated_connector_async(None)) {
         eprintln!("[PIPE_CLIENT ERROR] Elevated connector failed: {}", e);
         std::process::exit(1);
     }
 
-    eprintln!("[PIPE_CLIENT] Elevated connector exited normally");
+    ipc_debug!("[PIPE_CLIENT] Elevated connector exited normally");
 }
 
 /// Connect to the unelevated pipe server and execute commands until the connection
@@ -192,74 +224,76 @@ pub async fn run_elevated_connector_async(
     use super::dispatch_command;
     use crate::types::CommandResponse;
 
-    eprintln!("[PIPE_CLIENT] Creating encrypted client");
+    ipc_debug!("[PIPE_CLIENT] Creating encrypted client");
     let mut client = NamedPipeClientStruct::new_encrypted(PIPE_NAME, None);
     client.enforce_same_path_server(true);
 
-    eprintln!("[PIPE_CLIENT] Attempting to connect to unelevated pipe server...");
+    ipc_debug!("[PIPE_CLIENT] Attempting to connect to unelevated pipe server...");
 
-    // The server may not be ready immediately, so retry the connection.
-    let max_retries = 10;
-    let mut retry_count = 0;
-    loop {
-        match client.connect().await {
-            Ok(_) => {
-                break;
-            }
-            Err(e) => {
-                retry_count += 1;
-                if retry_count >= max_retries {
-                    eprintln!("[PIPE_CLIENT ERROR] Connection failed: {}", e);
-                    return Err(format!("Failed to connect to pipe server: {}", e));
+    // Retry only the connection handshake, never an EFI command.
+    let connect = with_deadline(
+        std::time::Duration::from_secs(crate::constants::SERVICE_START_TIMEOUT),
+        async {
+            loop {
+                if client.connect().await.is_ok() {
+                    return Ok(());
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
+        },
+    );
+    if let Some(ref notify) = shutdown_notify {
+        tokio::select! {
+            result = connect => result?,
+            _ = notify.notified() => return Ok(()),
         }
+    } else {
+        connect.await?;
     }
 
-    eprintln!("[PIPE_CLIENT] Connected successfully to unelevated pipe server");
-    eprintln!("[PIPE_CLIENT] Entering command receive loop...");
+    ipc_debug!("[PIPE_CLIENT] Connected successfully to unelevated pipe server");
+    ipc_debug!("[PIPE_CLIENT] Entering command receive loop...");
 
     loop {
-        eprintln!("[PIPE_CLIENT] Waiting for command from server...");
+        ipc_debug!("[PIPE_CLIENT] Waiting for command from server...");
         let command_bytes = if let Some(ref notify) = shutdown_notify {
             tokio::select! {
                 result = client.receive_bytes() => {
                     match result {
                         Ok(bytes) => {
-                            eprintln!("[PIPE_CLIENT] Received {} bytes from server", bytes.len());
+                            ipc_debug!("[PIPE_CLIENT] Received {} bytes from server", bytes.len());
                             bytes
                         },
                         Err(e) => {
                             // Normal when the user instance exits.
-                            eprintln!("[PIPE_CLIENT] Connection closed: {}", e);
+                            ipc_debug!("[PIPE_CLIENT] Connection closed: {}", e);
                             break;
                         }
                     }
                 }
                 _ = notify.notified() => {
-                    eprintln!("[PIPE_CLIENT] Shutdown signal received, stopping elevated connector...");
+                    ipc_debug!("[PIPE_CLIENT] Shutdown signal received, stopping elevated connector...");
                     break;
                 }
             }
         } else {
             match client.receive_bytes().await {
                 Ok(bytes) => {
-                    eprintln!("[PIPE_CLIENT] Received {} bytes from server", bytes.len());
+                    ipc_debug!("[PIPE_CLIENT] Received {} bytes from server", bytes.len());
                     bytes
                 }
                 Err(e) => {
                     // Normal when the user instance exits.
-                    eprintln!("[PIPE_CLIENT] Connection closed: {}", e);
+                    ipc_debug!("[PIPE_CLIENT] Connection closed: {}", e);
                     break;
                 }
             }
         };
 
-        eprintln!("[PIPE_CLIENT] Deserializing command...");
+        ipc_debug!("[PIPE_CLIENT] Deserializing command...");
         let command = match bincode::deserialize(&command_bytes) {
             Ok(cmd) => {
-                eprintln!("[PIPE_CLIENT] Command deserialized successfully");
+                ipc_debug!("[PIPE_CLIENT] Command deserialized successfully");
                 cmd
             }
             Err(e) => {
@@ -275,15 +309,15 @@ pub async fn run_elevated_connector_async(
             }
         };
 
-        eprintln!("[PIPE_CLIENT] Executing command with elevated privileges...");
+        ipc_debug!("[PIPE_CLIENT] Executing command with elevated privileges...");
 
         let response = dispatch_command(command);
 
-        eprintln!("[PIPE_CLIENT] Command executed, code: {}", response.code);
-        eprintln!("[PIPE_CLIENT] Serializing response...");
+        ipc_debug!("[PIPE_CLIENT] Command executed, code: {}", response.code);
+        ipc_debug!("[PIPE_CLIENT] Serializing response...");
         let response_bytes = match bincode::serialize(&response) {
             Ok(bytes) => {
-                eprintln!("[PIPE_CLIENT] Response serialized: {} bytes", bytes.len());
+                ipc_debug!("[PIPE_CLIENT] Response serialized: {} bytes", bytes.len());
                 bytes
             }
             Err(e) => {
@@ -296,16 +330,42 @@ pub async fn run_elevated_connector_async(
             }
         };
 
-        eprintln!("[PIPE_CLIENT] Sending response back to server...");
+        ipc_debug!("[PIPE_CLIENT] Sending response back to server...");
         if let Err(e) = client.send_bytes(&response_bytes).await {
             eprintln!("[PIPE_CLIENT ERROR] Failed to send response: {}", e);
             break;
         }
 
-        eprintln!("[PIPE_CLIENT] Response sent successfully, ready for next command");
+        ipc_debug!("[PIPE_CLIENT] Response sent successfully, ready for next command");
     }
 
     client.disconnect();
-    eprintln!("[PIPE_CLIENT] Elevated connector disconnected");
+    ipc_debug!("[PIPE_CLIENT] Elevated connector disconnected");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deadlines_bound_pending_operations_and_keep_successes() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let short = std::time::Duration::from_millis(10);
+            let result: Result<(), String> = with_deadline(short, std::future::pending()).await;
+            assert!(result.unwrap_err().contains("timed out"));
+            assert_eq!(with_deadline(short, async { Ok(42) }).await.unwrap(), 42);
+        });
+    }
+
+    #[test]
+    fn server_task_is_aborted_on_early_exit() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let task = tokio::spawn(std::future::pending::<()>());
+            {
+                let _guard = AbortOnDrop(task.abort_handle());
+            }
+            assert!(task.await.unwrap_err().is_cancelled());
+        });
+    }
 }

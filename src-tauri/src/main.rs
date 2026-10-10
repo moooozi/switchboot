@@ -74,10 +74,18 @@ fn run_windows_service(service_arg: &str) {
             windows::service::launch_windows_service_connector();
         }
         "/pipe_server" => {
-            windows::pipe::run_unelevated_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false);
+            if let Err(error) =
+                windows::pipe::run_unelevated_pipe_server(Some(PIPE_SERVER_WAIT_TIMEOUT), false)
+            {
+                eprintln!("Pipe server failed: {error}");
+                std::process::exit(1);
+            }
         }
         "/pipe_server_test" => {
-            windows::pipe::run_unelevated_pipe_server(None, true);
+            if let Err(error) = windows::pipe::run_unelevated_pipe_server(None, true) {
+                eprintln!("Pipe server failed: {error}");
+                std::process::exit(1);
+            }
         }
         "/elevated_connector" => {
             windows::pipe::run_elevated_connector();
