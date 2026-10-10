@@ -14,7 +14,7 @@ on:
         type: string
 
 concurrency:
-  group: windows-build
+  group: windows-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
         uses: pnpm/action-setup@v6
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Remove unwanted Rust targets
         shell: pwsh
@@ -175,8 +175,21 @@ jobs:
       - name: Generate prerendered icons
         run: pnpm icons
 
+      - name: Validate frontend and release tooling
+        run: |
+          pnpm check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/release.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Test native backend
+        run: cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
+
       - name: Build Tauri (release)
-        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
+        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle -- --locked
 
       - name: Gather release binaries to sign
         if: ${{ steps.secrets_check.outputs.have_cert == 'true' }}

@@ -14,7 +14,7 @@ on:
         type: string
 
 concurrency:
-  group: linux-build
+  group: linux-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Install system dependencies
         run: |
@@ -112,8 +112,19 @@ jobs:
           pnpm tauri icon ./app-icon.svg
           pnpm icons
 
+      - name: Validate frontend and release tooling
+        run: |
+          pnpm check
+          node --test scripts/release.test.mjs
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Test native backend
+        run: cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
+
       - name: Build frontend and Tauri (no bundle)
-        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle
+        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle -- --locked
 
       - name: Bundle Tauri (deb & rpm)
         run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
