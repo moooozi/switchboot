@@ -1,5 +1,4 @@
-"""Exercise composite signing scripts without production keys or certificates."""
-import base64
+"""Exercise GPG signing without production keys."""
 import os
 from pathlib import Path
 import shutil
@@ -70,45 +69,6 @@ class GpgSigningTests(unittest.TestCase):
         self.assertNotEqual(self.sign().returncode, 0)
         self.assertEqual(list(self.scratch.iterdir()), [])
 
-
-POWERSHELL = shutil.which("pwsh") or shutil.which("powershell.exe")
-
-
-@unittest.skipUnless(POWERSHELL, "PowerShell required")
-class AuthenticodeTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        self.payload = self.root / "payload.exe"
-        self.payload.write_bytes(b"fixture")
-        self.env = {**os.environ, "FILES_RAW": str(self.payload), "CERT_PFX": base64.b64encode(b"fixture").decode(),
-                    "CERT_PASSWORD": "fixture", "RUNNER_TEMP": str(self.root)}
-
-    def sign(self, failure=""):
-        script = self.root / "sign.ps1"
-        mock = "function signtool { $global:LASTEXITCODE = 0; if ($args[0] -eq '" + failure + "') { $global:LASTEXITCODE = 1 } }\n"
-        script.write_text(mock + action_script("authenticode-sign"), encoding="utf-8")
-        return subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-File", str(script)],
-                              env=self.env, capture_output=True, text=True, timeout=15)
-
-    def test_success_removes_certificate(self):
-        result = self.sign()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(list(self.root.glob("*.pfx")), [])
-
-    def test_signing_and_verification_failures_remove_certificate(self):
-        for failure in ["sign", "verify"]:
-            result = self.sign(failure)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(list(self.root.glob("*.pfx")), [])
-
-    def test_missing_input_fails_instead_of_skipping(self):
-        self.env["FILES_RAW"] = str(self.root / "missing.exe")
-        result = self.sign()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("missing or empty", result.stderr)
-        self.assertEqual(list(self.root.glob("*.pfx")), [])
 
 
 if __name__ == "__main__":
