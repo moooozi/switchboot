@@ -9,7 +9,8 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "switchboot-release-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
-  mkdirSync(join(root, "src-tauri"));
+  mkdirSync(join(root, "src-tauri/src"), { recursive: true });
+  writeFileSync(join(root, "src-tauri/src/lib.rs"), "// fixture\n");
   copyFileSync(new URL("./release.mjs", import.meta.url), join(root, "scripts/release.mjs"));
   writeFileSync(join(root, "package.json"), '{"version":"1.0.0"}\n');
   writeFileSync(join(root, "src-tauri/Cargo.toml"), '[package]\nname = "fixture"\nversion = "1.0.0"\n');
@@ -139,6 +140,42 @@ test("diverged remote main fails before changing files or refs", (t) => {
   assert.equal(git("rev-parse", "HEAD"), head);
   assert.equal(git("status", "--porcelain"), "");
   assert.equal(git("-C", remote, "rev-parse", "refs/heads/main"), divergent);
+});
+
+for (const problem of ["missing local entry", "duplicate local entry", "stale version", "Cargo error"]) {
+  test(`release restores versions after ${problem}`, (t) => {
+    const { root, git, release } = fixture(t);
+    const lockPath = join(root, "src-tauri/Cargo.lock");
+    const originalLock = readFileSync(lockPath, "utf8");
+    if (problem === "missing local entry") writeFileSync(lockPath, originalLock.replace('name = "fixture"', 'name = "other"'));
+    if (problem === "duplicate local entry") writeFileSync(lockPath, originalLock + originalLock.slice(originalLock.indexOf("[[package]]")));
+    if (problem === "stale version") writeFileSync(lockPath, originalLock.replace('version = "1.0.0"', 'version = "0.9.0"'));
+    if (problem === "Cargo error") writeFileSync(join(root, "src-tauri/Cargo.toml"), readFileSync(join(root, "src-tauri/Cargo.toml"), "utf8") + '\n[dependencies\n');
+    git("add", ".");
+    git("commit", "-m", problem);
+    const head = git("rev-parse", "HEAD");
+    const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+    const before = files.map((file) => readFileSync(join(root, file), "utf8"));
+    const result = release("patch", "--no-push", "--no-sign");
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /original version files restored/);
+    assert.deepEqual(files.map((file) => readFileSync(join(root, file), "utf8")), before);
+    assert.equal(git("rev-parse", "HEAD"), head);
+    assert.equal(git("status", "--porcelain"), "");
+    assert.equal(git("tag", "--list"), "");
+  });
+}
+
+test("tag signing failure retains the release commit and provides recovery guidance", (t) => {
+  const { git, release } = fixture(t);
+  git("config", "gpg.program", "nonexistent-switchboot-fixture-gpg");
+  const head = git("rev-parse", "HEAD");
+  const result = release("patch", "--no-push", "--sign");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Release commit retained/);
+  assert.notEqual(git("rev-parse", "HEAD"), head);
+  assert.equal(git("tag", "--list"), "");
+  assert.equal(git("status", "--porcelain"), "");
 });
 
 test("dry-run still rejects invalid releases", (t) => {

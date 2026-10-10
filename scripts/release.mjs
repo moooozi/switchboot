@@ -96,30 +96,31 @@ function readCargoName() {
   if (!m) throw new Error("Could not find [package] name in Cargo.toml");
   return m[1];
 }
-// Keep src-tauri/Cargo.lock in sync with the new package version. Uses
-// `cargo update -p <name> --precise <ver>` when cargo is available (touches only
-// this crate's lock entry), else falls back to a direct patch of the lock.
+// Patch only the unique local package entry; dependency versions remain untouched.
 function syncCargoLock(version) {
-  if (!existsSync(CARGO_LOCK_PATH)) {
-    console.log("  Cargo.lock not found — nothing to sync.");
-    return;
-  }
+  if (!existsSync(CARGO_LOCK_PATH)) throw new Error("Cargo.lock is required for a locked release.");
   const name = readCargoName();
+  const lock = readFileSync(CARGO_LOCK_PATH, "utf8");
+  const entries = [...lock.matchAll(/^\[\[package\]\]\r?\n[\s\S]*?(?=^\[\[package\]\]|$(?![\s\S]))/gm)];
+  const local = entries.filter(([entry]) =>
+    new RegExp(`^name = "${escapeReg(name)}"\\r?$`, "m").test(entry) && !/^source\s*=/m.test(entry));
+  if (local.length !== 1) throw new Error(`Expected exactly one local ${name} entry in Cargo.lock.`);
+  const [entry] = local[0];
+  const versions = [...entry.matchAll(/^version = "([^"]+)"\r?$/gm)];
+  if (versions.length !== 1 || versions[0][1] !== current) {
+    throw new Error(`Local ${name} lock version must match ${current}.`);
+  }
+  const patched = entry.replace(/^(version = ")[^"]+("\r?)$/m, `$1${version}$2`);
+  writeFileSync(CARGO_LOCK_PATH, lock.slice(0, local[0].index) + patched + lock.slice(local[0].index + entry.length));
   try {
     sh("cargo", ["--version"]);
-    run("cargo", ["update", "-p", name, "--precise", version], CARGO_DIR);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    console.warn("Cargo unavailable: validated local lock entry directly; run cargo check --locked before publishing.");
     return;
-  } catch {
-    // cargo unavailable — patch the lock entry directly.
-    let lock = readFileSync(CARGO_LOCK_PATH, "utf8");
-    const re = new RegExp(`(name = "${escapeReg(name)}"\\nversion = ")([^"]+)(")`);
-    const patched = lock.replace(re, `$1${version}$3`);
-    if (patched === lock) {
-      console.warn(`  Warning: could not update ${name} in Cargo.lock. Run 'cargo update -p ${name}' manually.`);
-      return;
-    }
-    writeFileSync(CARGO_LOCK_PATH, patched);
   }
+  // Real Cargo errors are fatal, not a reason to silently fall back.
+  sh("cargo", ["metadata", "--offline", "--locked", "--no-deps", "--format-version", "1"], CARGO_DIR);
 }
 function bumpVersion(v, kind) {
   const [maj, min, pat] = v.split(".").map(Number);
@@ -235,6 +236,13 @@ if (opts.dryRun) {
   process.exit(0);
 }
 
+const addFiles = ["package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+if (sh("git", ["--no-optional-locks", "status", "--porcelain", "--", ...addFiles])) {
+  die("Version files must be clean, even with --no-verify.");
+}
+const originalHead = sh("git", ["rev-parse", "HEAD"]);
+const originals = new Map(addFiles.map((file) => [file, readFileSync(resolve(ROOT, file))]));
+try {
 // --- update files ---
 const pkgJson = JSON.parse(readFileSync(PKG_PATH, "utf8"));
 pkgJson.version = next;
@@ -253,14 +261,21 @@ syncCargoLock(next);
 
 
 // --- commit the version files (package.json, Cargo.toml, Cargo.lock) ---
-const addFiles = ["package.json", "src-tauri/Cargo.toml"];
-if (existsSync(CARGO_LOCK_PATH)) addFiles.push("src-tauri/Cargo.lock");
 run("git", ["add", "--", ...addFiles]);
-
-run("git", ["commit", "-m", commitMessage]);
+run("git", ["commit", "--only", "-m", commitMessage, "--", ...addFiles]);
 
 // --- create a new (signed) annotated tag; never replace an existing tag ---
 run("git", ["tag", sign ? "-s" : "-a", "-m", tagMessage, tag]);
+} catch (error) {
+  if (sh("git", ["rev-parse", "HEAD"]) === originalHead) {
+    for (const [file, contents] of originals) writeFileSync(resolve(ROOT, file), contents);
+    run("git", ["restore", "--staged", "--", ...addFiles]);
+    console.error("Release preparation failed; original version files restored. No release commit was created.");
+  } else {
+    console.error(`Release commit retained. Inspect git status and HEAD, then create the missing ${tag} tag on that commit; do not bump again or replace an existing tag.`);
+  }
+  die(error.message, 1);
+}
 
 console.log(`\nCommitted '${commitMessage}' on '${branch}' and created tag ${tag}.`);
 console.log("(Nothing has been pushed yet.)");
@@ -287,7 +302,12 @@ const tagPush = `git push --atomic origin ${branch} ${tag}`;
 
 if (pushNow) {
   console.log(`\nPushing to origin...`);
-  run("git", ["push", "--atomic", "origin", branch, tag]);
+  try {
+    run("git", ["push", "--atomic", "origin", branch, tag]);
+  } catch (error) {
+    console.error(`Push failed; local commit and tag retained. Check remote refs before retrying: ${tagPush}`);
+    die(error.message, 1);
+  }
 
   const url = originUrl();
   console.log("\nDone. The pipeline will now build and open a DRAFT release:");
