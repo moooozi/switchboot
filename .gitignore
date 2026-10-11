@@ -10,9 +10,6 @@ crates/switchboot_core/icons/
 crates/switchboot_core/icons-linux/
 
 /target/
-/src-tauri/
 
 __pycache__/
 
-# Ignore frontend build artifacts left over from before the native migration.
-/.svelte-kit/
