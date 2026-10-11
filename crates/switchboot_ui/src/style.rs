@@ -40,18 +40,24 @@ pub fn card(highlighted: bool) -> container::Style {
     }
 }
 
+pub fn target_card(current: bool, selected: bool) -> container::Style {
+    let mut style = card(current);
+    if selected {
+        style.border.color = color!(0x00c391);
+    }
+    style
+}
+
 #[derive(Clone, Copy)]
 pub enum Badge {
     Current,
     Default,
-    Next,
 }
 
 pub fn badge(kind: Badge) -> container::Style {
     let (background, text, border) = match kind {
         Badge::Current => (color!(0x4b2068), color!(0xddb3fa), color!(0x9848d8)),
         Badge::Default => (color!(0x183c78), color!(0xa2c8ff), color!(0x518aff)),
-        Badge::Next => (color!(0x444444), color!(0xe3e3e3), color!(0x666666)),
     };
     container::Style {
         background: Some(background.into()),
@@ -107,4 +113,29 @@ pub fn quiet(theme: &Theme, status: Status) -> Style {
         style.background = None;
     }
     style
+}
+
+pub fn undo_next(theme: &Theme, status: Status) -> Style {
+    colored(theme, status, color!(0x00866a), color!(0x00a580))
+}
+
+pub fn restart(theme: &Theme, status: Status) -> Style {
+    colored(theme, status, color!(0xba4c00), color!(0xd45c0a))
+}
+
+fn colored(theme: &Theme, status: Status, base: Color, hover: Color) -> Style {
+    if status == Status::Disabled {
+        return button(theme, status);
+    }
+    Style {
+        background: Some(
+            if status == Status::Hovered {
+                hover
+            } else {
+                base
+            }
+            .into(),
+        ),
+        ..button(theme, status)
+    }
 }
