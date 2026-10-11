@@ -48,8 +48,10 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 - `pnpm release <patch|minor|major|X.Y.Z>` is the version/commit/tag entry point. It synchronizes root `Cargo.toml`, `Cargo.lock` and `package.json`.
 - Releases require a clean tree on `main`. Annotated `vX.Y.Z` tags are immutable; never replace an existing tag. The script asks before atomic branch/tag push (`--dry-run`, `--no-push`, `--yes`, `--sign`, `--no-sign` are supported).
 - Tag push builds Linux/Windows and opens a draft release; publishing it updates APT/RPM repositories through `update-repository.yml`. Preserve metadata validation, restore-before-update, explicit bootstrap and no-downgrade checks.
-- Retain GPG signatures and build provenance. Preserve existing signed updater feed compatibility; the iced UI's automatic updater remains future work.
+- Retain GPG signatures and build provenance. Preserve existing signed updater feed compatibility for previous releases. Prefer platform-native updates; an in-app updater is outside the current migration scope.
 
 ## Migration follow-ups
 
-The first native UI uses Up/Down controls for ordering. Drag-and-drop, single-instance window focusing and automatic update UI still need native implementations. Do not reintroduce Tauri or Svelte to implement them.
+The native UI supports drag-and-drop ordering and moving entries between the boot order and Others, with edge scrolling and Up/Down controls. Drops remain local until Save and create one undoable change. Repeat GUI launches activate the existing per-user window; demo and real GUI ownership are separate, and CLI/service/shortcut modes bypass GUI ownership.
+
+Remaining gates are Linux CI, interactive desktop validation, and owner-authorized device acceptance for UAC/polkit, firmware persistence and installed Windows service lifecycle. See `docs/migration-validation.md`. Keep unattended checks mock/demo-only. Do not reintroduce Tauri or Svelte.

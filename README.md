@@ -65,6 +65,10 @@ Tags are immutable. Failed builds can be rerun on the same tag; source changes r
 
 ## Native migration status
 
-The first iced UI covers the firmware management workflow, order editing, save/discard, bounded undo/redo, SVG OS icons, shortcuts, refresh, restart confirmation, and Ctrl+S / Ctrl+Z / Ctrl+Shift+Z shortcuts. Up/Down controls replace drag-and-drop during this phase.
+The iced UI covers the firmware management workflow, order editing, save/discard, bounded undo/redo, SVG OS icons, shortcuts, refresh, restart confirmation, and Ctrl+S / Ctrl+Z / Ctrl+Shift+Z shortcuts. Drag-and-drop supports reordering and moving entries between the boot order and Others, including edge scrolling. Up/Down controls are also available. Each completed drop is one undoable edit and remains local until Save.
 
-Native drag-and-drop, single-instance window focusing, and the automatic updater UI remain follow-ups. Existing signed updater feed compatibility is retained for previous releases. Native users can install updates through the package manager or download the signed installer.
+Repeat GUI launches activate the existing per-user window. Demo mode uses separate ownership from the real GUI; CLI, service and shortcut operations run independently.
+
+Updates use native distribution paths: Linux package managers and signed Windows installer downloads. An in-app updater is outside the current migration scope. Existing signed updater feed compatibility is retained for previous releases.
+
+Linux CI and interactive/device acceptance remain validation gates. Automated mocks do not establish UAC/polkit behavior, firmware persistence or installed Windows service lifecycle. See [the validation checklist](docs/migration-validation.md) for safe demo checks and owner-authorized device tests.
