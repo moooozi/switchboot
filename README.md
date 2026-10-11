@@ -9,6 +9,10 @@
 
 ## Quick links
 
+Pull requests are checked on Windows and Linux, with unsigned installers, packages
+and binaries available as workflow artifacts. See [PR CI](docs/pr-ci.md) for checks,
+downloads and required branch-rule settings.
+
 - [Latest Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe)
 - [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe) (See [limitations](#portable-limitations))
 - [Set up APT repository (Debian/Ubuntu)](#deb)
