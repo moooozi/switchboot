@@ -1,6 +1,7 @@
 //! Native Switchboot UI. Firmware services are supplied by the host through [`Backend`].
 mod drag;
 mod model;
+mod motion;
 mod style;
 
 use std::sync::{Arc, Mutex};
@@ -547,27 +548,35 @@ impl App {
                 text("Restart").size(size).into()
             };
             row![
-                button(text("Undo").size(size))
-                    .padding(padding)
-                    .style(style::undo_next)
-                    .on_press_maybe(enabled.then_some(Message::UndoNext(target))),
-                button(container(restart_content).center_x(Length::Fill))
-                    .padding(padding)
-                    .style(style::restart)
-                    .width(Length::Fixed(88.0))
-                    .on_press_maybe(enabled.then_some(Message::RequestRestart(target))),
+                motion::button(
+                    button(text("Undo").size(size))
+                        .padding(padding)
+                        .on_press_maybe(enabled.then_some(Message::UndoNext(target))),
+                    enabled,
+                    style::undo_next,
+                ),
+                motion::button(
+                    button(container(restart_content).center_x(Length::Fill))
+                        .padding(padding)
+                        .width(Length::Fixed(88.0))
+                        .on_press_maybe(enabled.then_some(Message::RequestRestart(target))),
+                    enabled,
+                    style::restart,
+                ),
             ]
             .spacing(6)
             .into()
         } else {
-            button(text("BootNext").size(size))
-                .padding(padding)
-                .style(style::button)
-                .on_press_maybe(enabled.then_some(match target {
-                    BootTarget::Entry(id) => Message::BootNext(Some(id)),
-                    BootTarget::FirmwareSetup => Message::Firmware(true),
-                }))
-                .into()
+            motion::button(
+                button(text("BootNext").size(size))
+                    .padding(padding)
+                    .on_press_maybe(enabled.then_some(match target {
+                        BootTarget::Entry(id) => Message::BootNext(Some(id)),
+                        BootTarget::FirmwareSetup => Message::Firmware(true),
+                    })),
+                enabled,
+                style::button,
+            )
         }
     }
 
@@ -578,18 +587,20 @@ impl App {
         message: Message,
         enabled: bool,
     ) -> Element<'a, Message> {
-        button(
-            row![
-                vector_icon(icon, if enabled { "#bcbcbc" } else { "#686868" }, 16),
-                text(label).size(12),
-            ]
-            .spacing(6)
-            .align_y(iced::Alignment::Center),
+        motion::button(
+            button(
+                row![
+                    vector_icon(icon, if enabled { "#bcbcbc" } else { "#686868" }, 16),
+                    text(label).size(12),
+                ]
+                .spacing(6)
+                .align_y(iced::Alignment::Center),
+            )
+            .padding([6, 10])
+            .on_press_maybe(enabled.then_some(message)),
+            enabled,
+            style::button,
         )
-        .padding([6, 10])
-        .style(style::button)
-        .on_press_maybe(enabled.then_some(message))
-        .into()
     }
 
     fn control<'a>(
@@ -604,7 +615,7 @@ impl App {
         if enabled {
             control = control.on_press(message);
         }
-        control.into()
+        motion::button(control, enabled, style::button)
     }
 
     fn icon_control_sized<'a>(
@@ -620,19 +631,20 @@ impl App {
                 .center_x(size)
                 .center_y(size),
         )
-        .padding(0)
-        .style(move |theme, status| {
-            if matches!(icon, "more" | "undo" | "redo" | "refresh") {
-                style::quiet(theme, status)
-            } else {
-                style::button(theme, status)
-            }
-        });
+        .padding(0);
         if enabled {
             control = control.on_press(message);
         }
         iced::widget::tooltip(
-            control,
+            motion::button(
+                control,
+                enabled,
+                if matches!(icon, "more" | "undo" | "redo" | "refresh") {
+                    style::quiet
+                } else {
+                    style::button
+                },
+            ),
             container(text(label.into()).size(13))
                 .padding([6, 10])
                 .style(|_| style::card(false)),
@@ -649,9 +661,11 @@ impl App {
     ) -> Element<'_, Message> {
         let current = self.model.current == Some(entry.id);
         let selected = self.model.boot_next == Some(entry.id);
-        let card = container(self.entry_body(entry, position, density))
-            .width(Length::Fill)
-            .style(move |_| style::target_card(current, selected));
+        let card = motion::card(
+            container(self.entry_body(entry, position, density)).width(Length::Fill),
+            current,
+            selected,
+        );
         if position.is_some() {
             drag::zone(
                 card,
@@ -660,7 +674,7 @@ impl App {
                 self.drag.and_then(|state| state.target),
             )
         } else {
-            card.into()
+            card
         }
     }
 
@@ -778,7 +792,7 @@ impl App {
             ]
             .align_y(iced::Alignment::Center)
         ];
-        if self.entry_actions == Some(target) {
+        {
             let mut actions = row![self.entry_action(
                 "shortcut",
                 "Create shortcut",
@@ -794,12 +808,15 @@ impl App {
                     enabled && index > 0,
                 ));
             }
-            body = body.push(container(actions).padding(iced::Padding {
-                top: 0.0,
-                right: 12.0,
-                bottom: 16.0,
-                left: 12.0,
-            }));
+            body = body.push(motion::reveal(
+                container(actions).padding(iced::Padding {
+                    top: 0.0,
+                    right: 12.0,
+                    bottom: 16.0,
+                    left: 12.0,
+                }),
+                self.entry_actions == Some(target),
+            ));
         }
         body.into()
     }
@@ -831,14 +848,20 @@ impl App {
                     ..Default::default()
                 })
                 .width(Length::Fill),
-            button(text("Save").size(14))
-                .padding([10, 16])
-                .style(style::primary)
-                .on_press_maybe((enabled && self.model.changed()).then_some(Message::Save)),
-            button(text("Discard").size(14))
-                .padding([10, 16])
-                .style(style::button)
-                .on_press_maybe((enabled && self.model.changed()).then_some(Message::Discard)),
+            motion::button(
+                button(text("Save").size(14))
+                    .padding([10, 16])
+                    .on_press_maybe((enabled && self.model.changed()).then_some(Message::Save)),
+                enabled && self.model.changed(),
+                style::primary
+            ),
+            motion::button(
+                button(text("Discard").size(14))
+                    .padding([10, 16])
+                    .on_press_maybe((enabled && self.model.changed()).then_some(Message::Discard)),
+                enabled && self.model.changed(),
+                style::button
+            ),
         ]
         .spacing(density.gap())
         .align_y(iced::Alignment::Center);
@@ -952,23 +975,32 @@ impl App {
                 ]
                 .spacing(density.gap())
                 .align_y(iced::Alignment::Center)
-            ]
-            .spacing(14);
-            if self.entry_actions == Some(BootTarget::FirmwareSetup) {
-                firmware_body = firmware_body.push(
-                    row![self.entry_action(
-                        "shortcut",
-                        "Create shortcut",
-                        Message::OpenShortcut(BootTarget::FirmwareSetup),
-                        enabled && !self.model.portable
-                    ),]
-                    .spacing(6),
-                );
+            ];
+            {
+                firmware_body = firmware_body.push(motion::reveal(
+                    container(
+                        row![self.entry_action(
+                            "shortcut",
+                            "Create shortcut",
+                            Message::OpenShortcut(BootTarget::FirmwareSetup),
+                            enabled && !self.model.portable
+                        ),]
+                        .spacing(6),
+                    )
+                    .padding(iced::Padding {
+                        top: 14.0,
+                        ..Default::default()
+                    }),
+                    self.entry_actions == Some(BootTarget::FirmwareSetup),
+                ));
             }
-            let firmware = container(firmware_body)
-                .padding([16, 12])
-                .width(Length::Fill)
-                .style(|_| style::target_card(false, self.model.firmware_setup));
+            let firmware = motion::card(
+                container(firmware_body)
+                    .padding([16, 12])
+                    .width(Length::Fill),
+                false,
+                self.model.firmware_setup,
+            );
             other_entries = other_entries.push(firmware);
             if self.model.discovering {
                 other_entries = other_entries.push(text("Discovering other boot entries…"));
