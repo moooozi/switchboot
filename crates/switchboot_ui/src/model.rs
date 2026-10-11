@@ -226,26 +226,31 @@ impl Model {
 
     /// Commit a complete drag as one local, undoable change. No firmware call is made.
     pub fn drop_entry(&mut self, id: u16, target: DropTarget) {
+        if let Some(after) = self.preview_drop(id, target) {
+            self.record_order(after);
+        }
+    }
+
+    /// Calculate the displayed drop preview without changing the draft or its history.
+    pub fn preview_drop(&self, id: u16, target: DropTarget) -> Option<Vec<u16>> {
         if self.busy() || !self.entries.contains_key(&id) {
-            return;
+            return None;
         }
         if matches!(target, DropTarget::Before(anchor) | DropTarget::After(anchor) if anchor == id)
         {
-            return;
+            return None;
         }
         let mut after = self.order.clone();
         match target {
             DropTarget::Others => {
                 if after.len() <= 1 {
-                    return;
+                    return None;
                 }
                 after.retain(|value| *value != id);
             }
             DropTarget::Before(anchor) | DropTarget::After(anchor) => {
                 after.retain(|value| *value != id);
-                let Some(index) = after.iter().position(|value| *value == anchor) else {
-                    return;
-                };
+                let index = after.iter().position(|value| *value == anchor)?;
                 let offset = usize::from(matches!(target, DropTarget::After(_)));
                 after.insert(index + offset, id);
             }
@@ -254,7 +259,7 @@ impl Model {
                 after.push(id);
             }
         }
-        self.record_order(after);
+        Some(after)
     }
 
     pub fn begin(&mut self, operation: Operation) -> bool {

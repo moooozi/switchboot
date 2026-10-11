@@ -223,8 +223,17 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         let task = self.update_message(message);
         self.positions
-            .sync(&self.model.order, self.drag.map(|drag| drag.entry));
+            .sync(&self.display_order(), self.drag.map(|drag| drag.entry));
         task
+    }
+
+    fn display_order(&self) -> Vec<u16> {
+        self.drag
+            .and_then(|drag| {
+                drag.target
+                    .and_then(|target| self.model.preview_drop(drag.entry, target))
+            })
+            .unwrap_or_else(|| self.model.order.clone())
     }
 
     fn update_message(&mut self, message: Message) -> Task<Message> {
@@ -681,7 +690,11 @@ impl App {
         if position.is_some() {
             drag::zone(
                 card,
-                drag::Zone::Row(entry.id),
+                if self.drag.is_some_and(|drag| drag.entry == entry.id) {
+                    drag::Zone::Placeholder(entry.id)
+                } else {
+                    drag::Zone::Row(entry.id)
+                },
                 self.drag.is_some() && !self.model.busy(),
                 self.drag.and_then(|state| state.target),
             )
@@ -839,6 +852,7 @@ impl App {
     }
 
     fn view_sized(&self, density: LayoutDensity) -> Element<'_, Message> {
+        let display_order = self.display_order();
         let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
         let undo = self
             .model
@@ -921,14 +935,14 @@ impl App {
         } else if self.model.initialized {
             let mut entries = Column::new()
                 .spacing(12)
-                .push(section_header("Boot Order", self.model.order.len()))
+                .push(section_header("Boot Order", display_order.len()))
                 .push(
                     text("Drag items to reorder or move between sections.")
                         .size(12)
                         .color(style::MUTED),
                 );
             entries = entries.push(
-                iced::widget::keyed_column(self.model.order.iter().enumerate().filter_map(
+                iced::widget::keyed_column(display_order.iter().enumerate().filter_map(
                     |(index, id)| {
                         self.model
                             .entries
@@ -961,7 +975,7 @@ impl App {
                 .model
                 .entries
                 .values()
-                .filter(|entry| !self.model.order.contains(&entry.id))
+                .filter(|entry| !display_order.contains(&entry.id))
                 .count()
                 + 1;
             let mut other_entries = Column::new().spacing(12).push(movement::item(
@@ -1033,7 +1047,7 @@ impl App {
                 .model
                 .entries
                 .values()
-                .filter(|entry| !self.model.order.contains(&entry.id))
+                .filter(|entry| !display_order.contains(&entry.id))
                 .collect();
             others.sort_by_key(|entry| entry.id);
             other_entries = other_entries.push(
@@ -1044,11 +1058,9 @@ impl App {
                 )
                 .spacing(12),
             );
-            let can_remove = self
-                .drag
-                .is_some_and(|state| self.model.order.contains(&state.entry))
-                && self.model.order.len() > 1
-                && !self.model.busy();
+            let can_remove = self.drag.is_some_and(|state| {
+                !self.model.order.contains(&state.entry) || self.model.order.len() > 1
+            }) && !self.model.busy();
             entries = entries.push(drag::zone(
                 other_entries,
                 drag::Zone::Others,
@@ -1495,6 +1507,7 @@ mod tests {
         let _ = app.update(Message::DragStart(0));
         let _ = app.update(Message::DragHover(DropTarget::After(1)));
         assert_eq!(app.model.order, vec![0, 1]);
+        assert_eq!(app.display_order(), vec![1, 0]);
         assert!(app.model.history.is_empty());
         let _ = app.update(Message::Save);
         let _ = app.update(Message::Move(0, 1));
@@ -1505,7 +1518,30 @@ mod tests {
         let _ = app.update(Message::DragCancel);
         assert!(app.drag.is_none());
         assert_eq!(app.model.order, vec![0, 1]);
+        assert_eq!(app.display_order(), vec![0, 1]);
         assert!(app.model.history.is_empty());
+    }
+
+    #[test]
+    fn preview_across_sections_changes_only_the_display_until_drop() {
+        let mut app = app();
+        let _ = app.update(Message::DragStart(0));
+        let _ = app.update(Message::DragHover(DropTarget::Others));
+        assert_eq!(app.display_order(), vec![1]);
+        assert_eq!(app.model.order, vec![0, 1]);
+        assert!(app.model.history.is_empty());
+        let _ = app.update(Message::DragDrop(DropTarget::Others));
+        assert_eq!(app.model.order, vec![1]);
+        assert_eq!(app.model.history.len(), 1);
+        assert!(app.model.pending.is_none());
+
+        let _ = app.update(Message::DragStart(0));
+        let _ = app.update(Message::DragHover(DropTarget::Before(1)));
+        assert_eq!(app.display_order(), vec![0, 1]);
+        assert_eq!(app.model.order, vec![1]);
+        let _ = app.update(Message::DragCancel);
+        assert_eq!(app.display_order(), vec![1]);
+        assert_eq!(app.model.history.len(), 1);
     }
 
     #[test]

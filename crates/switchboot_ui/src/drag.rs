@@ -8,6 +8,7 @@ use crate::{Message, model::DropTarget};
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Zone {
     Row(u16),
+    Placeholder(u16),
     End,
     Others,
 }
@@ -17,6 +18,7 @@ impl Zone {
         match self {
             Self::Row(id) if position.y < bounds.center_y() => DropTarget::Before(id),
             Self::Row(id) => DropTarget::After(id),
+            Self::Placeholder(id) => DropTarget::Before(id),
             Self::End => DropTarget::End,
             Self::Others => DropTarget::Others,
         }
@@ -148,6 +150,19 @@ impl Widget<Message, Theme, Renderer> for DropZone<'_> {
         if !hit_test(hit_bounds, *viewport, position) {
             return;
         }
+        if let Zone::Placeholder(id) = kind {
+            if matches!(
+                event,
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+            ) {
+                // The moving gap retains the last target rather than targeting itself.
+                shell.publish(Message::DragDrop(
+                    self.highlight.unwrap_or(DropTarget::Before(id)),
+                ));
+                shell.capture_event();
+            }
+            return;
+        }
         let target = kind.target(layout.bounds(), position);
         match event {
             Event::Mouse(mouse::Event::CursorMoved { .. })
@@ -191,15 +206,10 @@ impl Widget<Message, Theme, Renderer> for DropZone<'_> {
         else {
             return;
         };
-        let mut bounds = layout.bounds();
-        match target {
-            DropTarget::Before(_) => bounds.height = 3.0,
-            DropTarget::After(_) => {
-                bounds.y += bounds.height - 3.0;
-                bounds.height = 3.0;
-            }
-            DropTarget::End | DropTarget::Others => {}
+        if matches!(target, DropTarget::Before(_) | DropTarget::After(_)) {
+            return;
         }
+        let bounds = layout.bounds();
         let color = crate::style::ACCENT;
         renderer.with_layer(*viewport, |renderer| {
             renderer.fill_quad(
@@ -212,11 +222,7 @@ impl Widget<Message, Theme, Renderer> for DropZone<'_> {
                     },
                     ..renderer::Quad::default()
                 },
-                if matches!(target, DropTarget::Before(_) | DropTarget::After(_)) {
-                    color
-                } else {
-                    Color::TRANSPARENT
-                },
+                Color::TRANSPARENT,
             )
         });
     }
