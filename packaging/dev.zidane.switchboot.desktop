@@ -4,5 +4,6 @@ Name=Switchboot
 Comment=Manage EFI boot entries
 Exec=switchboot
 Icon=switchboot
+StartupWMClass=dev.zidane.switchboot
 Terminal=false
 Categories=System;Settings;

@@ -20,7 +20,7 @@ This checks startup, not rendering quality or interactive behavior.
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --all-targets
-node --test scripts/release.test.mjs scripts/icons.test.mjs
+node --test scripts/release.test.mjs scripts/icons.test.mjs scripts/app-icons.test.mjs
 python -B -m unittest discover -s scripts -p 'test_*.py'
 cargo run -- --demo
 ```

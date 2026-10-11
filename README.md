@@ -6,9 +6,13 @@ Reorder boot entries, choose the default or next boot target, schedule firmware 
 
 ## Development
 
-Install a current stable Rust toolchain, then run:
+Install a current stable Rust toolchain, Node and pnpm. Generate the icon assets
+from the SVG sources before the first Cargo build:
 
 ```sh
+pnpm install --frozen-lockfile
+pnpm icons
+node packaging/generate-app-icons.mjs
 cargo run -- --demo
 ```
 
@@ -45,17 +49,23 @@ cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
 cargo build --locked --release --bin switchboot
 ```
 
-Node and pnpm are optional development tools for icon generation and release preparation:
+Node and pnpm are tooling dependencies for icon generation and release preparation.
+Generated PNGs and ICOs are ignored build artifacts. Repeat generation after
+editing SVG sources; CI generates them before building and packaging:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm icons
 node packaging/generate-app-icons.mjs
-node --test scripts/release.test.mjs scripts/icons.test.mjs
+node --test scripts/release.test.mjs scripts/icons.test.mjs scripts/app-icons.test.mjs
 python -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 Linux release packages are built by `packaging/linux.sh`; Windows installers by `packaging/windows.nsi`. Release workflows use Cargo and native package tools. WebKit, WebView2, Svelte, Vite and Tauri are no longer runtime or build dependencies.
+
+`app-icon.svg` is the source for the app icon. After editing it, run `node packaging/generate-app-icons.mjs` and commit only the SVG source. The generated PNGs and ICO in `crates/switchboot_core/icons` stay local or in CI build output. The native window embeds the 128px PNG; Windows builds embed the ICO and version metadata into the executable. Linux packages install 32, 48, 64, 128, 256 and 512px PNGs and the source SVG in the hicolor theme, plus `dev.zidane.switchboot.desktop`, matching the window's application ID. App and shortcut ICOs use DIB frames at 16, 32 and 48px and PNG frames at 128 and 256px. Cargo builds consume generated app icons; run the generator first on a fresh checkout.
+
+See [tooling evaluation](docs/tooling-evaluation.md) for the Linux CLI symlink and a possible migration from Node tooling to Python.
 
 ## Releases
 

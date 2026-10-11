@@ -1,4 +1,5 @@
 //! Native Switchboot UI. Firmware services are supplied by the host through [`Backend`].
+mod app_icon;
 mod drag;
 mod model;
 mod motion;
@@ -31,6 +32,20 @@ fn run_application(
     backend: Arc<dyn Backend>,
     activation: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 ) -> iced::Result {
+    let window = iced::window::Settings {
+        size: iced::Size::new(650.0, 650.0),
+        min_size: Some(iced::Size::new(500.0, 360.0)),
+        icon: Some(app_icon::window_icon()),
+        ..iced::window::Settings::default()
+    };
+    #[cfg(target_os = "linux")]
+    let window = iced::window::Settings {
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: "dev.zidane.switchboot".into(),
+            ..Default::default()
+        },
+        ..window
+    };
     iced::application(
         move || {
             let (mut app, task) = App::new(backend.clone());
@@ -43,11 +58,7 @@ fn run_application(
     .title("Switchboot")
     .theme(style::theme())
     .subscription(App::subscription)
-    .window(iced::window::Settings {
-        size: iced::Size::new(650.0, 650.0),
-        min_size: Some(iced::Size::new(500.0, 360.0)),
-        ..iced::window::Settings::default()
-    })
+    .window(window)
     .centered()
     .run()
 }

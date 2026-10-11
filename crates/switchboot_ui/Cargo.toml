@@ -8,3 +8,4 @@ publish = false
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "svg", "advanced"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+png = "0.17"

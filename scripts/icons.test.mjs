@@ -27,11 +27,17 @@ test("valid sources produce all required platform icons", async (t) => {
   assert.equal(result.status, 0, result.stderr);
   for (const name of ["fixture", "generic"]) {
     const outputs = process.platform === "linux"
-      ? [32, 128, 512].map((size) => `crates/switchboot_core/icons-linux/hicolor/${size}x${size}/apps/swboot-${name}.png`)
+      ? [32, 48, 64, 128, 256, 512].map((size) => `crates/switchboot_core/icons-linux/hicolor/${size}x${size}/apps/swboot-${name}.png`)
       : [`crates/switchboot_core/resources/icons/ico/${name}.ico`];
     for (const output of outputs) {
       assert.ok(statSync(join(root, output)).size > 0);
-      if (!output.endsWith(".ico")) continue;
+      if (!output.endsWith(".ico")) {
+        const metadata = await sharp(readFileSync(join(root, output))).metadata();
+        const size = Number(output.match(/hicolor\/(\d+)x/)[1]);
+        assert.equal(metadata.width, size);
+        assert.equal(metadata.height, size);
+        continue;
+      }
       const ico = readFileSync(join(root, output));
       assert.equal(ico.readUInt16LE(0), 0);
       assert.equal(ico.readUInt16LE(2), 1);
@@ -48,17 +54,27 @@ test("valid sources produce all required platform icons", async (t) => {
         assert.equal(ico.readUInt16LE(entry + 6), 32);
         const length = ico.readUInt32LE(entry + 8);
         assert.equal(ico.readUInt32LE(entry + 12), offset);
-        const png = ico.subarray(offset, offset + length);
-        assert.equal(png.length, length);
-        assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
-        const { info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
-        assert.equal(info.width, size);
-        assert.equal(info.height, size);
-        assert.equal(info.channels, 4);
+        const frame = ico.subarray(offset, offset + length);
+        assert.equal(frame.length, length);
+        if (size > 48) {
+          assert.equal(frame.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+          const { info } = await sharp(frame).raw().toBuffer({ resolveWithObject: true });
+          assert.equal(info.width, size);
+          assert.equal(info.height, size);
+          assert.equal(info.channels, 4);
+        } else {
+          assert.equal(frame.readUInt32LE(0), 40);
+          assert.equal(frame.readInt32LE(4), size);
+          assert.equal(frame.readInt32LE(8), size * 2);
+          assert.equal(frame.readUInt16LE(14), 32);
+          assert.equal(length, 40 + size * size * 4 + Math.ceil(size / 32) * 4 * size);
+          // The opaque blue fixture must survive RGBA -> bottom-up BGRA conversion.
+          if (name === "generic") assert.deepEqual([...frame.subarray(40, 44)], [255, 0, 0, 255]);
+        }
         offset += length;
       }
       assert.equal(offset, ico.length);
-      assert.ok(ico.length < 353118 / 2, "PNG-backed fixture ICO should be much smaller than uncompressed DIBs");
+      assert.ok(ico.length < 353118 / 2, "Large PNG frames keep ICOs smaller than all-DIB icons");
     }
   }
 });
