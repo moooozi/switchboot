@@ -44,7 +44,7 @@ fn run_application(
     .theme(style::theme())
     .subscription(App::subscription)
     .window(iced::window::Settings {
-        size: iced::Size::new(960.0, 740.0),
+        size: iced::Size::new(650.0, 650.0),
         min_size: Some(iced::Size::new(500.0, 360.0)),
         ..iced::window::Settings::default()
     })
