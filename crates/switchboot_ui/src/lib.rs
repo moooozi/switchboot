@@ -2,6 +2,7 @@
 mod drag;
 mod model;
 mod motion;
+mod movement;
 mod style;
 
 use std::sync::{Arc, Mutex};
@@ -60,6 +61,7 @@ struct App {
     activation: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     entry_actions: Option<BootTarget>,
     restart_confirmation: Option<BootTarget>,
+    positions: movement::Positions,
 }
 
 #[derive(Clone, Copy)]
@@ -157,12 +159,14 @@ impl App {
             activation: None,
             entry_actions: None,
             restart_confirmation: None,
+            positions: movement::Positions::default(),
         };
         let task = app.load();
         (app, task)
     }
 
     fn load(&mut self) -> Task<Message> {
+        self.positions.clear();
         self.entry_actions = None;
         self.model.loading = true;
         self.model.error = None;
@@ -217,6 +221,13 @@ impl App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.update_message(message);
+        self.positions
+            .sync(&self.model.order, self.drag.map(|drag| drag.entry));
+        task
+    }
+
+    fn update_message(&mut self, message: Message) -> Task<Message> {
         // Confirmation belongs to one target and ends when another action is taken.
         if !matches!(
             message,
@@ -666,6 +677,7 @@ impl App {
             current,
             selected,
         );
+        let card = movement::item(card, u32::from(entry.id), &self.positions);
         if position.is_some() {
             drag::zone(
                 card,
@@ -915,11 +927,17 @@ impl App {
                         .size(12)
                         .color(style::MUTED),
                 );
-            for (index, id) in self.model.order.iter().enumerate() {
-                if let Some(entry) = self.model.entries.get(id) {
-                    entries = entries.push(self.entry_view(entry, Some(index), density));
-                }
-            }
+            entries = entries.push(
+                iced::widget::keyed_column(self.model.order.iter().enumerate().filter_map(
+                    |(index, id)| {
+                        self.model
+                            .entries
+                            .get(id)
+                            .map(|entry| (*id, self.entry_view(entry, Some(index), density)))
+                    },
+                ))
+                .spacing(12),
+            );
             let append = container(
                 text(if self.drag.is_some() {
                     "Drop here to add to the end of the boot order"
@@ -946,9 +964,11 @@ impl App {
                 .filter(|entry| !self.model.order.contains(&entry.id))
                 .count()
                 + 1;
-            let mut other_entries = Column::new()
-                .spacing(12)
-                .push(section_header("Others", other_count));
+            let mut other_entries = Column::new().spacing(12).push(movement::item(
+                section_header("Others", other_count),
+                movement::OTHERS_HEADING,
+                &self.positions,
+            ));
             let mut firmware_body = column![
                 row![
                     container(action_icon("firmware", true)).center_x(28),
@@ -1001,7 +1021,11 @@ impl App {
                 false,
                 self.model.firmware_setup,
             );
-            other_entries = other_entries.push(firmware);
+            other_entries = other_entries.push(movement::item(
+                firmware,
+                movement::FIRMWARE,
+                &self.positions,
+            ));
             if self.model.discovering {
                 other_entries = other_entries.push(text("Discovering other boot entries…"));
             }
@@ -1012,9 +1036,14 @@ impl App {
                 .filter(|entry| !self.model.order.contains(&entry.id))
                 .collect();
             others.sort_by_key(|entry| entry.id);
-            for entry in others {
-                other_entries = other_entries.push(self.entry_view(entry, None, density));
-            }
+            other_entries = other_entries.push(
+                iced::widget::keyed_column(
+                    others
+                        .into_iter()
+                        .map(|entry| (entry.id, self.entry_view(entry, None, density))),
+                )
+                .spacing(12),
+            );
             let can_remove = self
                 .drag
                 .is_some_and(|state| self.model.order.contains(&state.entry))
