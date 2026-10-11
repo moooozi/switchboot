@@ -40,6 +40,10 @@ The UI crate exposes a typed backend interface, allowing state tests without fir
 
 ## Build and verify
 
+Pull requests are checked on Windows and Linux, with unsigned installers, packages
+and binaries available as workflow artifacts. See [PR CI](docs/pr-ci.md) for checks,
+downloads and required branch-rule settings.
+
 ```sh
 cargo check --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
