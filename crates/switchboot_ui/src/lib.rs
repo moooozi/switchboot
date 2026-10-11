@@ -1,6 +1,7 @@
 //! Native Switchboot UI. Firmware services are supplied by the host through [`Backend`].
 mod drag;
 mod model;
+mod style;
 
 use std::sync::{Arc, Mutex};
 
@@ -38,9 +39,10 @@ fn run_application(
         App::view,
     )
     .title("Switchboot")
+    .theme(style::theme())
     .subscription(App::subscription)
     .window(iced::window::Settings {
-        size: iced::Size::new(1000.0, 720.0),
+        size: iced::Size::new(960.0, 740.0),
         min_size: Some(iced::Size::new(800.0, 520.0)),
         ..iced::window::Settings::default()
     })
@@ -55,6 +57,7 @@ struct App {
     notice: Option<String>,
     drag: Option<DragState>,
     activation: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    entry_actions: Option<BootTarget>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -105,6 +108,7 @@ enum Message {
     DragScrollVelocity(f32),
     DragScrollTick,
     PollActivation,
+    ToggleEntryActions(BootTarget),
 }
 
 fn worker<T: Send + 'static>(
@@ -130,12 +134,14 @@ impl App {
             notice: None,
             drag: None,
             activation: None,
+            entry_actions: None,
         };
         let task = app.load();
         (app, task)
     }
 
     fn load(&mut self) -> Task<Message> {
+        self.entry_actions = None;
         self.model.loading = true;
         self.model.error = None;
         let backend = self.backend.clone();
@@ -147,6 +153,7 @@ impl App {
             return Task::none();
         }
         self.notice = None;
+        self.entry_actions = None;
         let backend = self.backend.clone();
         worker(
             move || operation.execute(backend.as_ref()),
@@ -225,6 +232,7 @@ impl App {
                     && self.drag.is_none()
                     && self.model.entries.contains_key(&entry) =>
             {
+                self.entry_actions = None;
                 self.drag = Some(DragState {
                     entry,
                     target: None,
@@ -288,6 +296,7 @@ impl App {
             Message::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
                     self.drag = None;
+                    self.entry_actions = None;
                     return self.update(Message::CancelDialog);
                 }
                 if self.dialog.is_none()
@@ -354,6 +363,13 @@ impl App {
             }
             message if !self.model.busy() && self.dialog.is_none() && self.drag.is_none() => {
                 match message {
+                    Message::ToggleEntryActions(target) => {
+                        self.entry_actions = if self.entry_actions == Some(target) {
+                            None
+                        } else {
+                            Some(target)
+                        };
+                    }
                     Message::Move(id, direction) => self.model.move_entry(id, direction),
                     Message::MakeDefault(id) => self.model.make_default(id),
                     Message::Include(id) => self.model.include(id),
@@ -451,93 +467,151 @@ impl App {
         message: Message,
         enabled: bool,
     ) -> Element<'a, Message> {
-        let mut control = button(text(label.into()).size(14)).padding([8, 12]);
+        let mut control = button(text(label.into()).size(14))
+            .padding([9, 16])
+            .style(style::button);
         if enabled {
             control = control.on_press(message);
         }
         control.into()
     }
 
+    fn icon_control<'a>(
+        &self,
+        icon: &'static str,
+        label: impl Into<String>,
+        message: Message,
+        enabled: bool,
+    ) -> Element<'a, Message> {
+        let mut control = button(
+            container(action_icon(icon, enabled))
+                .center_x(38)
+                .center_y(38),
+        )
+        .padding(0)
+        .style(move |theme, status| {
+            if matches!(icon, "more" | "undo" | "redo") {
+                style::quiet(theme, status)
+            } else {
+                style::button(theme, status)
+            }
+        });
+        if enabled {
+            control = control.on_press(message);
+        }
+        iced::widget::tooltip(
+            control,
+            container(text(label.into()).size(13))
+                .padding([6, 10])
+                .style(|_| style::card(false)),
+            iced::widget::tooltip::Position::Bottom,
+        )
+        .into()
+    }
+
     fn entry_view(&self, entry: &Entry, position: Option<usize>) -> Element<'_, Message> {
         let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
-        let mut badges = String::new();
+        let target = BootTarget::Entry(entry.id);
+        let mut badges = row![].spacing(8).align_y(iced::Alignment::Center);
         if self.model.current == Some(entry.id) {
-            badges.push_str("   Current");
+            badges = badges.push(badge("Current", style::Badge::Current));
         }
         if self.model.baseline.first() == Some(&entry.id) {
-            badges.push_str("   Default");
+            badges = badges.push(badge("Default", style::Badge::Default));
         }
         if self.model.boot_next == Some(entry.id) {
-            badges.push_str("   BootNext");
+            badges = badges.push(badge("BootNext", style::Badge::Next));
         }
-        let prefix = position
-            .map(|index| format!("{}. ", index + 1))
-            .unwrap_or_default();
-        let mut handle = mouse_area(text("⠿").size(24));
+        let mut handle = mouse_area(action_icon("grip", enabled));
         if enabled && (position.is_none() || self.model.order.len() > 1) {
             handle = handle
                 .on_press(Message::DragStart(entry.id))
                 .interaction(iced::mouse::Interaction::Grab);
         }
-        let title = row![
-            handle,
-            os_icon(self.icon_id(BootTarget::Entry(entry.id))),
-            text(format!("{prefix}{}", entry.description)).size(19),
-            text(badges).size(14)
-        ]
-        .spacing(8)
-        .align_y(iced::Alignment::Center);
-        let mut actions = row![
-            self.control(
-                if self.model.boot_next == Some(entry.id) {
-                    "Cancel BootNext"
-                } else {
-                    "BootNext"
-                },
-                Message::BootNext(if self.model.boot_next == Some(entry.id) {
-                    None
-                } else {
-                    Some(entry.id)
-                }),
-                enabled
-            ),
-            self.control(
-                "Shortcut",
-                Message::OpenShortcut(BootTarget::Entry(entry.id)),
-                enabled && !self.model.portable
-            ),
-        ]
-        .spacing(8);
+        let mut title = row![handle].spacing(12).align_y(iced::Alignment::Center);
         if let Some(index) = position {
-            actions = actions
-                .push(self.control("Up", Message::Move(entry.id, -1), enabled && index > 0))
-                .push(self.control(
-                    "Down",
+            title = title.push(
+                text(format!("{}.", index + 1))
+                    .size(15)
+                    .color(style::MUTED)
+                    .width(22),
+            );
+        }
+        title = title
+            .push(os_icon(self.icon_id(target)))
+            .push(text(entry.description.clone()).size(19).width(Length::Fill))
+            .push(badges);
+        if let Some(index) = position {
+            title = title
+                .push(self.icon_control(
+                    "up",
+                    "Move up",
+                    Message::Move(entry.id, -1),
+                    enabled && index > 0,
+                ))
+                .push(self.icon_control(
+                    "down",
+                    "Move down",
                     Message::Move(entry.id, 1),
                     enabled && index + 1 < self.model.order.len(),
                 ))
-                .push(self.control(
-                    "Make default",
-                    Message::MakeDefault(entry.id),
-                    enabled && index > 0,
-                ))
-                .push(self.control(
-                    "Remove",
+                .push(self.icon_control(
+                    "remove",
+                    "Remove from boot order",
                     Message::Exclude(entry.id),
                     enabled && self.model.order.len() > 1,
                 ));
         } else {
-            actions = actions.push(self.control(
+            title = title.push(self.icon_control(
+                "add",
                 "Add to boot order",
                 Message::Include(entry.id),
                 enabled,
             ));
         }
-        let card: Element<'_, Message> = container(column![title, actions].spacing(10))
-            .padding(14)
+        title = title.push(self.icon_control(
+            "more",
+            "Entry actions",
+            Message::ToggleEntryActions(target),
+            enabled,
+        ));
+        let mut body = column![title].spacing(14);
+        if self.entry_actions == Some(target) {
+            let mut actions = row![
+                self.control(
+                    if self.model.boot_next == Some(entry.id) {
+                        "Cancel BootNext"
+                    } else {
+                        "Boot next"
+                    },
+                    Message::BootNext(if self.model.boot_next == Some(entry.id) {
+                        None
+                    } else {
+                        Some(entry.id)
+                    }),
+                    enabled,
+                ),
+                self.control(
+                    "Create shortcut",
+                    Message::OpenShortcut(target),
+                    enabled && !self.model.portable
+                ),
+            ]
+            .spacing(8);
+            if let Some(index) = position {
+                actions = actions.push(self.control(
+                    "Make default",
+                    Message::MakeDefault(entry.id),
+                    enabled && index > 0,
+                ));
+            }
+            body = body.push(actions);
+        }
+        let current = self.model.current == Some(entry.id);
+        let card = container(body)
+            .padding([20, 16])
             .width(Length::Fill)
-            .style(container::rounded_box)
-            .into();
+            .style(move |_| style::card(current));
         if position.is_some() {
             drag::zone(
                 card,
@@ -546,7 +620,7 @@ impl App {
                 self.drag.and_then(|state| state.target),
             )
         } else {
-            card
+            card.into()
         }
     }
 
@@ -565,24 +639,47 @@ impl App {
             .map(|change| format!("Redo {}", change.label()))
             .unwrap_or_else(|| "Redo".into());
         let toolbar = row![
-            text("Switchboot").size(32).width(Length::Fill),
-            self.control("Save", Message::Save, enabled && self.model.changed()),
-            self.control("Discard", Message::Discard, enabled && self.model.changed()),
-            self.control(undo, Message::Undo, enabled && self.model.cursor > 0),
-            self.control(
+            text("Switchboot")
+                .size(34)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .width(Length::Fill),
+            button(text("Save").size(16))
+                .padding([13, 28])
+                .style(style::primary)
+                .on_press_maybe((enabled && self.model.changed()).then_some(Message::Save)),
+            button(text("Discard").size(16))
+                .padding([13, 24])
+                .style(style::button)
+                .on_press_maybe((enabled && self.model.changed()).then_some(Message::Discard)),
+            self.icon_control(
+                "undo",
+                undo,
+                Message::Undo,
+                enabled && self.model.cursor > 0
+            ),
+            self.icon_control(
+                "redo",
                 redo,
                 Message::Redo,
                 enabled && self.model.cursor < self.model.history.len()
             ),
         ]
-        .spacing(8)
+        .spacing(12)
         .align_y(iced::Alignment::Center);
-        let mut content = column![toolbar].spacing(16);
+        let mut content = column![toolbar].spacing(24);
         if let Some(error) = &self.model.error {
-            content = content.push(text(error).color(iced::Color::from_rgb(0.85, 0.18, 0.18)));
+            content = content.push(
+                container(text(error).color(style::DANGER).size(14))
+                    .padding(14)
+                    .width(Length::Fill)
+                    .style(|_| style::card(false)),
+            );
         }
         if let Some(notice) = &self.notice {
-            content = content.push(text(notice));
+            content = content.push(text(notice).size(14).color(style::MUTED));
         }
         if self.model.loading {
             content = content.push(text("Reading firmware boot entries…"));
@@ -593,25 +690,37 @@ impl App {
         if let Some(dialog) = &self.dialog {
             content = content.push(self.dialog_view(dialog));
         } else if self.model.initialized {
-            let mut entries = Column::new().spacing(10).push(text("Boot order").size(24));
+            let mut entries = Column::new()
+                .spacing(12)
+                .push(section_header("Boot Order", self.model.order.len()));
             entries = entries.push(
                 text(if self.drag.is_some() {
-                    "Drop between boot entries or into Other entries. Escape cancels."
+                    "Drop between entries or into Others. Escape cancels."
                 } else if self.model.changed() {
                     "Unsaved changes. Save to update firmware."
                 } else {
-                    "Drag the handle or use Up/Down to choose the default and fallback order."
+                    "Drag to reorder, or use the arrows. Changes stay local until Save."
                 })
-                .size(14),
+                .size(13)
+                .color(style::MUTED),
             );
             for (index, id) in self.model.order.iter().enumerate() {
                 if let Some(entry) = self.model.entries.get(id) {
                     entries = entries.push(self.entry_view(entry, Some(index)));
                 }
             }
-            let append = container(text("Drop here to add to the end of the boot order").size(13))
-                .padding(12)
-                .width(Length::Fill);
+            let append = container(
+                text(if self.drag.is_some() {
+                    "Drop here to add to the end of the boot order"
+                } else {
+                    ""
+                })
+                .size(13)
+                .color(style::MUTED),
+            )
+            .height(32)
+            .center_y(32)
+            .width(Length::Fill);
             // Keep this zone in the layout when idle so beginning a drag does not move rows.
             entries = entries.push(drag::zone(
                 append,
@@ -619,35 +728,58 @@ impl App {
                 self.drag.is_some() && !self.model.busy(),
                 self.drag.and_then(|state| state.target),
             ));
+            let other_count = self
+                .model
+                .entries
+                .values()
+                .filter(|entry| !self.model.order.contains(&entry.id))
+                .count()
+                + 1;
             let mut other_entries = Column::new()
-                .spacing(10)
-                .push(text("Other entries").size(24));
-            let firmware = container(
-                column![
-                    text("EFI Firmware Setup").size(19),
-                    row![
-                        self.control(
-                            if self.model.firmware_setup {
-                                "Cancel firmware setup"
-                            } else {
-                                "Boot to firmware setup"
-                            },
-                            Message::Firmware(!self.model.firmware_setup),
-                            enabled
-                        ),
-                        self.control(
-                            "Shortcut",
-                            Message::OpenShortcut(BootTarget::FirmwareSetup),
-                            enabled && !self.model.portable
-                        ),
-                    ]
-                    .spacing(8),
+                .spacing(12)
+                .push(section_header("Others", other_count));
+            let mut firmware_body = column![
+                row![
+                    container(action_icon("firmware", true)).center_x(44),
+                    text("EFI Firmware Setup").size(19).width(Length::Fill),
+                    button(
+                        text(if self.model.firmware_setup {
+                            "Cancel setup"
+                        } else {
+                            "Boot to setup"
+                        })
+                        .size(14)
+                    )
+                    .padding([8, 14])
+                    .style(style::button)
+                    .on_press_maybe(
+                        enabled.then_some(Message::Firmware(!self.model.firmware_setup))
+                    ),
+                    self.icon_control(
+                        "more",
+                        "Firmware actions",
+                        Message::ToggleEntryActions(BootTarget::FirmwareSetup),
+                        enabled
+                    ),
                 ]
-                .spacing(10),
-            )
-            .padding(14)
-            .width(Length::Fill)
-            .style(container::rounded_box);
+                .spacing(12)
+                .align_y(iced::Alignment::Center)
+            ]
+            .spacing(14);
+            if self.entry_actions == Some(BootTarget::FirmwareSetup) {
+                firmware_body = firmware_body.push(
+                    row![self.control(
+                        "Create shortcut",
+                        Message::OpenShortcut(BootTarget::FirmwareSetup),
+                        enabled && !self.model.portable
+                    ),]
+                    .spacing(8),
+                );
+            }
+            let firmware = container(firmware_body)
+                .padding([20, 16])
+                .width(Length::Fill)
+                .style(|_| style::card(false));
             other_entries = other_entries.push(firmware);
             if self.model.discovering {
                 other_entries = other_entries.push(text("Discovering other boot entries…"));
@@ -674,7 +806,12 @@ impl App {
                 self.drag.and_then(|state| state.target),
             ));
             content = content.push(drag::viewport(
-                scrollable(entries).id("boot-entries").height(Length::Fill),
+                scrollable(container(entries).padding(iced::Padding {
+                    right: 16.0,
+                    ..Default::default()
+                }))
+                .id("boot-entries")
+                .height(Length::Fill),
                 self.drag.is_some(),
                 self.drag.map_or(0.0, |drag| drag.scroll_velocity),
             ));
@@ -692,13 +829,16 @@ impl App {
                         && self.drag.is_none()
                 ),
                 self.control("Restart…", Message::RequestRestart, enabled),
-                text("Ctrl+S save · Ctrl+Z undo · Ctrl+Shift+Z redo").size(13),
+                iced::widget::Space::new().width(Length::Fill),
+                text("Ctrl+S save · Ctrl+Z undo")
+                    .size(12)
+                    .color(style::MUTED),
             ]
             .spacing(12)
             .align_y(iced::Alignment::Center),
         );
         container(content)
-            .padding(24)
+            .padding(32)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
@@ -731,9 +871,67 @@ impl App {
         container(body)
             .padding(24)
             .width(Length::Fill)
-            .style(container::rounded_box)
+            .style(|_| style::card(false))
             .into()
     }
+}
+
+fn section_header(title: &str, count: usize) -> Element<'_, Message> {
+    row![
+        text(title)
+            .size(22)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..Default::default()
+            })
+            .width(Length::Fill),
+        text(format!(
+            "{count} {}",
+            if count == 1 { "entry" } else { "entries" }
+        ))
+        .size(14)
+        .color(style::MUTED),
+    ]
+    .align_y(iced::Alignment::Center)
+    .padding([8, 4])
+    .into()
+}
+
+fn badge(label: &'static str, kind: style::Badge) -> Element<'static, Message> {
+    container(text(label).size(12).font(iced::Font {
+        weight: iced::font::Weight::Semibold,
+        ..Default::default()
+    }))
+    .padding([6, 10])
+    .style(move |_| style::badge(kind))
+    .into()
+}
+
+/// Vector controls avoid platform-dependent arrow/ellipsis font glyphs.
+fn action_icon(name: &str, enabled: bool) -> Element<'static, Message> {
+    let path = match name {
+        "up" => "<path d='M12 19V5m-5 5 5-5 5 5'/>",
+        "down" => "<path d='M12 5v14m-5-5 5 5 5-5'/>",
+        "remove" => "<path d='m6 6 12 12M18 6 6 18'/>",
+        "add" => "<path d='M12 5v14M5 12h14'/>",
+        "undo" => "<path d='M8 5 3 10l5 5M3 10h10a7 7 0 0 1 7 7v2'/>",
+        "redo" => "<path d='m16 5 5 5-5 5m5-5H11a7 7 0 0 0-7 7v2'/>",
+        "grip" => {
+            "<path d='M8 6h.01M16 6h.01M8 12h.01M16 12h.01M8 18h.01M16 18h.01' stroke-width='3'/>"
+        }
+        "firmware" => {
+            "<rect x='6' y='6' width='12' height='12' rx='2'/><path d='M9 9h6v6H9zM9 3v3m6-3v3m-6 12v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3'/>"
+        }
+        _ => "<path d='M12 5h.01M12 12h.01M12 19h.01' stroke-width='3'/>",
+    };
+    let color = if enabled { "#bcbcbc" } else { "#686868" };
+    let svg = format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='{color}' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>{path}</svg>"
+    );
+    iced::widget::svg(iced::widget::svg::Handle::from_memory(svg.into_bytes()))
+        .width(20)
+        .height(20)
+        .into()
 }
 
 fn os_icon(icon: &str) -> Element<'static, Message> {
@@ -755,8 +953,8 @@ fn os_icon(icon: &str) -> Element<'static, Message> {
         _ => return text("EFI").size(13).width(32).into(),
     };
     iced::widget::svg(iced::widget::svg::Handle::from_memory(bytes))
-        .width(28)
-        .height(28)
+        .width(34)
+        .height(34)
         .into()
 }
 
@@ -840,6 +1038,35 @@ mod tests {
         app.model.loading = false;
         app.model.initialize(snapshot).unwrap();
         app
+    }
+
+    #[test]
+    fn entry_menus_are_local_and_respect_operation_and_drag_guards() {
+        let mut app = app();
+        let target = BootTarget::Entry(0);
+        let _ = app.update(Message::ToggleEntryActions(target));
+        assert_eq!(app.entry_actions, Some(target));
+        assert_eq!(app.model.order, vec![0, 1]);
+        assert!(app.model.history.is_empty());
+        assert!(app.model.pending.is_none());
+
+        let _ = app.update(Message::BootNext(Some(0)));
+        assert!(app.entry_actions.is_none());
+        let _ = app.update(Message::ToggleEntryActions(BootTarget::FirmwareSetup));
+        assert!(app.entry_actions.is_none());
+        let _ = app.update(Message::Completed(Err("Mock firmware failure".into())));
+        assert_eq!(app.model.boot_next, None);
+        assert!(app.model.history.is_empty());
+
+        let _ = app.update(Message::ToggleEntryActions(target));
+        let _ = app.update(Message::DragStart(0));
+        assert!(app.entry_actions.is_none());
+        let _ = app.update(Message::ToggleEntryActions(target));
+        assert!(app.entry_actions.is_none());
+        let _ = app.update(Message::DragCancel);
+        let _ = app.update(Message::ToggleEntryActions(target));
+        let _ = app.update(Message::ToggleEntryActions(target));
+        assert!(app.entry_actions.is_none());
     }
 
     #[test]

@@ -200,7 +200,7 @@ impl Widget<Message, Theme, Renderer> for DropZone<'_> {
             }
             DropTarget::End | DropTarget::Others => {}
         }
-        let color = Color::from_rgb(0.20, 0.55, 0.95);
+        let color = crate::style::ACCENT;
         renderer.with_layer(*viewport, |renderer| {
             renderer.fill_quad(
                 renderer::Quad {
