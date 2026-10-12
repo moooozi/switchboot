@@ -168,7 +168,7 @@ jobs:
           echo "=== release body ==="
           cat release_body.md
 
-      - name: Create DRAFT GitHub Release
+      - name: Create DRAFT GitHub Release with artifacts
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -176,13 +176,7 @@ jobs:
           body_path: release_body.md
           draft: true
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts to the release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
+          # Create and upload in one draft-only action to prevent automatic publication.
           # Attach packages, GPG detached signatures (.asc) and Tauri updater
           # signatures (.sig). These release assets are the transport used by
           # update-repository.yml when the draft is published.
