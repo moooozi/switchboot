@@ -1,0 +1,129 @@
+name: PR validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare validation logs
+        run: mkdir -p ci-logs
+      - name: Install Linux native build and packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev rpm xvfb
+      - name: Install Windows packaging compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Set up Rust
+        id: rust
+        run: |
+          rustup update stable
+          rustup component add rustfmt clippy
+          echo "version=$(rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pr-cargo-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+      - name: Install tooling dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate icons from SVG sources
+        run: |
+          pnpm icons
+          node packaging/generate-app-icons.mjs
+      - name: Test JavaScript tooling
+        run: node --test scripts/*.test.mjs 2>&1 | tee ci-logs/node-tests.log
+      - name: Test Python tooling and package fixtures
+        env:
+          SWITCHBOOT_REQUIRE_PACKAGING_TESTS: '1'
+        run: python -B -m unittest discover -s scripts -p 'test_*.py' 2>&1 | tee ci-logs/python-tests.log
+      - name: Check and test the native workspace
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings 2>&1 | tee ci-logs/clippy.log
+          cargo test --locked --workspace --all-targets 2>&1 | tee ci-logs/rust-tests.log
+          cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
+          cargo build --locked --release --bin switchboot 2>&1 | tee ci-logs/build.log
+      - name: Linux native demo startup
+        if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          set +e
+          xvfb-run -a timeout --signal=TERM 15s target/release/switchboot --demo > ci-logs/demo-startup.log 2>&1
+          result=$?
+          cat ci-logs/demo-startup.log
+          test "$result" -eq 124
+      - name: Assemble unsigned Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])")
+          bash packaging/linux.sh "$version"
+      - name: Assemble unsigned Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$version" packaging/windows.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Collect binaries and packages
+        run: python scripts/collect-ci-artifacts.py
+      - name: Upload unsigned builds
+        uses: actions/upload-artifact@v7
+        with:
+          name: switchboot-pr-${{ runner.os }}-${{ github.sha }}
+          path: artifacts/ci/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: switchboot-pr-logs-${{ runner.os }}-${{ github.sha }}
+          path: ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7

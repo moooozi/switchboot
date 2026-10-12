@@ -2,6 +2,8 @@
 node_modules
 /build
 /package
+/artifacts/
+/ci-logs/
 .env
 .env.*
 !.env.example

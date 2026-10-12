@@ -56,6 +56,18 @@ class RepositoryReleaseTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertNotEqual(self.validate(raw=raw).returncode, 0)
 
+    def test_release_creation_and_asset_upload_use_one_draft_only_step(self):
+        workflow = (ROOT / ".github/workflows/release-pipeline.yml").read_text(encoding="utf-8")
+        release_steps = [step for step in workflow.split("      - name:")
+                         if "uses: softprops/action-gh-release@" in step]
+        self.assertEqual(len(release_steps), 1)
+        step = release_steps[0]
+        self.assertIn("          draft: true\n", step)
+        self.assertIn("          prerelease: false\n", step)
+        self.assertIn("          files: |\n", step)
+        for asset in ("*.deb", "*.rpm", "*.exe", "*.asc", "update-sig/*.sig"):
+            self.assertIn(f"            artifacts/{asset}\n", step)
+
     def test_workflow_gate_precedes_download_and_deployment_for_all_triggers(self):
         workflow = (ROOT / ".github/workflows/update-repository.yml").read_text(encoding="utf-8")
         gate = workflow.index("      - name: Require a published stable release\n")
