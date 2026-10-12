@@ -62,13 +62,17 @@ class NativePackagingTests(unittest.TestCase):
         png = ROOT / "crates/switchboot_core/icons/128x128.png"
         if not png.exists():
             self.skipTest("Run node packaging/generate-app-icons.mjs first")
-        for size in [32, 48, 64, 128, 256, 512]:
+        for size in [32, 48, 64, 128, 256]:
             shutil.copyfile(ROOT / f"crates/switchboot_core/icons/{size}x{size}.png",
                             self.core / f"icons/{size}x{size}.png")
         shutil.copyfile(ROOT / "app-icon.svg", self.root / "app-icon.svg")
-        icon_dir = self.core / "icons-linux/hicolor/128x128/apps"
-        icon_dir.mkdir(parents=True)
-        shutil.copyfile(png, icon_dir / "swboot-generic.png")
+        for size in [32, 48, 64, 128, 256, 512]:
+            icon_dir = self.core / f"icons-linux/hicolor/{size}x{size}/apps"
+            icon_dir.mkdir(parents=True)
+            shutil.copyfile(png, icon_dir / "dev.zidane.switchboot-generic.png")
+        scalable = self.core / "icons-linux/hicolor/scalable/apps"
+        scalable.mkdir(parents=True)
+        shutil.copyfile(ROOT / "app-icon.svg", scalable / "dev.zidane.switchboot-generic.svg")
         shutil.copytree(ROOT / "crates/switchboot_core/platform/linux/polkit-1",
                         self.core / "platform/linux/polkit-1")
         shutil.copyfile(shutil.which("true"), self.root / "target/release/switchboot")
@@ -84,14 +88,18 @@ class NativePackagingTests(unittest.TestCase):
         executable = extracted / "usr/bin/switchboot"
         self.assertEqual(executable.read_bytes(), (self.root / "target/release/switchboot").read_bytes())
         self.assertEqual(executable.stat().st_mode & 0o777, 0o755)
-        for size in [32, 48, 64, 128, 256, 512]:
-            installed = extracted / f"usr/share/icons/hicolor/{size}x{size}/apps/switchboot.png"
+        for size in [32, 48, 64, 128, 256]:
+            installed = extracted / f"usr/share/icons/hicolor/{size}x{size}/apps/dev.zidane.switchboot.png"
             self.assertEqual(installed.read_bytes(),
                              (self.core / f"icons/{size}x{size}.png").read_bytes())
-        self.assertEqual((extracted / "usr/share/icons/hicolor/scalable/apps/switchboot.svg").read_bytes(),
+        self.assertEqual((extracted / "usr/share/icons/hicolor/scalable/apps/dev.zidane.switchboot.svg").read_bytes(),
                          (ROOT / "app-icon.svg").read_bytes())
+        self.assertEqual((extracted / "usr/share/icons/hicolor/scalable/apps/dev.zidane.switchboot-generic.svg").read_bytes(),
+                         (scalable / "dev.zidane.switchboot-generic.svg").read_bytes())
+        self.assertFalse((extracted / "usr/share/icons/hicolor/512x512").exists())
         desktop = (extracted / "usr/share/applications/dev.zidane.switchboot.desktop").read_text()
         self.assertIn("Exec=switchboot\n", desktop)
+        self.assertIn("Icon=dev.zidane.switchboot\n", desktop)
         policy = ET.parse(extracted / "usr/share/polkit-1/actions/com.switchboot.cli.policy")
         actions = policy.findall("action")
         self.assertEqual(len(actions), 5)
@@ -109,11 +117,13 @@ class NativePackagingTests(unittest.TestCase):
         for name in ["/usr/bin/switchboot", "/usr/bin/switchboot-cli",
                      "/usr/share/applications/dev.zidane.switchboot.desktop",
                      "/usr/share/polkit-1/actions/com.switchboot.cli.policy",
-                     "/usr/share/icons/hicolor/128x128/apps/switchboot.png"]:
+                     "/usr/share/icons/hicolor/128x128/apps/dev.zidane.switchboot.png"]:
             self.assertIn(name, files)
-        for size in [32, 48, 64, 128, 256, 512]:
-            self.assertIn(f"/usr/share/icons/hicolor/{size}x{size}/apps/switchboot.png", files)
-        self.assertIn("/usr/share/icons/hicolor/scalable/apps/switchboot.svg", files)
+        for size in [32, 48, 64, 128, 256]:
+            self.assertIn(f"/usr/share/icons/hicolor/{size}x{size}/apps/dev.zidane.switchboot.png", files)
+        self.assertIn("/usr/share/icons/hicolor/scalable/apps/dev.zidane.switchboot.svg", files)
+        self.assertIn("/usr/share/icons/hicolor/scalable/apps/dev.zidane.switchboot-generic.svg", files)
+        self.assertFalse(any("/512x512/" in name for name in files))
         dump = subprocess.check_output(["rpm", "-qp", "--dump", rpm], text=True)
         cli_line = next(line for line in dump.splitlines() if line.startswith("/usr/bin/switchboot-cli "))
         self.assertEqual(cli_line.split()[-1], "switchboot")

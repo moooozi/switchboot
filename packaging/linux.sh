@@ -13,14 +13,16 @@ install -m755 "$binary" "$stage/root/usr/bin/switchboot"
 ln -s switchboot "$stage/root/usr/bin/switchboot-cli"
 install -m644 packaging/dev.zidane.switchboot.desktop "$stage/root/usr/share/applications/"
 cp -R crates/switchboot_core/platform/linux/polkit-1/. "$stage/root/usr/share/polkit-1/"
-cp -R crates/switchboot_core/icons-linux/hicolor/. "$stage/root/usr/share/icons/hicolor/"
-for size in 32 48 64 128 256 512; do
+for size in 32 48 64 128 256; do
   icon_dir="$stage/root/usr/share/icons/hicolor/${size}x${size}/apps"
   mkdir -p "$icon_dir"
-  install -m644 "crates/switchboot_core/icons/${size}x${size}.png" "$icon_dir/switchboot.png"
+  install -m644 crates/switchboot_core/icons-linux/hicolor/${size}x${size}/apps/dev.zidane.switchboot-*.png "$icon_dir/"
+  install -m644 "crates/switchboot_core/icons/${size}x${size}.png" "$icon_dir/dev.zidane.switchboot.png"
 done
 mkdir -p "$stage/root/usr/share/icons/hicolor/scalable/apps"
-install -m644 app-icon.svg "$stage/root/usr/share/icons/hicolor/scalable/apps/switchboot.svg"
+install -m644 crates/switchboot_core/icons-linux/hicolor/scalable/apps/dev.zidane.switchboot-*.svg "$stage/root/usr/share/icons/hicolor/scalable/apps/"
+install -m644 app-icon.svg "$stage/root/usr/share/icons/hicolor/scalable/apps/dev.zidane.switchboot.svg"
+
 mkdir -p "$stage/root/DEBIAN" target/release/bundle/deb target/release/bundle/rpm
 cat > "$stage/root/DEBIAN/control" <<EOF
 Package: switchboot
@@ -54,7 +56,7 @@ cp -a "$stage/root/." %{buildroot}/
 /usr/share/applications/dev.zidane.switchboot.desktop
 /usr/share/polkit-1/actions/com.switchboot.cli.policy
 /usr/share/icons/hicolor/*/apps/*.png
-/usr/share/icons/hicolor/scalable/apps/switchboot.svg
+/usr/share/icons/hicolor/scalable/apps/*.svg
 EOF
 rpmbuild --define "_topdir $stage/rpm" --define '_build_id_links none' --define '__os_install_post %{nil}' -bb "$stage/rpm/SPECS/switchboot.spec"
 cp "$stage/rpm/RPMS/x86_64/switchboot-${version}-1.x86_64.rpm" target/release/bundle/rpm/

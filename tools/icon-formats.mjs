@@ -1,7 +1,7 @@
 import sharp from "sharp";
 
-// Tauri's desktop sizes plus freedesktop's recommended 48px app icon.
-export const linuxIconSizes = [32, 48, 64, 128, 256, 512];
+// Raster fallbacks for Linux desktops; scalable SVGs cover larger sizes.
+export const linuxIconSizes = [32, 48, 64, 128, 256];
 
 // Small DIB frames for Windows/NSIS, PNG compression for larger frames.
 export async function encodeIco(buffers, sizes) {

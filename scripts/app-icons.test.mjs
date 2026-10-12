@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { test } from "node:test";
 import sharp from "sharp";
 
 const icons = new URL("../crates/switchboot_core/icons/", import.meta.url);
 
 test("Linux app icons cover the agreed desktop sizes with RGBA PNGs", async () => {
-  for (const size of [32, 48, 64, 128, 256, 512]) {
+  for (const size of [32, 48, 64, 128, 256]) {
     const metadata = await sharp(await readFile(new URL(`${size}x${size}.png`, icons))).metadata();
     assert.equal(metadata.format, "png");
     assert.equal(metadata.width, size);
@@ -14,6 +14,10 @@ test("Linux app icons cover the agreed desktop sizes with RGBA PNGs", async () =
     assert.equal(metadata.channels, 4);
     assert.equal(metadata.hasAlpha, true);
   }
+});
+
+test("obsolete 512px app PNG is removed", async () => {
+  await assert.rejects(access(new URL("512x512.png", icons)), { code: "ENOENT" });
 });
 
 test("Windows icon contains small BMP frames and PNG frames above 48px", async () => {
