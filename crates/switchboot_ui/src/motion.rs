@@ -271,10 +271,10 @@ impl Widget<Message, Theme, Renderer> for Motion<'_> {
                 Some((appearance.background, appearance.border, appearance.shadow))
             }
             Kind::Card { current, .. } => {
-                let mut appearance = style::target_card(current, false);
+                let mut appearance = style::target_card(theme, current, false);
                 appearance.border.color = mix(
                     appearance.border.color,
-                    style::target_card(current, true).border.color,
+                    style::target_card(theme, current, true).border.color,
                     progress,
                 );
                 Some((appearance.background, appearance.border, appearance.shadow))
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn relayout_does_not_dim_enabled_buttons_but_preserves_disabled_styling() {
-        let theme = style::theme();
+        let theme = style::theme(false);
         for style in [style::button as ButtonStyle, style::primary, style::restart] {
             assert_eq!(
                 button_appearance(style, &theme, button_widget::Status::Disabled, true).text_color,

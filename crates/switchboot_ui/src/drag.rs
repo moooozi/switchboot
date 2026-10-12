@@ -210,7 +210,7 @@ impl Widget<Message, Theme, Renderer> for DropZone<'_> {
             return;
         }
         let bounds = layout.bounds();
-        let color = crate::style::ACCENT;
+        let color = theme.palette().primary;
         renderer.with_layer(*viewport, |renderer| {
             renderer.fill_quad(
                 renderer::Quad {

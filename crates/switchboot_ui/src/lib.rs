@@ -56,7 +56,7 @@ fn run_application(
         App::view,
     )
     .title("Switchboot")
-    .theme(style::theme())
+    .theme(App::theme)
     .subscription(App::subscription)
     .window(window)
     .centered()
@@ -73,6 +73,7 @@ struct App {
     entry_actions: Option<BootTarget>,
     restart_confirmation: Option<BootTarget>,
     positions: movement::Positions,
+    system_theme: Option<iced::theme::Mode>,
 }
 
 #[derive(Clone, Copy)]
@@ -117,6 +118,7 @@ enum Message {
     Discovered(Result<Vec<Entry>, String>),
     Completed(Result<(), String>),
     Refresh,
+    SystemThemeChanged(iced::theme::Mode),
     Move(u16, isize),
     MakeDefault(u16),
     Include(u16),
@@ -171,8 +173,12 @@ impl App {
             entry_actions: None,
             restart_confirmation: None,
             positions: movement::Positions::default(),
+            system_theme: None,
         };
-        let task = app.load();
+        let task = Task::batch([
+            app.load(),
+            iced::system::theme().map(Message::SystemThemeChanged),
+        ]);
         (app, task)
     }
 
@@ -198,8 +204,14 @@ impl App {
         )
     }
 
+    fn theme(&self) -> Option<iced::Theme> {
+        self.system_theme
+            .map(|mode| style::theme(mode == iced::theme::Mode::Light))
+    }
+
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = vec![
+            iced::system::theme_changes().map(Message::SystemThemeChanged),
             iced::keyboard::listen().map(Message::Keyboard),
             iced::event::listen_with(|event, status, _| match event {
                 iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
@@ -251,11 +263,15 @@ impl App {
         // Confirmation belongs to one target and ends when another action is taken.
         if !matches!(
             message,
-            Message::RequestRestart(_) | Message::PollActivation
+            Message::RequestRestart(_) | Message::PollActivation | Message::SystemThemeChanged(_)
         ) {
             self.restart_confirmation = None;
         }
         match message {
+            Message::SystemThemeChanged(mode) => {
+                self.system_theme = Some(mode);
+                return Task::none();
+            }
             Message::PollActivation => {
                 if self.activation.as_ref().is_some_and(|poll| poll()) {
                     return iced::window::oldest().then(|window| match window {
@@ -515,6 +531,7 @@ impl App {
             ("mac os", "macos"),
             ("darwin", "macos"),
             ("apple", "macos"),
+            ("linpus", "linux"),
             ("linux", "linux"),
             ("gnu", "linux"),
         ]
@@ -569,7 +586,15 @@ impl App {
             let restart_content: Element<'_, Message> = if self.restart_confirmation == Some(target)
             {
                 row![
-                    vector_icon("refresh", if enabled { "#ffffff" } else { "#686868" }, 14),
+                    vector_icon(
+                        "refresh",
+                        if enabled {
+                            style::IconTone::OnColor
+                        } else {
+                            style::IconTone::Disabled
+                        },
+                        14
+                    ),
                     text("Confirm?").size(size),
                 ]
                 .spacing(4)
@@ -621,7 +646,7 @@ impl App {
         motion::button(
             button(
                 row![
-                    vector_icon(icon, if enabled { "#bcbcbc" } else { "#686868" }, 16),
+                    vector_icon(icon, style::IconTone::for_enabled(enabled), 16),
                     text(label).size(12),
                 ]
                 .spacing(6)
@@ -678,7 +703,7 @@ impl App {
             ),
             container(text(label.into()).size(13))
                 .padding([6, 10])
-                .style(|_| style::card(false)),
+                .style(|theme| style::card(theme, false)),
             iced::widget::tooltip::Position::Bottom,
         )
         .into()
@@ -736,11 +761,11 @@ impl App {
             leading = leading.push(
                 text(format!("{}.", index + 1))
                     .size(12)
-                    .color(style::MUTED)
+                    .style(style::muted)
                     .width(16),
             );
         }
-        leading = leading.push(os_icon(self.icon_id(target)));
+        leading = leading.push(os_icon(self.icon_id(target), &entry.description));
         let name = text(entry.description.clone())
             .size(16)
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
@@ -932,10 +957,10 @@ impl App {
         let mut content = column![toolbar].spacing(20);
         if let Some(error) = &self.model.error {
             content = content.push(
-                container(text(error).color(style::DANGER).size(14))
+                container(text(error).style(style::danger).size(14))
                     .padding(14)
                     .width(Length::Fill)
-                    .style(|_| style::card(false)),
+                    .style(|theme| style::card(theme, false)),
             );
         }
         if self.model.loading {
@@ -950,7 +975,7 @@ impl App {
                 .push(
                     text("Drag items to reorder or move between sections.")
                         .size(12)
-                        .color(style::MUTED),
+                        .style(style::muted),
                 );
             entries = entries.push(
                 iced::widget::keyed_column(display_order.iter().enumerate().filter_map(
@@ -970,7 +995,7 @@ impl App {
                     ""
                 })
                 .size(13)
-                .color(style::MUTED),
+                .style(style::muted),
             )
             .height(20)
             .center_y(20)
@@ -1101,10 +1126,10 @@ impl App {
         let footer = row![
             text(status)
                 .size(12)
-                .color(style::MUTED)
-                .width(Length::Fill)
+                .style(style::muted)
+                .width(Length::Fill),
         ];
-        content = content.push(footer.height(18).align_y(iced::Alignment::Center));
+        content = content.push(footer.align_y(iced::Alignment::Center));
         container(content)
             .padding(16)
             .width(Length::Fill)
@@ -1144,7 +1169,7 @@ impl App {
         container(body)
             .padding(24)
             .width(Length::Fill)
-            .style(|_| style::card(false))
+            .style(|theme| style::card(theme, false))
             .into()
     }
 }
@@ -1163,7 +1188,7 @@ fn section_header(title: &str, count: usize) -> Element<'_, Message> {
             if count == 1 { "entry" } else { "entries" }
         ))
         .size(14)
-        .color(style::MUTED),
+        .style(style::muted),
     ]
     .align_y(iced::Alignment::Center)
     .padding([8, 4])
@@ -1176,16 +1201,25 @@ fn badge(label: &'static str, kind: style::Badge) -> Element<'static, Message> {
         ..Default::default()
     }))
     .padding([4, 6])
-    .style(move |_| style::badge(kind))
+    .style(move |theme| style::badge(theme, kind))
     .into()
 }
 
 /// Vector controls avoid platform-dependent arrow/ellipsis font glyphs.
 fn action_icon(name: &str, enabled: bool) -> Element<'static, Message> {
-    vector_icon(name, if enabled { "#bcbcbc" } else { "#686868" }, 20)
+    if name == "firmware" {
+        return iced::widget::svg(iced::widget::svg::Handle::from_memory(include_bytes!(
+            "../../../static/os-icons/firmware.svg"
+        )))
+        .width(20)
+        .height(20)
+        .style(move |theme, _| style::icon(theme, style::IconTone::for_enabled(enabled)))
+        .into();
+    }
+    vector_icon(name, style::IconTone::for_enabled(enabled), 20)
 }
 
-fn vector_icon(name: &str, color: &str, size: u32) -> Element<'static, Message> {
+fn vector_icon(name: &str, tone: style::IconTone, size: u32) -> Element<'static, Message> {
     let path = match name {
         "up" => "<path d='M12 19V5m-5 5 5-5 5 5'/>",
         "down" => "<path d='M12 5v14m-5-5 5 5 5-5'/>",
@@ -1200,41 +1234,109 @@ fn vector_icon(name: &str, color: &str, size: u32) -> Element<'static, Message> 
         "default" => {
             "<path d='m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z'/>"
         }
-        "firmware" => {
-            "<rect x='6' y='6' width='12' height='12' rx='2'/><path d='M9 9h6v6H9zM9 3v3m6-3v3m-6 12v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3'/>"
-        }
+
         _ => "<path d='M12 5h.01M12 12h.01M12 19h.01' stroke-width='3'/>",
     };
     let svg = format!(
-        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='{color}' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>{path}</svg>"
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>{path}</svg>"
     );
     iced::widget::svg(iced::widget::svg::Handle::from_memory(svg.into_bytes()))
         .width(size)
         .height(size)
+        .style(move |theme, _| style::icon(theme, tone))
         .into()
 }
 
-fn os_icon(icon: &str) -> Element<'static, Message> {
-    let bytes: &[u8] = match icon {
-        "windows" => include_bytes!("../../../static/os-icons/windows.svg"),
-        "ubuntu" => include_bytes!("../../../static/os-icons/ubuntu.svg"),
-        "neon" => include_bytes!("../../../static/os-icons/neon.svg"),
-        "popos" => include_bytes!("../../../static/os-icons/popos.svg"),
-        "debian" => include_bytes!("../../../static/os-icons/debian.svg"),
-        "fedora" => include_bytes!("../../../static/os-icons/fedora.svg"),
-        "suse" => include_bytes!("../../../static/os-icons/suse.svg"),
-        "cachyos" => include_bytes!("../../../static/os-icons/cachyos.svg"),
-        "manjaro" => include_bytes!("../../../static/os-icons/manjaro.svg"),
-        "arch" => include_bytes!("../../../static/os-icons/arch.svg"),
-        "nixos" => include_bytes!("../../../static/os-icons/nixos.svg"),
-        "deepin" => include_bytes!("../../../static/os-icons/deepin.svg"),
-        "macos" => include_bytes!("../../../static/os-icons/macos.svg"),
-        "linux" => include_bytes!("../../../static/os-icons/linux.svg"),
-        _ => return text("EFI").size(13).width(32).into(),
+#[test]
+fn system_theme_changes_only_affect_appearance() {
+    let (mut app, _) = App::new(Arc::new(DemoBackend::default()));
+    let order = app.model.order.clone();
+    let target = BootTarget::FirmwareSetup;
+    app.restart_confirmation = Some(target);
+    assert!(app.theme().is_none());
+    for mode in [iced::theme::Mode::Light, iced::theme::Mode::Dark] {
+        let _ = app.update(Message::SystemThemeChanged(mode));
+        assert_eq!(app.system_theme, Some(mode));
+        assert_eq!(
+            app.theme().unwrap().extended_palette().is_dark,
+            mode != iced::theme::Mode::Light
+        );
+        assert_eq!(app.model.order, order);
+        assert!(app.model.pending.is_none());
+        assert_eq!(app.restart_confirmation, Some(target));
+    }
+}
+
+#[test]
+fn efi_icons_match_device_descriptions() {
+    for (description, expected) in [
+        ("EFI Network", "network"),
+        ("UEFI PXE IPv4", "network"),
+        ("EFI DVD/CDROM", "optical"),
+        ("EFI USB Device", "usb"),
+        ("EFI USB Device (Samsung SSD 970 EVO 500G)", "usb"),
+        ("Unknown boot entry", "drive"),
+    ] {
+        assert_eq!(efi_icon(description), expected);
+    }
+}
+
+fn efi_icon(description: &str) -> &'static str {
+    let description = description.to_lowercase();
+    if description.contains("usb") {
+        "usb"
+    } else if ["network", "pxe", "ipv4", "ipv6", "ethernet"]
+        .iter()
+        .any(|pattern| description.contains(pattern))
+    {
+        "network"
+    } else if ["dvd", "cdrom", "cd-rom", "optical"]
+        .iter()
+        .any(|pattern| description.contains(pattern))
+    {
+        "optical"
+    } else {
+        "drive"
+    }
+}
+
+fn os_icon(icon: &str, description: &str) -> Element<'static, Message> {
+    let logo: Option<&[u8]> = match icon {
+        "windows" => Some(include_bytes!("../../../static/os-icons/windows.svg")),
+        "ubuntu" => Some(include_bytes!("../../../static/os-icons/ubuntu.svg")),
+        "neon" => Some(include_bytes!("../../../static/os-icons/neon.svg")),
+        "popos" => Some(include_bytes!("../../../static/os-icons/popos.svg")),
+        "debian" => Some(include_bytes!("../../../static/os-icons/debian.svg")),
+        "fedora" => Some(include_bytes!("../../../static/os-icons/fedora.svg")),
+        "suse" => Some(include_bytes!("../../../static/os-icons/suse.svg")),
+        "cachyos" => Some(include_bytes!("../../../static/os-icons/cachyos.svg")),
+        "manjaro" => Some(include_bytes!("../../../static/os-icons/manjaro.svg")),
+        "arch" => Some(include_bytes!("../../../static/os-icons/arch.svg")),
+        "nixos" => Some(include_bytes!("../../../static/os-icons/nixos.svg")),
+        "deepin" => Some(include_bytes!("../../../static/os-icons/deepin.svg")),
+        "macos" => Some(include_bytes!("../../../static/os-icons/macos.svg")),
+        "linux" => Some(include_bytes!("../../../static/os-icons/linux.svg")),
+        _ => None,
+    };
+    let (bytes, tone) = if let Some(bytes) = logo {
+        (bytes, None)
+    } else {
+        let bytes: &[u8] = match efi_icon(description) {
+            "network" => include_bytes!("../../../static/os-icons/network.svg"),
+            "optical" => include_bytes!("../../../static/os-icons/optical.svg"),
+            "usb" => include_bytes!("../../../static/os-icons/usb.svg"),
+            _ => include_bytes!("../../../static/os-icons/drive.svg"),
+        };
+        (bytes, Some(style::IconTone::Muted))
     };
     iced::widget::svg(iced::widget::svg::Handle::from_memory(bytes))
         .width(28)
         .height(28)
+        .style(move |theme, _| {
+            tone.map_or_else(iced::widget::svg::Style::default, |tone| {
+                style::icon(theme, tone)
+            })
+        })
         .into()
 }
 
