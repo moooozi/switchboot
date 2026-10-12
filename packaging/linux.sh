@@ -42,7 +42,7 @@ Release: 1
 Summary: Manage EFI boot entries
 License: Unspecified
 BuildArch: x86_64
-Requires: polkit, fontconfig, libxkbcommon, wayland-libs
+Requires: polkit, fontconfig, libxkbcommon, libwayland-client.so.0()(64bit)
 %description
 Switchboot provides a native desktop interface for managing EFI boot entries.
 %install
