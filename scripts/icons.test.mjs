@@ -6,16 +6,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { encodeIco } from "../tools/icon-formats.mjs";
 
 const script = fileURLToPath(new URL("../tools/prerender-icons.js", import.meta.url));
-const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" stroke="red"><rect width="128" height="128" fill="blue"/></svg>';
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="blue"/></svg>';
 
 function fixture(t, { corrupt = false, generic = true, overlay = true, source = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "switchboot-icons-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "static/os-icons"), { recursive: true });
   mkdirSync(join(root, "crates/switchboot_core/icons-raw"), { recursive: true });
-  if (source) writeFileSync(join(root, "static/os-icons/fixture.svg"), corrupt ? "invalid svg" : svg);
+  if (source) writeFileSync(join(root, "static/os-icons/fixture.svg"), corrupt ? "invalid svg" : svg.replace('<svg ', '<svg stroke="red" '));
   if (generic) writeFileSync(join(root, "crates/switchboot_core/icons-raw/shortcut-generic.svg"), svg);
   if (overlay) writeFileSync(join(root, "crates/switchboot_core/icons-raw/shortcut-overlay.svg"), svg);
   if (process.platform === "linux") {
@@ -25,6 +26,15 @@ function fixture(t, { corrupt = false, generic = true, overlay = true, source = 
   }
   return { root, result: spawnSync(process.execPath, [script], { cwd: root, encoding: "utf8", timeout: 30000 }) };
 }
+
+test("generic fixture encodes opaque blue DIB pixels at every small ICO size", async () => {
+  for (const size of [16, 32, 48]) {
+    const png = await sharp(Buffer.from(svg)).resize(size, size).ensureAlpha().png().toBuffer();
+    const ico = await encodeIco({ [size]: png }, [size]);
+    const frameOffset = ico.readUInt32LE(18);
+    assert.deepEqual([...ico.subarray(frameOffset + 40, frameOffset + 44)], [255, 0, 0, 255]);
+  }
+});
 
 test("valid sources produce all required platform icons", async (t) => {
   const { root, result } = fixture(t);
