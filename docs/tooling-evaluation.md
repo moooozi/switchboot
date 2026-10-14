@@ -2,22 +2,21 @@
 
 ## Linux app icons
 
-The generator emits 32, 48, 64, 128, 256 and 512px transparent PNGs. Packages install
-them as `hicolor/<size>x<size>/apps/switchboot.png`, and install `app-icon.svg` as
-`hicolor/scalable/apps/switchboot.svg`. Shortcut PNGs use the same raster sizes.
+The generator emits 32, 48, 64, 128 and 256px transparent PNGs. Packages install
+them as `hicolor/<size>x<size>/apps/dev.zidane.switchboot.png`, and install
+`app-icon.svg` as `hicolor/scalable/apps/dev.zidane.switchboot.svg`. Shortcut icons
+use the `dev.zidane.switchboot-` prefix, with scalable SVGs and the same PNG sizes.
 
 Only SVG sources are versioned. PNGs and ICOs are ignored build artifacts,
 generated locally before the first Cargo build and regenerated in CI before
 building and packaging. Preserve this rule in any tooling migration.
 
-This preserves [Tauri's desktop size set](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-cli/src/icon.rs)
-(32, 64, 128, 256 and 512px) and adds the 48px minimum recommended by the
+The 48px size follows the minimum recommended by the
 [freedesktop icon-theme specification](https://specifications.freedesktop.org/icon-theme/latest/#installing-application-icons).
-The filenames follow hicolor sizes instead of Tauri's `128x128@2x.png` and
-`icon.png` aliases. No macOS bundles or ICNS files are generated.
+Scalable SVGs support larger display sizes. No macOS bundles or ICNS files are generated.
 
 Both app and shortcut ICOs use DIB frames at 16, 32 and 48px, and PNG frames at
-128 and 256px. Small DIBs preserve NSIS compatibility; larger PNGs limit file size.
+128 and 256px. Small DIBs preserve Windows compatibility; larger PNGs limit file size.
 
 ## Linux CLI symlink
 

@@ -6,17 +6,19 @@ Reorder boot entries, choose the default or next boot target, schedule firmware 
 
 ## Development
 
-Install a current stable Rust toolchain, Node and pnpm. Generate the icon assets
-from the SVG sources before the first Cargo build:
+Install a current stable Rust toolchain, Node and pnpm. Initialize the `issconfig`
+submodule and generate the icon assets from the SVG sources before the first
+Cargo build:
 
 ```sh
+git submodule update --init --recursive
 pnpm install --frozen-lockfile
 pnpm icons
 node packaging/generate-app-icons.mjs
 cargo run -- --demo
 ```
 
-Demo mode uses an in-memory backend and never accesses EFI, requests elevation, creates system shortcuts, or restarts the machine. For real firmware access, use `cargo run`. The real GUI runs without elevation and delegates privileged operations to the existing CLI transport.
+Demo mode uses an in-memory backend and never accesses EFI, requests elevation, creates system shortcuts, or restarts the machine. For real firmware access, use `cargo run`. The real GUI runs without elevation and delegates privileged operations to the CLI backend.
 
 On Linux, install polkit and run a graphical authentication agent. Development builds need a sibling CLI symlink:
 
@@ -65,11 +67,13 @@ node --test scripts/release.test.mjs scripts/icons.test.mjs scripts/app-icons.te
 python -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Linux release packages are built by `packaging/linux.sh`; Windows installers by `packaging/windows.nsi`. Release workflows use Cargo and native package tools. WebKit, WebView2, Svelte, Vite and Tauri are no longer runtime or build dependencies.
+Linux release packages are built by `packaging/linux.sh`; Windows installers by Inno Setup using `packaging/windows.iss`.
 
-`app-icon.svg` is the source for the app icon. After editing it, run `node packaging/generate-app-icons.mjs` and commit only the SVG source. The generated PNGs and ICO in `crates/switchboot_core/icons` stay local or in CI build output. The native window embeds the 128px PNG; Windows builds embed the ICO and version metadata into the executable. Linux packages install 32, 48, 64, 128, 256 and 512px PNGs and the source SVG in the hicolor theme, plus `dev.zidane.switchboot.desktop`, matching the window's application ID. App and shortcut ICOs use DIB frames at 16, 32 and 48px and PNG frames at 128 and 256px. Cargo builds consume generated app icons; run the generator first on a fresh checkout.
+The Windows installer uses the self-contained [issconfig visual library](issconfig/README.md). Switchboot owns its branding, payload, service lifecycle and upgrade migration in `packaging/windows.iss`; the library owns themes, compact layout and the folder browser. Its standalone fixture compile checks run with the Windows packaging tests.
 
-See [tooling evaluation](docs/tooling-evaluation.md) for the Linux CLI symlink and a possible migration from Node tooling to Python.
+The library's upstream is [moooozi/issconfig](https://github.com/moooozi/issconfig). Switchboot includes version `0.1.0` as a Git submodule. Builds consume its local sources; CI initializes the submodule during checkout. After updating the library, run `python scripts/test_native_packaging.py` on Windows.
+
+`app-icon.svg` is the source for the app icon. After editing it, run `node packaging/generate-app-icons.mjs` and commit only the SVG source. The generated PNGs and ICO in `crates/switchboot_core/icons` stay local or in CI build output. The native window embeds the 128px PNG; Windows builds embed the ICO and version metadata into the executable. Linux packages install 32, 48, 64, 128 and 256px PNGs and scalable SVGs in the hicolor theme. The app icon and desktop file use `dev.zidane.switchboot`; shortcut icons use the `dev.zidane.switchboot-` prefix. App and shortcut ICOs use DIB frames at 16, 32 and 48px and PNG frames at 128 and 256px. Cargo builds consume generated app icons; run the generator first on a fresh checkout.
 
 ## Releases
 
@@ -77,12 +81,12 @@ From a clean working tree on `main`, run `pnpm release patch` (or `minor`, `majo
 
 Tags are immutable. Failed builds can be rerun on the same tag; source changes require a new release. Tag pushes create a draft GitHub Release. Publishing the draft updates the signed APT/RPM repositories. Artifacts carry GPG signatures and build provenance; verify provenance with `gh attestation verify <asset> --repo moooozi/switchboot`.
 
-## Native migration status
+## Application behavior
 
-The iced UI covers the firmware management workflow, order editing, save/discard, bounded undo/redo, SVG OS icons, shortcuts, refresh, restart confirmation, and Ctrl+S / Ctrl+Z / Ctrl+Shift+Z shortcuts. Drag-and-drop supports reordering and moving entries between the boot order and Others, including edge scrolling. Up/Down controls are also available. Each completed drop is one undoable edit and remains local until Save.
+Drag-and-drop supports reordering and moving entries between the boot order and Others, including edge scrolling. Up/Down controls are also available. Each completed drop is one undoable edit and remains local until Save. Keyboard shortcuts are Ctrl+S to save, Ctrl+Z to undo and Ctrl+Shift+Z to redo.
 
 Repeat GUI launches activate the existing per-user window. Demo mode uses separate ownership from the real GUI; CLI, service and shortcut operations run independently.
 
-Updates use native distribution paths: Linux package managers and signed Windows installer downloads. An in-app updater is outside the current migration scope. Existing signed updater feed compatibility is retained for previous releases.
+Updates are distributed through Linux package managers and signed Windows installer downloads.
 
-Linux CI and interactive/device acceptance remain validation gates. Automated mocks do not establish UAC/polkit behavior, firmware persistence or installed Windows service lifecycle. See [the validation checklist](docs/migration-validation.md) for safe demo checks and owner-authorized device tests.
+See [the validation checklist](docs/migration-validation.md) for demo checks and device tests covering UAC/polkit, firmware persistence and the installed Windows service.

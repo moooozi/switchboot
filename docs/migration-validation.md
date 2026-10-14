@@ -1,12 +1,13 @@
 # Native migration validation
 
-The `Native validation` workflow runs on feature-branch pushes, pull requests and
-manual dispatch. It checks formatting, Clippy, Rust and tooling tests on Windows
-and Ubuntu 22.04, compiles the native executable, and assembles unsigned packages.
+The `PR validation` workflow runs on pull requests targeting `main`, pushes to
+`main`, merge-queue groups and manual dispatch. It checks formatting, Clippy, Rust
+and tooling tests on Windows and Ubuntu, compiles the native executable, and
+assembles unsigned packages.
 It never installs a service or package, changes firmware, reboots, signs artifacts
 or publishes a release. Its artifacts are for testing rather than distribution.
 
-The package tests build real NSIS, DEB and RPM containers around harmless fixture
+The package tests build real Inno Setup, DEB and RPM containers around harmless fixture
 files. Linux assertions check executable permissions, desktop launcher, icons,
 CLI symlink, polkit annotations and package metadata. CI sets
 `SWITCHBOOT_REQUIRE_PACKAGING_TESTS=1` so missing host tools or app icons fail
@@ -26,7 +27,7 @@ cargo run -- --demo
 ```
 
 Package tests need generated app icons (`node packaging/generate-app-icons.mjs`),
-NSIS on Windows, or Bash, dpkg-deb, rpm and rpmbuild on Linux. Linux package
+Inno Setup 6.7 or newer on Windows, or Bash, dpkg-deb, rpm and rpmbuild on Linux. Linux package
 assembly additionally needs `pnpm icons` and a release binary. Container tests
 extract/query packages; they do not run their contents.
 
@@ -49,7 +50,7 @@ service behavior. No real-device acceptance results are claimed yet.
    agent is running. First inspect the entries without changing them.
 3. On Windows, first test portable mode as a standard user: inspect entries,
    verify UAC transport behavior, and confirm shortcuts are disabled. Install the
-   NSIS package on a separate snapshot, then use `sc.exe qc swboot-cli` to verify
+   Inno Setup package on a separate snapshot, then use `sc.exe qc swboot-cli` to verify
    the service points to the installed `switchboot.exe --cli /service_connector`.
    Launch from the Start menu as a standard user and inspect entries. Check
    `sc.exe query swboot-cli` while the GUI uses the service.
@@ -65,6 +66,26 @@ service behavior. No real-device acceptance results are claimed yet.
    build, inspect the service executable path, relaunch and confirm entries are
    readable. Uninstall and verify the service, Start menu shortcut and installed
    resources are removed. Record uninstall errors rather than ignoring them.
+   Also upgrade an existing NSIS installation: confirm the install directory is
+   retained and the old uninstall registration is removed only after success.
+   Check the installer theme at 100%, 150% and 200% scaling: Next/Install uses
+   the app's cyan and secondary buttons use neutral gray pills in dark mode.
+   Verify hover, pressed and disabled states, Tab/Shift+Tab focus, Enter/Escape,
+   Back navigation and Browse. High-contrast mode must retain native controls.
+   Trigger Folder Exists and cancel-install confirmations. Check their pill
+   buttons, default action, Tab/Enter/Escape behavior and repeated opening/closing.
+   Confirm the welcome, brief introduction, donation link and installation path
+   share one setup page, including upgrades. Install should go directly to
+   progress without a separate review page. Check logo padding and wrapped text.
+   Check both light and dark mode in the reduced-height window. The path field
+   should have rounded corners, padding and a cyan focus border. Verify typing,
+   selection, copy/paste, path completion and Browse still update the install path.
+   Browse should use Inno's folder tree with rounded path and list containers.
+   Check typed paths, tree selection, spaces and Unicode, drive roots, keyboard
+   navigation and cancellation. Tree selection retains Inno's behavior of
+   appending the Switchboot subfolder; typed paths are accepted as entered.
+   Check the rounded scrollbar thumb after expanding/collapsing folders, wheel
+   and keyboard scrolling, track clicks and thumb dragging in both color modes.
 7. Actual reboot and boot-target verification is a separate owner-authorized
    device test. Ensure console/recovery access and a known-good boot path before
    selecting it. Restore firmware state after the test.

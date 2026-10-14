@@ -31,6 +31,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          submodules: recursive
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -49,11 +50,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
-            choco install nsis --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $compilerDir = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          choco upgrade innosetup --version=6.7.3 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $compilerDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Set up Rust
         id: rust
         run: |
@@ -108,7 +108,7 @@ jobs:
           $version = python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$version" packaging/windows.nsi
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVERSION=$version" packaging/windows.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Collect binaries and packages
         run: python scripts/collect-ci-artifacts.py

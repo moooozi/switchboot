@@ -41,7 +41,8 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 ## Packaging and releases
 
 - `packaging/linux.sh`: native DEB/RPM packages with polkit integration and hicolor icons.
-- `packaging/windows.nsi`: NSIS installer with service lifecycle hooks; portable release is the same executable.
+- `packaging/windows.iss`: Inno Setup installer with service lifecycle hooks; portable release is the same executable.
+- `issconfig`: upstream visual-library submodule; initialize with `git submodule update --init --recursive` before packaging tests. Keep application lifecycle hooks in `packaging/windows.iss`.
 - `tools/prerender-icons.js`: shortcut icons from `static/os-icons` and `crates/switchboot_core/icons-raw`.
 - `packaging/generate-app-icons.mjs`: app PNG/ICO generation without Tauri.
 - Node/pnpm is only used for icon and release tooling; no JavaScript frontend or webview runtime is needed.

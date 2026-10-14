@@ -26,6 +26,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -48,6 +50,8 @@ jobs:
           pnpm icons
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node packaging/generate-app-icons.mjs
+      - name: Install Inno Setup
+        run: choco upgrade innosetup --version=6.7.3 --yes --no-progress
       - name: Validate Rust and tooling
         shell: pwsh
         run: |
@@ -65,8 +69,6 @@ jobs:
         run: cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
       - name: Build native application
         run: cargo build --locked --release --bin switchboot
-      - name: Install NSIS
-        run: choco install nsis --yes --no-progress
       - name: Package installer and portable binary
         shell: pwsh
         env:
@@ -75,7 +77,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$env:RELEASE_VERSION" packaging/windows.nsi
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVERSION=$env:RELEASE_VERSION" packaging/windows.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item -LiteralPath target/release/switchboot.exe -Destination artifacts/Switchboot_x64-portable.exe
           foreach ($name in @('Switchboot_x64-setup.exe', 'Switchboot_x64-portable.exe')) {

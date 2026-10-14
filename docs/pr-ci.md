@@ -14,7 +14,7 @@ No real firmware or restart operations are run.
 
 Successful runs build unsigned packages and upload:
 
-- Windows portable executable and NSIS installer.
+- Windows portable executable and Inno Setup installer for the native workspace.
 - Linux DEB, RPM and a tarball containing the executable with its permissions.
 - `build-info.json` recording the tested commit, platform and application layout.
 
@@ -29,7 +29,7 @@ starting services, signing artifacts, publishing releases or updating repositori
 Release workflows are unchanged.
 
 To enforce this gate, configure the `main` branch ruleset to require
-`Validate (ubuntu-22.04)` and `Validate (windows-latest)`. Workflow files create
+`Validate (ubuntu-latest)` and `Validate (windows-latest)`. Workflow files create
 status checks; repository rules must explicitly require them before merging.
 
 Local artifact-collector checks:
