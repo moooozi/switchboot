@@ -179,10 +179,10 @@ pub fn create_shortcut(config: ShortcutConfig) -> Result<(), String> {
         Type=Application\n\
         Name={}\n\
         Exec={}\n\
-        Icon=swboot-{}\n\
+        Icon={}-{}\n\
         Terminal=false\n\
         Categories=Utility;\n",
-        sanitized_name, exec_cmd, icon_name
+        sanitized_name, exec_cmd, APP_IDENTIFIER, icon_name
     );
 
     // Resolve the applications dir: $XDG_DATA_HOME, falling back to ~/.local/share.

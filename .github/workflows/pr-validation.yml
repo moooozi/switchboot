@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -38,27 +38,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Detect application layout
-        id: layout
-        run: |
-          if test -f Cargo.toml; then
-            echo 'native=true' >> "$GITHUB_OUTPUT"
-          elif test -f src-tauri/Cargo.toml; then
-            echo 'native=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'No supported Cargo manifest found' >&2
-            exit 1
-          fi
-          mkdir -p ci-logs
+      - name: Prepare validation logs
+        run: mkdir -p ci-logs
       - name: Install Linux native build and packaging tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev rpm xvfb
-      - name: Install Linux dependencies for the current main frontend
-        if: runner.os == 'Linux' && steps.layout.outputs.native == 'false'
-        run: |
-          sudo apt-get install -y libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev rpm xvfb
       - name: Install Windows packaging compiler
         if: runner.os == 'Windows'
         shell: pwsh
@@ -80,46 +66,28 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            src-tauri/target
           key: pr-cargo-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
       - name: Install tooling dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate icons from SVG sources
         run: |
           pnpm icons
-          if test '${{ steps.layout.outputs.native }}' = true; then
-            node packaging/generate-app-icons.mjs
-          else
-            pnpm tauri icon ./app-icon.svg
-          fi
-      - name: Check and build the current main frontend
-        if: steps.layout.outputs.native == 'false'
-        run: |
-          pnpm check 2>&1 | tee ci-logs/frontend-check.log
-          pnpm build 2>&1 | tee ci-logs/frontend-build.log
-      - name: Test JavaScript tooling and frontend modules
+          node packaging/generate-app-icons.mjs
+      - name: Test JavaScript tooling
         run: node --test scripts/*.test.mjs 2>&1 | tee ci-logs/node-tests.log
       - name: Test Python tooling and package fixtures
         env:
-          SWITCHBOOT_REQUIRE_PACKAGING_TESTS: ${{ steps.layout.outputs.native == 'true' && '1' || '0' }}
+          SWITCHBOOT_REQUIRE_PACKAGING_TESTS: '1'
         run: python -B -m unittest discover -s scripts -p 'test_*.py' 2>&1 | tee ci-logs/python-tests.log
       - name: Check and test the native workspace
-        if: steps.layout.outputs.native == 'true'
         run: |
           cargo fmt --all --check
           cargo clippy --locked --workspace --all-targets -- -D warnings 2>&1 | tee ci-logs/clippy.log
           cargo test --locked --workspace --all-targets 2>&1 | tee ci-logs/rust-tests.log
           cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
           cargo build --locked --release --bin switchboot 2>&1 | tee ci-logs/build.log
-      - name: Check and test the current main Rust backend
-        if: steps.layout.outputs.native == 'false'
-        run: |
-          cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
-          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings 2>&1 | tee ci-logs/clippy.log
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets 2>&1 | tee ci-logs/rust-tests.log
-          pnpm tauri build --ci --config .github/tauri-ci.conf.json --no-bundle -- --locked 2>&1 | tee ci-logs/build.log
       - name: Linux native demo startup
-        if: runner.os == 'Linux' && steps.layout.outputs.native == 'true'
+        if: runner.os == 'Linux'
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
@@ -131,26 +99,16 @@ jobs:
       - name: Assemble unsigned Linux packages
         if: runner.os == 'Linux'
         run: |
-          if test '${{ steps.layout.outputs.native }}' = true; then
-            version=$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])")
-            bash packaging/linux.sh "$version"
-          else
-            pnpm tauri bundle --ci --bundles deb,rpm --config .github/tauri-ci.conf.json
-          fi
+          version=$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])")
+          bash packaging/linux.sh "$version"
       - name: Assemble unsigned Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          NATIVE_LAYOUT: ${{ steps.layout.outputs.native }}
         run: |
-          if ($env:NATIVE_LAYOUT -eq 'true') {
-            $version = python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-            & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$version" packaging/windows.nsi
-          } else {
-            pnpm tauri bundle --ci --bundles nsis --config .github/tauri-ci.conf.json
-          }
+          $version = python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['package']['version'])"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DVERSION=$version" packaging/windows.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Collect binaries and packages
         run: python scripts/collect-ci-artifacts.py

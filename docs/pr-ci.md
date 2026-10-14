@@ -4,9 +4,7 @@
 `main`, merge-queue groups and manual runs. Windows and Ubuntu run independently;
 one platform failing does not cancel the other's diagnostics.
 
-The workflow detects the root native Cargo workspace when present. While `main`
-still uses the previous frontend, it validates its Svelte modules and Rust backend
-instead. This lets the iced migration PR use the same checks and artifact names.
+The workflow validates the native iced Cargo workspace on both platforms.
 
 Checks include frozen Node dependencies, SVG icon generation, Rust formatting,
 Clippy with warnings treated as errors, locked Rust tests, all Node test files and

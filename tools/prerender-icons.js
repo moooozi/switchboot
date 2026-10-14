@@ -4,7 +4,7 @@ import path from "path";
 import { encodeIco, linuxIconSizes } from "./icon-formats.mjs";
 
 // Small helper CLI to generate OS icons.
-// Linux emits hicolor PNGs; Windows emits mixed DIB/PNG ICOs.
+// Linux emits scalable SVGs and hicolor PNG fallbacks; Windows emits mixed DIB/PNG ICOs.
 
 const cwd = process.cwd();
 const STATIC_OS_ICONS = path.resolve(cwd, "static", "os-icons");
@@ -106,15 +106,20 @@ async function rasterizeBuffers(sharp, svgString, sizes = ICO_SIZES) {
 }
 
 async function writeHicolorPngs(sharp, svgString, name) {
+  const scalable = path.join(OUT_DIR, "hicolor", "scalable", "apps");
+  ensureDir(scalable);
+  fs.writeFileSync(path.join(scalable, `dev.zidane.switchboot-${name}.svg`), svgString);
+  fs.rmSync(path.join(OUT_DIR, "hicolor", "512x512", "apps", `dev.zidane.switchboot-${name}.png`), { force: true });
   for (const s of LINUX_HICOLOR_SIZES) {
     const dirPath = path.join(OUT_DIR, "hicolor", s.dir, "apps");
     ensureDir(dirPath);
+
     try {
       const buf = await sharp(Buffer.from(svgString))
         .resize({ width: s.px, height: s.px, fit: "contain" })
         .png()
         .toBuffer();
-      const outName = `swboot-${name}.png`;
+      const outName = `dev.zidane.switchboot-${name}.png`;
       const outPath = path.join(dirPath, outName);
       fs.writeFileSync(outPath, buf);
       console.log(`Wrote ${path.relative(cwd, outPath)}`);
@@ -229,7 +234,8 @@ async function run() {
   for (const f of files) {
     const name = path.basename(f, ".svg");
     const srcSvg = readSvg(path.join(STATIC_OS_ICONS, f));
-    const sourceInner = stripSvgWrapper(srcSvg);
+    // Keep root-level fills and strokes, especially for monochrome EFI icons.
+    const sourceInner = srcSvg.replace(/<\?xml[^>]*\?>/g, "");
     const sourceBox = detectViewBoxOrSize(srcSvg);
     const combined = composeSvg(sourceInner, sourceBox, overlayInner);
 
