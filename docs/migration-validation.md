@@ -38,6 +38,11 @@ Record OS/build, application commit, package version, observed behavior and logs
 Automated mocks cannot validate UAC, polkit, firmware persistence or installed
 service behavior. No real-device acceptance results are claimed yet.
 
+Installed Windows self-updates and the Tauri-to-Inno handoff also require the
+disposable-VM checks in [Windows updates](windows-updates.md). Preserve the
+existing signing key when creating those test artifacts. Do not point the public
+feed at a migration build until that acceptance path has been verified.
+
 1. In demo mode, reorder entries, save/discard, undo/redo, change BootNext and
    firmware setup, and exercise restart confirmation. Confirm these stay within
    the demo backend. Drag entries within the boot order and between it and Others;
@@ -91,6 +96,169 @@ service behavior. No real-device acceptance results are claimed yet.
    selecting it. Restore firmware state after the test.
 
 ## Current execution limits
+
+### Owner-authorized update check on 2026-10-16
+
+#### Follow-up: native `/UPGRADE` handoff
+
+The native shutdown failure below was addressed with a per-GUI named event.
+The GUI exits on an accepted request; its CLI worker and service use their
+existing disconnect lifecycle. No upgrade-specific transport shutdown API was
+added. Setup waits for the exact GUI process and exclusive executable access
+before attempting service removal or replacing files.
+
+The handoff-enabled 0.3.0 build was installed, and a genuine 0.3.1 binary and
+installer were built using a temporary synchronized version bump. Cargo.toml,
+Cargo.lock and package.json were restored byte-for-byte afterward. The baseline
+GUI was reopened immediately before testing. With its worker and service running,
+Setup was invoked with:
+
+```text
+Switchboot-0.3.1-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTAPP /UPGRADE /UPGRADEPID=6364 /LOG=<file> /LOGCLOSEAPPLICATIONS
+```
+
+Setup signaled the GUI at 11:26:18.589, observed GUI exit at 11:26:18.854,
+and confirmed executable release at 11:26:18.955 (local time). Restart Manager
+then found no applications using the executable. Setup returned 0, reported no
+Windows restart required, and reopened the app through its original-user Run entry.
+
+The installed executable and Inno registration both reported 0.3.1. Its SHA-256
+matched the built payload:
+`01DFEDFD30D4F6A7ECB23E0D92ABDF49DC72F1523F62EE9FCED31B6211418375`.
+None of the baseline process IDs remained. The 11:26:35 snapshot contained one
+GUI window (PID 1568), its worker, and the running demand-start service. There
+was no legacy NSIS registration. No process-killing command, firmware mutation,
+or Windows restart was used for this handoff test.
+
+Five harmless fixture tests also exercised the shared Inno handoff script:
+success, missing PID, wrong executable, GUI timeout, and a worker holding the
+executable after GUI exit. Failure cases installed no payload, and the timeout
+cases did not kill their fixture processes. Production UAC cancellation, later
+installer failures, and the public feed/download/signature/in-app launch flow
+remain separate acceptance checks.
+
+Evidence is retained under ignored `artifacts/upgrade-handoff-acceptance/`,
+including both versioned binaries/installers, `before.json`, `native-before.json`,
+`native-update.log`, `native-result.json`, `after.json`, and restored source hashes.
+The installed app is now the local acceptance build 0.3.1; tracked source versions
+remain 0.3.0.
+
+#### Initial native update attempt, before handoff
+
+The baseline was the installed Tauri 0.2.6 binary, with both legacy NSIS and
+pre-existing Inno 0.3.0 registrations. A fresh release build was packaged as
+0.3.0 using the current installer script. An initial invocation with native
+silent arguments exited with code 2 and left the Tauri binary unchanged.
+
+The requested compatibility invocation then succeeded:
+
+```text
+Switchboot-0.3.0-setup.exe /P /R /UPDATE /NORESTART /LOG=<file> /ARGS
+```
+
+Setup returned 0, removed the NSIS installation, installed Iced 0.3.0, and
+reopened a GUI. The installed binary hash matched the build. Only the Inno
+registration remained. The demand-start service was running after GUI startup.
+
+Next, a genuine 0.3.1 executable and installer were built with a temporary,
+synchronized version change in Cargo.toml, Cargo.lock and package.json. All
+three source files were restored byte-for-byte after building. With the Iced
+0.3.0 GUI still open, the bumped installer was launched with:
+
+```text
+Switchboot-0.3.1-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTAPP /LOG=<file> /LOGCLOSEAPPLICATIONS
+```
+
+**Native automatic closure failed.** Setup removed the service, then Restart
+Manager detected two processes using switchboot.exe: the GUI and its hidden
+`--cli /service_manager` worker. It reported that some applications could not
+be shut down. The suppressed Abort/Retry/Ignore prompt defaulted to Abort,
+and Setup exited with code 5 before replacing files. The original GUI and
+worker remained, and the installed binary hash and registration stayed at 0.3.0.
+This test does not establish which process prevented shutdown.
+
+Because Setup had already removed the service, its registration was restored
+with the installed 0.3.0 executable's `--cli /install_service` command and the
+service was started and observed running immediately afterward. A later snapshot
+showed no GUI/worker processes and a stopped demand-start service; the cause of
+that later closure was not established. No firmware mutation or Windows restart
+was requested. The installed app remains Iced 0.3.0 with its service registered.
+
+The compatibility handoff passed, but this initial native open-app upgrade
+attempt failed. Public feed/download/signature verification and the in-app update UI
+were not exercised. Evidence, binaries, installers and logs are retained under
+ignored `artifacts/native-update-acceptance/`, including `before.json`,
+`iced-baseline.json`, `native-before.json`, `legacy-install.log`,
+`native-update.log`, `native-result.json`, `service-restored.json` and `after.json`.
+
+### Owner-authorized migration check on 2026-10-15
+
+#### Follow-up: passive automation with the old GUI open
+
+After the owner reinstalled 0.2.6 and opened its GUI, the passive compatibility
+path was integrated into `packaging/windows.iss`. The installed executable's
+hash again matched the recorded 0.2.6 baseline. The service was running, and the
+baseline contained the legacy 0.2.6 registration plus the pre-existing Inno 0.3.0
+registration. This remains a mixed baseline rather than a clean-machine test.
+
+The real Inno script passed the fixture packaging compilation test and was
+compiled around the release binary. It was launched with:
+
+```text
+Switchboot_x64-setup.exe /P /R /UPDATE /NORESTART /LOG=<file> /ARGS
+```
+
+Setup logged the resolved legacy directory, one queued Install click and
+successful NSIS removal, then installed 0.3.0 and launched the GUI as the original
+user. Setup returned 0 and reported no Windows restart required. The three old
+process IDs were gone; a new window titled Switchboot was present and the service
+was Running. The installed binary hash matched the release build. Only the Inno
+registration remained, and the old NSIS uninstaller was absent.
+
+NSIS removal closed the old app before Restart Manager queried open files;
+Restart Manager reported no remaining application. This validates the open-app
+legacy migration path, but not native Restart Manager closure in isolation.
+The public feed/download/signature path was not exercised. No firmware changes
+or Windows restart were requested. Evidence is retained in ignored
+`artifacts/migration-passive/before.json`, `after.json`, `result.json` and
+`update.log`.
+
+#### Initial attempts, before passive automation
+
+The installed executable and NSIS uninstaller were both 0.2.6 in the standard
+Program Files directory. There was also a pre-existing Inno 0.3.0 registration
+and uninstaller in that same directory. This was a mixed installation baseline,
+not a clean-machine test. The demand-start `swboot-cli` service was stopped and
+no GUI was running. Baseline files and selected registry/service metadata were
+saved under ignored `artifacts/migration-test/` before changing the installation.
+
+The current release binary and an Inno 6.7.3 installer were built locally.
+Invoking the installer with `/P /R /UPDATE /NORESTART /LOG=<file> /ARGS` failed in
+`InitializeSetup` with `Unable to start silent update: Access is denied.` No
+installed file or legacy registration changed. Source inspection confirmed that
+Inno prohibits script execution of its source installer before `ssInstall`.
+The non-working self-relaunch adapter was replaced with an explicit compatibility
+error. At that point, legacy argument compatibility remained unimplemented;
+the later passive automation described above replaced that interim behavior.
+
+A second invocation with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE
+/RESTARTAPP /LOG=<file>` succeeded (Setup exit code 0). The log recorded successful
+NSIS removal, native installation and an original-user `[Run]` launch. Only the
+Inno uninstall registration remained; the legacy `uninstall.exe` was absent.
+Installed version 0.3.0 matched the built executable's SHA-256:
+`90A508B6BDD32D3C7B6723970893A850CB79683C459166F69A7655B7EB0A3697`.
+The service was observed running and the GUI/service-manager processes were
+observed launching immediately after installation. They were no longer running
+at the later snapshot, and the service was stopped. Sustained GUI operation and
+the cause of that later exit were not established by this check.
+
+Setup reported that no Windows restart was required. No firmware mutation or
+reboot was requested. Restart Manager found no open application during migration,
+so this run did not validate automatic closure of a running GUI, slow shutdown,
+locked files or the in-app download/signature-verification path. Logs and snapshots
+are `artifacts/migration-test/legacy-update.log`, `native-update.log`,
+`native-result.json`, `before.json` and `after.json`. The public update feed and
+release signing secrets were not used or changed.
 
 ### Windows checks recorded on 2026-10-11
 

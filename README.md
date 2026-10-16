@@ -81,6 +81,12 @@ From a clean working tree on `main`, run `pnpm release patch` (or `minor`, `majo
 
 Tags are immutable. Failed builds can be rerun on the same tag; source changes require a new release. Tag pushes create a draft GitHub Release. Publishing the draft updates the signed APT/RPM repositories. Artifacts carry GPG signatures and build provenance; verify provenance with `gh attestation verify <asset> --repo moooozi/switchboot`.
 
+Installed Windows builds check for signed updates and offer **Upgrade to vX.Y.Z**.
+Linux uses native package updates; portable and demo builds do not self-update.
+Demo mode always shows a sample update notification for previewing its appearance.
+See [Windows updates](docs/windows-updates.md) for legacy Tauri compatibility,
+signing requirements and the outstanding VM acceptance checks.
+
 ## Application behavior
 
 Drag-and-drop supports reordering and moving entries between the boot order and Others, including edge scrolling. Up/Down controls are also available. Each completed drop is one undoable edit and remains local until Save. Keyboard shortcuts are Ctrl+S to save, Ctrl+Z to undo and Ctrl+Shift+Z to redo.

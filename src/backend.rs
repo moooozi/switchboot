@@ -1,8 +1,13 @@
 use switchboot_core as core;
 use switchboot_ui::{Backend, BootTarget, Entry, Shortcut, Snapshot};
 
-/// The UI only talks to the existing privilege-separated CLI transport.
-pub struct FirmwareBackend;
+/// Firmware uses the privilege-separated CLI transport. Updates use the
+/// unelevated host adapter; they never execute through firmware IPC.
+#[derive(Default)]
+pub struct FirmwareBackend {
+    #[cfg(windows)]
+    updates: crate::updater::Updates,
+}
 
 fn entries(values: Vec<core::BootEntry>) -> Vec<Entry> {
     values
@@ -15,6 +20,36 @@ fn entries(values: Vec<core::BootEntry>) -> Vec<Entry> {
 }
 
 impl Backend for FirmwareBackend {
+    #[cfg(windows)]
+    fn upgrade_shutdown_requested(&self) -> Result<bool, String> {
+        self.updates.shutdown_requested()
+    }
+
+    fn updates_supported(&self) -> bool {
+        cfg!(windows) && !core::is_portable()
+    }
+
+    #[cfg(windows)]
+    fn check_update(&self) -> Result<Option<switchboot_ui::UpdateRelease>, String> {
+        crate::updater::check()
+    }
+
+    #[cfg(windows)]
+    fn install_update_with_progress(
+        &self,
+        version: String,
+        progress: std::sync::Arc<dyn Fn(switchboot_ui::UpdateProgress) + Send + Sync>,
+    ) -> Result<(), String> {
+        self.updates.install(&version, move |downloaded, total| {
+            progress(switchboot_ui::UpdateProgress { downloaded, total });
+        })
+    }
+
+    #[cfg(windows)]
+    fn poll_update(&self) -> Result<bool, String> {
+        self.updates.poll()
+    }
+
     fn load(&self) -> Result<Snapshot, String> {
         Ok(Snapshot {
             entries: entries(core::get_boot_entries()?),

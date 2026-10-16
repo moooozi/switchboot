@@ -7,6 +7,7 @@ Switchboot is a Rust 2024 desktop application using iced 0.14 to manage EFI boot
 - Root `switchboot` package: `src/main.rs` routes GUI, CLI, shortcut and Windows service modes; `src/backend.rs` implements the UI backend interface.
 - `crates/switchboot_ui`: native iced views, typed messages, blocking-worker tasks, pure state/history model, and in-memory demo backend. It does not depend on platform firmware code.
 - `crates/switchboot_core`: privileged CLI operations, platform APIs, JSON stdin/stdout transport and secure named-pipe IPC. It does not depend on iced.
+- `crates/switchboot_updater`: signed release checks, bounded downloads, verification and Windows installer launch/observation. It depends on neither iced nor firmware code. The root adapter supplies application version and installed-mode policy; the UI owns update presentation and state. Native `/UPGRADE` uses a per-GUI event: Inno requests GUI exit after preflight, then waits for process exit and executable release before service removal or file replacement. CLI workers and the service close through their existing disconnect lifecycle. Keep legacy `/UPDATE` separate; Inno owns replacement and restart.
 - Keep one executable: CLI invocations and Windows services use the running executable. Linux policy uses `/usr/bin/switchboot` and the sibling `switchboot-cli` symlink.
 - `firmware_variables` handles EFI variables; `pipeguard` secures Windows IPC. Preserve privilege separation; never call firmware directly from the UI.
 
@@ -41,7 +42,7 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 ## Packaging and releases
 
 - `packaging/linux.sh`: native DEB/RPM packages with polkit integration and hicolor icons.
-- `packaging/windows.iss`: Inno Setup installer with service lifecycle hooks; portable release is the same executable.
+- `packaging/windows.iss`: Inno Setup entry point with declarative sections and all Inno event handlers. It delegates registration/uninstaller helpers, shutdown, maintenance, legacy migration and service lifecycle to the adjacent `windows-*.iss` modules; modules own their state and do not declare Inno event handlers. Portable release is the same executable.
 - `issconfig`: upstream visual-library submodule; initialize with `git submodule update --init --recursive` before packaging tests. Keep application lifecycle hooks in `packaging/windows.iss`.
 - `tools/prerender-icons.js`: shortcut icons from `static/os-icons` and `crates/switchboot_core/icons-raw`.
 - `packaging/generate-app-icons.mjs`: app PNG/ICO generation without Tauri.
@@ -49,7 +50,7 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 - `pnpm release <patch|minor|major|X.Y.Z>` is the version/commit/tag entry point. It synchronizes root `Cargo.toml`, `Cargo.lock` and `package.json`.
 - Releases require a clean tree on `main`. Annotated `vX.Y.Z` tags are immutable; never replace an existing tag. The script asks before atomic branch/tag push (`--dry-run`, `--no-push`, `--yes`, `--sign`, `--no-sign` are supported).
 - Tag push builds Linux/Windows and opens a draft release; publishing it updates APT/RPM repositories through `update-repository.yml`. Preserve metadata validation, restore-before-update, explicit bootstrap and no-downgrade checks.
-- Retain GPG signatures and build provenance. Preserve existing signed updater feed compatibility for previous releases. Prefer platform-native updates; an in-app updater is outside the current migration scope.
+- Retain GPG signatures and build provenance. Preserve existing signed updater feed and key compatibility for previous releases. In-app updates are restricted to installed Windows mode; Linux uses native package updates and Windows portable/demo modes never self-update. See `docs/windows-updates.md`.
 
 ## Migration follow-ups
 

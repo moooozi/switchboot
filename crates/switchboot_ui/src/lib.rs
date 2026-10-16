@@ -1,19 +1,25 @@
 //! Native Switchboot UI. Firmware services are supplied by the host through [`Backend`].
 mod app_icon;
+mod demo;
 mod drag;
 mod model;
 mod motion;
 mod movement;
 mod style;
+mod update_controller;
+mod update_view;
+mod updates;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+pub use demo::DemoBackend;
 use iced::widget::{
     Column, button, checkbox, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Element, Length, Subscription, Task};
 pub use model::{Backend, BootTarget, Entry, Shortcut, Snapshot};
 use model::{Change, DropTarget, Model, Operation};
+pub use updates::{UpdateProgress, UpdateRelease};
 
 /// Opens the native window. Run this on the process's main thread.
 pub fn run(backend: Arc<dyn Backend>) -> iced::Result {
@@ -64,6 +70,8 @@ fn run_application(
 }
 
 struct App {
+    updates: updates::State,
+    update_progress: UpdateProgress,
     backend: Arc<dyn Backend>,
     model: Model,
     dialog: Option<Dialog>,
@@ -114,6 +122,14 @@ enum Dialog {
 
 #[derive(Debug, Clone)]
 enum Message {
+    CheckUpdate,
+    UpdateChecked(Result<Option<UpdateRelease>, String>),
+    InstallUpdate,
+    UpdateInstalled(Result<(), String>),
+    UpdateProgress(UpdateProgress),
+    PollUpdate,
+    UpdatePolled(Result<bool, String>),
+    PollUpgradeShutdown,
     Loaded(Result<Snapshot, String>),
     Discovered(Result<Vec<Entry>, String>),
     Completed(Result<(), String>),
@@ -155,7 +171,7 @@ fn worker<T: Send + 'static>(
         async move {
             tokio::task::spawn_blocking(work)
                 .await
-                .map_err(|error| format!("Firmware worker failed: {error}"))?
+                .map_err(|error| format!("Background task failed: {error}"))?
         },
         complete,
     )
@@ -164,6 +180,8 @@ fn worker<T: Send + 'static>(
 impl App {
     fn new(backend: Arc<dyn Backend>) -> (Self, Task<Message>) {
         let mut app = Self {
+            updates: updates::State::new(backend.updates_supported()),
+            update_progress: UpdateProgress::default(),
             backend,
             model: Model::default(),
             dialog: None,
@@ -177,6 +195,7 @@ impl App {
         };
         let task = Task::batch([
             app.load(),
+            app.check_update(),
             iced::system::theme().map(Message::SystemThemeChanged),
         ]);
         (app, task)
@@ -192,7 +211,8 @@ impl App {
     }
 
     fn operation(&mut self, operation: Operation) -> Task<Message> {
-        if self.drag.is_some() || !self.model.begin(operation.clone()) {
+        if self.updates.installing() || self.drag.is_some() || !self.model.begin(operation.clone())
+        {
             return Task::none();
         }
         self.notice = None;
@@ -234,6 +254,7 @@ impl App {
                     .map(|_| Message::PollActivation),
             );
         }
+        subscriptions.push(self.update_subscription());
         if self.drag.is_some_and(|drag| drag.scroll_velocity != 0.0) {
             subscriptions.push(
                 iced::time::every(std::time::Duration::from_millis(32))
@@ -260,6 +281,19 @@ impl App {
     }
 
     fn update_message(&mut self, message: Message) -> Task<Message> {
+        if message.is_update() {
+            return self.update_updates(message);
+        }
+        // Keep firmware and draft operations excluded while Setup is running.
+        // The handoff event authorizes GUI exit after Setup finishes preflight.
+        if self.updates.installing()
+            && !matches!(
+                message,
+                Message::PollActivation | Message::SystemThemeChanged(_)
+            )
+        {
+            return Task::none();
+        }
         // Confirmation belongs to one target and ends when another action is taken.
         if !matches!(
             message,
@@ -745,7 +779,10 @@ impl App {
         position: Option<usize>,
         density: LayoutDensity,
     ) -> Element<'_, Message> {
-        let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
+        let enabled = !self.updates.installing()
+            && !self.model.busy()
+            && self.dialog.is_none()
+            && self.drag.is_none();
         let target = BootTarget::Entry(entry.id);
         let mut badges = row![].spacing(6).align_y(iced::Alignment::Center);
         if self.model.current == Some(entry.id) {
@@ -889,7 +926,10 @@ impl App {
 
     fn view_sized(&self, density: LayoutDensity) -> Element<'_, Message> {
         let display_order = self.display_order();
-        let enabled = !self.model.busy() && self.dialog.is_none() && self.drag.is_none();
+        let enabled = !self.updates.installing()
+            && !self.model.busy()
+            && self.dialog.is_none()
+            && self.drag.is_none();
         let undo = self
             .model
             .history
@@ -902,14 +942,20 @@ impl App {
             .get(self.model.cursor)
             .map(|change| format!("Redo {}", change.label()))
             .unwrap_or_else(|| "Redo".into());
+        let mut title = column![text("Switchboot").size(30).font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..Default::default()
+        })]
+        .spacing(2)
+        .width(Length::Fill);
+        if let Some(link) = self
+            .updates
+            .link(self.can_install_update(), self.model.changed())
+        {
+            title = title.push(link);
+        }
         let mut toolbar = row![
-            text("Switchboot")
-                .size(30)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Default::default()
-                })
-                .width(Length::Fill),
+            title,
             motion::button(
                 button(text("Save").size(14))
                     .padding([10, 16])
@@ -1130,11 +1176,24 @@ impl App {
                 .width(Length::Fill),
         ];
         content = content.push(footer.align_y(iced::Alignment::Center));
-        container(content)
+        let base: Element<'_, Message> = container(content)
             .padding(16)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
+            .into();
+        if let Some(modal) = self.updates.modal(self.update_progress) {
+            let overlay = container(iced::widget::opaque(modal))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .padding(24)
+                .style(|_| container::Style {
+                    background: Some(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.65).into()),
+                    ..Default::default()
+                });
+            iced::widget::stack![base, iced::widget::opaque(overlay)].into()
+        } else {
+            base
+        }
     }
 
     fn dialog_view(&self, dialog: &Dialog) -> Element<'_, Message> {
@@ -1340,80 +1399,11 @@ fn os_icon(icon: &str, description: &str) -> Element<'static, Message> {
         .into()
 }
 
-/// Safe in-memory backend for UI development. It never touches firmware or restarts.
-pub struct DemoBackend {
-    state: Mutex<Snapshot>,
-}
-
-impl Default for DemoBackend {
-    fn default() -> Self {
-        Self {
-            state: Mutex::new(Snapshot {
-                entries: vec![
-                    Entry {
-                        id: 0,
-                        description: "Windows Boot Manager".into(),
-                    },
-                    Entry {
-                        id: 1,
-                        description: "Fedora".into(),
-                    },
-                    Entry {
-                        id: 2,
-                        description: "Ubuntu".into(),
-                    },
-                ],
-                order: vec![0, 1],
-                boot_next: None,
-                current: Some(0),
-                firmware_setup: false,
-                portable: false,
-            }),
-        }
-    }
-}
-
-impl Backend for DemoBackend {
-    fn load(&self) -> Result<Snapshot, String> {
-        self.state
-            .lock()
-            .map(|state| state.clone())
-            .map_err(|error| error.to_string())
-    }
-    fn discover(&self) -> Result<Vec<Entry>, String> {
-        Ok(self.load()?.entries)
-    }
-    fn set_order(&self, order: Vec<u16>) -> Result<(), String> {
-        self.state.lock().map_err(|error| error.to_string())?.order = order;
-        Ok(())
-    }
-    fn set_next(&self, next: Option<u16>) -> Result<(), String> {
-        self.state
-            .lock()
-            .map_err(|error| error.to_string())?
-            .boot_next = next;
-        Ok(())
-    }
-    fn set_firmware(&self, enabled: bool) -> Result<(), String> {
-        self.state
-            .lock()
-            .map_err(|error| error.to_string())?
-            .firmware_setup = enabled;
-        Ok(())
-    }
-    fn create_shortcut(&self, _: Shortcut) -> Result<(), String> {
-        Ok(())
-    }
-    fn restart(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn app() -> App {
+    pub(super) fn app() -> App {
         let backend = Arc::new(DemoBackend::default());
         let snapshot = backend.load().unwrap();
         let (mut app, _) = App::new(backend);

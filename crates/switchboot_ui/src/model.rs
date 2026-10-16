@@ -1,3 +1,4 @@
+use crate::updates::UpdateRelease;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,30 @@ pub struct Shortcut {
 /// Privileged services are implemented by the host, independently of iced.
 /// Calls may block: the UI dispatches them to a blocking worker thread.
 pub trait Backend: Send + Sync + 'static {
+    fn updates_supported(&self) -> bool {
+        false
+    }
+    /// Nonblocking check for an installer requesting this GUI's shutdown.
+    fn upgrade_shutdown_requested(&self) -> Result<bool, String> {
+        Ok(false)
+    }
+    fn check_update(&self) -> Result<Option<UpdateRelease>, String> {
+        Ok(None)
+    }
+    fn install_update(&self, _version: String) -> Result<(), String> {
+        Err("Updates are unavailable in this mode".into())
+    }
+    fn install_update_with_progress(
+        &self,
+        version: String,
+        _progress: std::sync::Arc<dyn Fn(crate::UpdateProgress) + Send + Sync>,
+    ) -> Result<(), String> {
+        self.install_update(version)
+    }
+    /// Observe Setup without blocking shutdown. True means Setup finished.
+    fn poll_update(&self) -> Result<bool, String> {
+        Err("No Windows Setup process is running".into())
+    }
     fn load(&self) -> Result<Snapshot, String>;
     fn discover(&self) -> Result<Vec<Entry>, String>;
     fn set_order(&self, order: Vec<u16>) -> Result<(), String>;

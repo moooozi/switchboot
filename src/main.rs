@@ -4,6 +4,8 @@
 mod args_parser;
 mod backend;
 mod instance;
+#[cfg(windows)]
+mod updater;
 
 use switchboot_core::cli::logic;
 
@@ -44,7 +46,10 @@ fn main() {
                 }
             }
 
-            run_ui(std::sync::Arc::new(backend::FirmwareBackend), false);
+            run_ui(
+                std::sync::Arc::new(backend::FirmwareBackend::default()),
+                false,
+            );
         }
 
         args_parser::AppMode::CliDaemon => {

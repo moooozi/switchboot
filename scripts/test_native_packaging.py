@@ -1,6 +1,7 @@
 """Build real native package containers around a harmless fixture executable."""
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -64,6 +65,20 @@ class NativePackagingTests(unittest.TestCase):
         (self.core / "icons").mkdir(parents=True)
         (self.root / "target/release").mkdir(parents=True)
         (self.root / "artifacts").mkdir()
+
+    def test_windows_modules_do_not_declare_inno_event_handlers(self):
+        events = (
+            "InitializeSetup|InitializeWizard|DeinitializeSetup|ShouldSkipPage|"
+            "NextButtonClick|CancelButtonClick|PrepareToInstall|CurStepChanged|"
+            "GetCustomSetupExitCode|CurPageChanged|InitializeUninstallProgressForm"
+        )
+        pattern = re.compile(rf"^(?:function|procedure)\s+({events})\b", re.MULTILINE)
+        entry = (ROOT / "packaging/windows.iss").read_text(encoding="utf-8")
+        self.assertEqual(set(pattern.findall(entry)), set(events.split("|")))
+        for module in (ROOT / "packaging").glob("windows-*.iss"):
+            with self.subTest(module=module.name):
+                self.assertIn(f'#include "{module.name}"', entry)
+                self.assertEqual(pattern.findall(module.read_text(encoding="utf-8")), [])
 
     @unittest.skipUnless(ISCC, "Inno Setup required")
     def test_issconfig_standalone_examples(self):

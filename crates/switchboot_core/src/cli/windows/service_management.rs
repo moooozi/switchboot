@@ -48,7 +48,7 @@ pub struct ServiceConfig {
     pub grant_start_to_everyone: bool,
 }
 
-/// Install a new service configured for manual (on-demand) start.
+/// Install or refresh the service configuration for manual (on-demand) start.
 pub fn install_service(config: ServiceConfig) -> Result<()> {
     use windows_service::service::{
         ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceType,
@@ -68,14 +68,29 @@ pub fn install_service(config: ServiceConfig) -> Result<()> {
         executable_path: config.executable_path,
         launch_arguments: config.launch_arguments,
         dependencies: vec![],
-        account_name: None, // LocalSystem
+        account_name: Some(OsString::from("LocalSystem")),
         account_password: None,
     };
 
-    // WRITE_DAC is required to modify the security descriptor below.
-    let service = manager.create_service(
-        &service_info,
-        ServiceAccess::CHANGE_CONFIG | ServiceAccess::WRITE_DAC | ServiceAccess::READ_CONTROL,
+    // WRITE_DAC is required to modify the security descriptor below. If
+    // best-effort removal left a registration, refresh it explicitly.
+    let access =
+        ServiceAccess::CHANGE_CONFIG | ServiceAccess::WRITE_DAC | ServiceAccess::READ_CONTROL;
+    let service = create_or_update_service(
+        || {
+            manager
+                .create_service(&service_info, access)
+                .map_err(Into::into)
+        },
+        || {
+            let service = manager.open_service(
+                &service_info.name,
+                access | ServiceAccess::QUERY_STATUS | ServiceAccess::STOP,
+            )?;
+            stop_existing(&service, LIFECYCLE_TIMEOUT, sleep)?;
+            service.change_config(&service_info)?;
+            Ok(service)
+        },
     )?;
 
     if config.grant_start_to_everyone {
@@ -93,6 +108,19 @@ pub fn install_service(config: ServiceConfig) -> Result<()> {
 }
 
 const LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn create_or_update_service<T>(
+    create: impl FnOnce() -> Result<T>,
+    update: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    match create() {
+        Ok(service) => Ok(service),
+        Err(error) if has_code(&error, windows::Win32::Foundation::ERROR_SERVICE_EXISTS) => {
+            update()
+        }
+        Err(error) => Err(error),
+    }
+}
 
 fn has_code(error: &ServiceManagementError, code: windows::Win32::Foundation::WIN32_ERROR) -> bool {
     matches!(error, ServiceManagementError::WindowsService(windows_service::Error::Winapi(error))
@@ -432,7 +460,9 @@ fn grant_start_permission_to_everyone(service: &windows_service::service::Servic
         };
 
         let inject = "(A;;RPWPDTLOCRRC;;;WD)";
-        let new_sddl = if let Some(idx) = sddl.find(")S:(") {
+        let new_sddl = if sddl.contains(inject) {
+            sddl.clone()
+        } else if let Some(idx) = sddl.find(")S:(") {
             let insert_at = idx + 1;
             let mut s = sddl.clone();
             s.insert_str(insert_at, inject);
@@ -487,6 +517,48 @@ mod tests {
 
     fn winapi_error(code: i32) -> ServiceManagementError {
         windows_service::Error::Winapi(std::io::Error::from_raw_os_error(code)).into()
+    }
+
+    #[test]
+    fn service_installation_creates_or_refreshes_only_an_existing_registration() {
+        use windows::Win32::Foundation::{
+            ERROR_ACCESS_DENIED, ERROR_SERVICE_EXISTS, ERROR_SERVICE_MARKED_FOR_DELETE,
+        };
+        assert_eq!(
+            create_or_update_service(|| Ok(1), || panic!("new service must not be refreshed"))
+                .unwrap(),
+            1
+        );
+        let updates = Cell::new(0);
+        assert_eq!(
+            create_or_update_service(
+                || Err(winapi_error(ERROR_SERVICE_EXISTS.0 as i32)),
+                || {
+                    updates.set(updates.get() + 1);
+                    Ok(2)
+                },
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(updates.get(), 1);
+        for code in [ERROR_ACCESS_DENIED, ERROR_SERVICE_MARKED_FOR_DELETE] {
+            let result = create_or_update_service::<()>(
+                || Err(winapi_error(code.0 as i32)),
+                || panic!("unrelated creation failures must be reported"),
+            );
+            assert!(has_code(&result.unwrap_err(), code));
+        }
+    }
+
+    #[test]
+    fn service_refresh_failure_is_reported_for_setup_retry() {
+        use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_SERVICE_EXISTS};
+        let result = create_or_update_service::<()>(
+            || Err(winapi_error(ERROR_SERVICE_EXISTS.0 as i32)),
+            || Err(winapi_error(ERROR_ACCESS_DENIED.0 as i32)),
+        );
+        assert!(has_code(&result.unwrap_err(), ERROR_ACCESS_DENIED));
     }
 
     struct FakeStop {
