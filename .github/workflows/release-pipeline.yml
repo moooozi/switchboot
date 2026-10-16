@@ -49,7 +49,7 @@ jobs:
             exit 1
           fi
           PKG=$(python3 -c "import json;print(json.load(open('package.json'))['version'])")
-          CARGO=$(grep -m1 -E '^version' src-tauri/Cargo.toml | sed -E 's/[^"]*"([^"]+)".*/\1/')
+          CARGO=$(grep -m1 -E '^version' Cargo.toml | sed -E 's/[^"]*"([^"]+)".*/\1/')
           echo "tag=$TAG  version=$VERSION  package.json=$PKG  Cargo.toml=$CARGO"
           if [ "$PKG" != "$VERSION" ] || [ "$CARGO" != "$VERSION" ]; then
             echo "::error::Version mismatch: tag=$VERSION but package.json=$PKG, Cargo.toml=$CARGO."
@@ -71,7 +71,6 @@ jobs:
     secrets:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
   build-windows:
     needs: prepare
@@ -82,8 +81,10 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   create-release:
     name: Create Draft Release
@@ -124,11 +125,12 @@ jobs:
           echo "files=$files" >> $GITHUB_OUTPUT
           echo "Files to sign: $files"
 
-      - name: Move Tauri updater signatures aside
+      - name: Preserve compatible updater signatures
         shell: bash
         run: |
+          test -s artifacts/Switchboot_x64-setup.exe.sig
           mkdir -p artifacts/update-sig
-          mv artifacts/*.sig artifacts/update-sig/ 2>/dev/null || echo "No .sig files to move"
+          mv artifacts/*.sig artifacts/update-sig/
 
       - name: Sign artifacts with GPG
         if: steps.collect_files.outputs.files != ''
@@ -177,9 +179,7 @@ jobs:
           draft: true
           prerelease: false
           # Create and upload in one draft-only action to prevent automatic publication.
-          # Attach packages, GPG detached signatures (.asc) and Tauri updater
-          # signatures (.sig). These release assets are the transport used by
-          # update-repository.yml when the draft is published.
+          # Native packages, GPG signatures and compatible updater signatures.
           files: |
             artifacts/*.deb
             artifacts/*.rpm

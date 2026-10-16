@@ -4,9 +4,7 @@
 `main`, merge-queue groups and manual runs. Windows and Ubuntu run independently;
 one platform failing does not cancel the other's diagnostics.
 
-The workflow detects the root native Cargo workspace when present. While `main`
-still uses the previous frontend, it validates its Svelte modules and Rust backend
-instead. This lets the iced migration PR use the same checks and artifact names.
+The workflow validates the native iced Cargo workspace on both platforms.
 
 Checks include frozen Node dependencies, SVG icon generation, Rust formatting,
 Clippy with warnings treated as errors, locked Rust tests, all Node test files and
@@ -16,7 +14,7 @@ No real firmware or restart operations are run.
 
 Successful runs build unsigned packages and upload:
 
-- Windows portable executable and NSIS installer.
+- Windows portable executable and Inno Setup installer for the native workspace.
 - Linux DEB, RPM and a tarball containing the executable with its permissions.
 - `build-info.json` recording the tested commit, platform and application layout.
 
@@ -31,7 +29,7 @@ starting services, signing artifacts, publishing releases or updating repositori
 Release workflows are unchanged.
 
 To enforce this gate, configure the `main` branch ruleset to require
-`Validate (ubuntu-22.04)` and `Validate (windows-latest)`. Workflow files create
+`Validate (ubuntu-latest)` and `Validate (windows-latest)`. Workflow files create
 status checks; repository rules must explicitly require them before merging.
 
 Local artifact-collector checks:

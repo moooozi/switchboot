@@ -16,15 +16,15 @@ class BuildVersionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.crate = self.root / "src-tauri"
+        self.crate = self.root
         (self.crate / "src").mkdir(parents=True)
         (self.crate / "src/lib.rs").write_text("", encoding="utf-8")
         self.manifest = self.crate / "Cargo.toml"
         self.manifest.write_text('[package]\nname = "build-version-fixture"\nversion = "1.0.0"\nedition = "2024"\n[build-dependencies]\nserde_json = "1"\n', encoding="utf-8")
-        source = (ROOT / "src-tauri/build.rs").read_text(encoding="utf-8")
-        validator = source[source.index("fn validate_version()"):source.index("/// Generate app_build_info")]
+        source = (ROOT / "build.rs").read_text(encoding="utf-8")
+        validator = source[source.index("fn validate_version()"):]
         (self.crate / "build.rs").write_text(
-            "use std::{fs, path::Path};\nfn main() { validate_version().unwrap(); }\n" + validator,
+            "use std::{env, fs, path::Path};\nfn main() { validate_version().unwrap(); }\n" + validator,
             encoding="utf-8")
 
     def build(self, version):

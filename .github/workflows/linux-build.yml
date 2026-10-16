@@ -17,8 +17,6 @@ on:
         required: true
       GPG_PASSPHRASE:
         required: false
-      TAURI_SIGNING_PRIVATE_KEY:
-        required: true
 
 concurrency:
   group: linux-build-${{ github.ref }}
@@ -27,13 +25,14 @@ concurrency:
 jobs:
   build-linux:
     name: Build Linux App
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Check for GPG secret
         id: secrets_check
@@ -55,37 +54,13 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
-      - name: Cache pnpm store and node_modules
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.pnpm-store
-            node_modules
-          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-
-      - name: Install dependencies
+      - name: Install icon tooling
         run: pnpm install --frozen-lockfile
 
-      - name: Install system dependencies
+      - name: Install native build and package dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            ca-certificates \
-            git \
-            pkg-config \
-            cmake \
-            unzip \
-            libssl-dev \
-            libglib2.0-dev \
-            libsoup-3.0-dev \
-            libwebkit2gtk-4.1-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            rpm
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev rpm
 
       - name: Update Rust
         run: rustup update stable
@@ -114,38 +89,33 @@ jobs:
       - name: Cache Cargo build target (optional)
         uses: actions/cache@v6
         with:
-          path: src-tauri/target
+          path: target
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
 
 
-      - name: Generate icons
+      - name: Generate shortcut icons
         run: |
-          pnpm tauri icon ./app-icon.svg
           pnpm icons
+          node packaging/generate-app-icons.mjs
 
-      - name: Validate frontend and release tooling
+      - name: Validate Rust and tooling
         run: |
-          pnpm check
-          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs scripts/frontend.test.mjs scripts/icons.test.mjs
+          cargo fmt --all --check
+          cargo test --locked --workspace --all-targets
+          cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
+          node --test scripts/release.test.mjs scripts/icons.test.mjs
           python3 -B -m unittest discover -s scripts -p 'test_*.py'
 
-      - name: Build frontend
-        run: pnpm build
+      - name: Build native application
+        run: cargo build --locked --release --bin switchboot
 
-      - name: Test native backend
-        run: cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
-
-      - name: Build frontend and Tauri (no bundle)
-        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle -- --locked
-
-      - name: Bundle Tauri (deb & rpm)
-        run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
+      - name: Build DEB and RPM packages
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: bash packaging/linux.sh "$RELEASE_VERSION"
 
       - name: Collect artifacts
         id: collect
-        shell: bash
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: bash scripts/collect-linux-artifacts.sh "$RELEASE_VERSION"

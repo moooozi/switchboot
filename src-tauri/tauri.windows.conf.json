@@ -1,6 +1,0 @@
-{
-  "identifier": "dev.zidane.switchboot",
-  "bundle": {
-    "resources": ["resources/icons"]
-  }
-}

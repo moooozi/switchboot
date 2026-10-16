@@ -5,13 +5,13 @@ version=${1:?Release version required}
 shopt -s nullglob
 debs=()
 rpms=()
-for package in src-tauri/target/release/bundle/deb/*.deb; do
+for package in target/release/bundle/deb/*.deb; do
   if [ "$(dpkg-deb --field "$package" Version)" = "$version" ] && \
      [ "$(dpkg-deb --field "$package" Architecture)" = 'amd64' ]; then
     debs+=("$package")
   fi
 done
-for package in src-tauri/target/release/bundle/rpm/*.rpm; do
+for package in target/release/bundle/rpm/*.rpm; do
   if [ "$(rpm -qp --qf '%{VERSION} %{ARCH}' "$package")" = "$version x86_64" ]; then
     rpms+=("$package")
   fi

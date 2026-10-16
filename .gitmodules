@@ -1,0 +1,3 @@
+[submodule "issconfig"]
+	path = issconfig
+	url = https://github.com/moooozi/issconfig.git

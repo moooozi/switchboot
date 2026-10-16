@@ -1,6 +1,0 @@
-{
-  "identifier": "dev.zidane.switchboot",
-  "bundle": {
-    "createUpdaterArtifacts": true
-  }
-}

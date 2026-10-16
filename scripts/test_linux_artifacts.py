@@ -27,7 +27,7 @@ class LinuxArtifactTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.bundle = self.root / "src-tauri/target/release/bundle"
+        self.bundle = self.root / "target/release/bundle"
         (self.bundle / "deb").mkdir(parents=True)
         (self.bundle / "rpm").mkdir()
 

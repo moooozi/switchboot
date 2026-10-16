@@ -2,19 +2,20 @@ name: Windows Build
 
 permissions:
   contents: read
-  id-token: write # request OIDC token for build provenance
-  attestations: write # persist build provenance attestation
+  id-token: write
+  attestations: write
 
 on:
   workflow_call:
     inputs:
       version:
-        description: "version (e.g. 0.1.1)"
         required: true
         type: string
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
         required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
 
 concurrency:
   group: windows-build-${{ github.ref }}
@@ -22,143 +23,75 @@ concurrency:
 
 jobs:
   build-windows:
-    name: Build Windows App
     runs-on: windows-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Install dependencies
+      - uses: pnpm/action-setup@v6
+      - name: Install icon tooling
         run: pnpm install --frozen-lockfile
-
-      - name: Remove unwanted Rust targets
-        shell: pwsh
-        run: |
-          rustup target remove x86_64-pc-windows-gnu
-          rustup target remove i686-pc-windows-msvc
-
       - name: Update Rust
-        shell: pwsh
         run: rustup update stable
-
-      - name: Get rustc version
-        id: rustver
-        shell: pwsh
-        run: |
-          # Emit rustc version to a step output so the cache key can include it.
-          $fullVersion = (rustc --version).Trim()
-          $version = $fullVersion.Split()[1]
-          Write-Output "rustc=$version" >> $env:GITHUB_OUTPUT
-
-      - name: Cache Cargo registry and git
+      - name: Cache Cargo dependencies
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ steps.rustver.outputs.rustc }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
-
-      - name: Cache Cargo build target (optional)
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target
-          # Include rustc version in the key to avoid restoring incompatible builds
-          key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rustc }}
-
-      - name: Remove .gitkeep files in src-tauri
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Generate shortcut icons
+        run: |
+          pnpm icons
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node packaging/generate-app-icons.mjs
+      - name: Install Inno Setup
+        run: choco upgrade innosetup --version=6.7.3 --yes --no-progress
+      - name: Validate Rust and tooling
         shell: pwsh
         run: |
-          Get-ChildItem -Path 'src-tauri' -Recurse -Filter '.gitkeep' -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
-
-      - name: Generate Tauri icons
-        run: pnpm tauri icon ./app-icon.svg
-
-      - name: Generate prerendered icons
-        run: pnpm icons
-
-      - name: Validate frontend and release tooling
-        run: |
-          pnpm check
+          cargo fmt --all --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/release.test.mjs scripts/updater-signing.test.mjs scripts/frontend.test.mjs scripts/icons.test.mjs
+          cargo test --locked --workspace --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/release.test.mjs scripts/icons.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B -m unittest discover -s scripts -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build frontend
-        run: pnpm build
-
-      - name: Test native backend
-        run: cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
-
-      - name: Build Tauri (release)
-        run: pnpm tauri build --config src-tauri/tauri.signed.conf.json --no-bundle -- --locked
-
-      - name: Bundle Tauri
-        run: pnpm tauri bundle --config src-tauri/tauri.signed.conf.json
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
-      - name: Locate final installer
-        id: installer
+      - name: Test updater signing compatibility
+        run: cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
+      - name: Build native application
+        run: cargo build --locked --release --bin switchboot
+      - name: Package installer and portable binary
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'Switchboot_' + $env:RELEASE_VERSION + '_x64-setup.exe'
-          $installer = Join-Path $PWD ('src-tauri/target/release/bundle/nsis/' + $name)
-          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Expected installer not found: $installer" }
-          Write-Output "path=$installer" >> $env:GITHUB_OUTPUT
-
-      - name: Collect artifacts
-        id: collect
-        shell: pwsh
-        env:
-          INSTALLER: ${{ steps.installer.outputs.path }}
-        run: |
-          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-
-          $nsis = Get-Item -LiteralPath $env:INSTALLER
-          $setupName = "Switchboot_x64-setup.exe"
-          Copy-Item $nsis.FullName -Destination (Join-Path $PWD 'artifacts' $setupName)
-
-          # Preserve Tauri's updater signature for the exact bundled installer.
-          $sigFile = $nsis.FullName + '.sig'
-          if (-not (Test-Path -LiteralPath $sigFile -PathType Leaf) -or (Get-Item -LiteralPath $sigFile).Length -eq 0) {
-            throw "Required updater signature is missing or empty: $sigFile"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVERSION=$env:RELEASE_VERSION" packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath target/release/switchboot.exe -Destination artifacts/Switchboot_x64-portable.exe
+          foreach ($name in @('Switchboot_x64-setup.exe', 'Switchboot_x64-portable.exe')) {
+            if ((Get-Item -LiteralPath "artifacts/$name").Length -eq 0) { throw "Empty artifact: $name" }
           }
-          $sigName = $setupName + '.sig'
-          Copy-Item $sigFile -Destination (Join-Path $PWD 'artifacts' $sigName)
-
-          $portable = Join-Path $PWD 'src-tauri\target\release\switchboot.exe'
-          if (-not (Test-Path $portable)) { Write-Error "Portable exe not found at $portable"; exit 1 }
-          $portableName = "Switchboot_x64-portable.exe"
-          Copy-Item $portable -Destination (Join-Path $PWD 'artifacts' $portableName)
-
-          Write-Output "nsis_artifact=$setupName" >> $env:GITHUB_OUTPUT
-          Write-Output "portable_artifact=$portableName" >> $env:GITHUB_OUTPUT
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+      - name: Sign installer for existing updater clients
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo run --locked --release --manifest-path packaging/updater-sign/Cargo.toml -- artifacts/Switchboot_x64-setup.exe
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-artifacts-${{ inputs.version }}
           path: artifacts/*
-
-      - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@v4
         with:
-          subject-path: |
-            artifacts/*.exe
+          subject-path: artifacts/*.exe

@@ -1,32 +1,30 @@
 #!/usr/bin/env node
 import fs from "fs";
 import path from "path";
+import { encodeIco, linuxIconSizes } from "./icon-formats.mjs";
 
 // Small helper CLI to generate OS icons.
-// Behavior unchanged: on Linux we emit hicolor PNGs; on Windows/others we emit ICOs.
+// Linux emits scalable SVGs and hicolor PNG fallbacks; Windows emits mixed DIB/PNG ICOs.
 
 const cwd = process.cwd();
 const STATIC_OS_ICONS = path.resolve(cwd, "static", "os-icons");
-const RAW_ICON_DIR = path.resolve(cwd, "src-tauri", "icons-raw");
+const RAW_ICON_DIR = path.resolve(cwd, "crates", "switchboot_core", "icons-raw");
 
 const isWin = process.platform === "win32";
 const isLinux = process.platform === "linux";
 const produceLinuxPngs = isLinux;
-const produceIco = isWin || (!isWin && !isLinux);
+const produceIco = isWin;
+if (!isWin && !isLinux) throw new Error("Icon generation supports Windows and Linux only");
 
 // Output directories
 const OUT_DIR = isLinux
-  ? path.resolve(cwd, "src-tauri", "icons-linux")
-  : path.resolve(cwd, "src-tauri", "resources", "icons");
+  ? path.resolve(cwd, "crates", "switchboot_core", "icons-linux")
+  : path.resolve(cwd, "crates", "switchboot_core", "resources", "icons");
 const OUT_ICO_DIR = path.join(OUT_DIR, "ico");
 
 // Sizes used
 const ICO_SIZES = [16, 32, 48, 128, 256];
-const LINUX_HICOLOR_SIZES = [
-  { dir: "32x32", px: 32 },
-  { dir: "128x128", px: 128 },
-  { dir: "512x512", px: 512 },
-];
+const LINUX_HICOLOR_SIZES = linuxIconSizes.map((px) => ({ dir: `${px}x${px}`, px }));
 
 // Canvas/layout constants
 const CANVAS_SIZE = 128;
@@ -108,15 +106,20 @@ async function rasterizeBuffers(sharp, svgString, sizes = ICO_SIZES) {
 }
 
 async function writeHicolorPngs(sharp, svgString, name) {
+  const scalable = path.join(OUT_DIR, "hicolor", "scalable", "apps");
+  ensureDir(scalable);
+  fs.writeFileSync(path.join(scalable, `dev.zidane.switchboot-${name}.svg`), svgString);
+  fs.rmSync(path.join(OUT_DIR, "hicolor", "512x512", "apps", `dev.zidane.switchboot-${name}.png`), { force: true });
   for (const s of LINUX_HICOLOR_SIZES) {
     const dirPath = path.join(OUT_DIR, "hicolor", s.dir, "apps");
     ensureDir(dirPath);
+
     try {
       const buf = await sharp(Buffer.from(svgString))
         .resize({ width: s.px, height: s.px, fit: "contain" })
         .png()
         .toBuffer();
-      const outName = `swboot-${name}.png`;
+      const outName = `dev.zidane.switchboot-${name}.png`;
       const outPath = path.join(dirPath, outName);
       fs.writeFileSync(outPath, buf);
       console.log(`Wrote ${path.relative(cwd, outPath)}`);
@@ -126,7 +129,7 @@ async function writeHicolorPngs(sharp, svgString, name) {
   }
 }
 
-function writeIcoFromBuffers(buffers, name) {
+async function writeIcoFromBuffers(buffers, name) {
   try {
     // prefer larger sizes first
     const prefer = [256, 128, 48, 32, 16];
@@ -134,23 +137,7 @@ function writeIcoFromBuffers(buffers, name) {
     if (ordered.length === 0) {
       throw new Error(`No PNG buffers available to build ICO for ${name}`);
     }
-    // ICO directory entries can point directly to PNGs. Converting them to
-    // uncompressed DIBs wastes space; PNG frames are supported since Windows Vista.
-    const directory = Buffer.alloc(6 + ordered.length * 16);
-    directory.writeUInt16LE(1, 2); // Image type: icon
-    directory.writeUInt16LE(ordered.length, 4);
-    let offset = directory.length;
-    for (const [i, size] of ordered.entries()) {
-      const entry = 6 + i * 16;
-      directory[entry] = size === 256 ? 0 : size;
-      directory[entry + 1] = size === 256 ? 0 : size;
-      directory.writeUInt16LE(1, entry + 4); // Color planes
-      directory.writeUInt16LE(32, entry + 6); // RGBA bits per pixel
-      directory.writeUInt32LE(buffers[size].length, entry + 8);
-      directory.writeUInt32LE(offset, entry + 12);
-      offset += buffers[size].length;
-    }
-    const icoBuf = Buffer.concat([directory, ...ordered.map((s) => buffers[s])]);
+    const icoBuf = await encodeIco(buffers, ordered);
     ensureDir(OUT_ICO_DIR);
     const icoPath = path.join(OUT_ICO_DIR, `${name}.ico`);
     fs.writeFileSync(icoPath, icoBuf);
@@ -239,7 +226,7 @@ async function run() {
 
     if (produceIco) {
       const buffers = await rasterizeBuffers(sharp, genericSvg);
-      writeIcoFromBuffers(buffers, "generic");
+      await writeIcoFromBuffers(buffers, "generic");
     }
   }
 
@@ -247,7 +234,8 @@ async function run() {
   for (const f of files) {
     const name = path.basename(f, ".svg");
     const srcSvg = readSvg(path.join(STATIC_OS_ICONS, f));
-    const sourceInner = stripSvgWrapper(srcSvg);
+    // Keep root-level fills and strokes, especially for monochrome EFI icons.
+    const sourceInner = srcSvg.replace(/<\?xml[^>]*\?>/g, "");
     const sourceBox = detectViewBoxOrSize(srcSvg);
     const combined = composeSvg(sourceInner, sourceBox, overlayInner);
 
@@ -278,7 +266,7 @@ async function run() {
         "Platform configured to not produce ICOs; skipping .ico generation"
       );
     } else {
-      writeIcoFromBuffers(producedBuffers, name);
+      await writeIcoFromBuffers(producedBuffers, name);
     }
   }
 }

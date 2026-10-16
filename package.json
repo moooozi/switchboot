@@ -11,34 +11,14 @@
     }
   },
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri",
+    "dev": "cargo run --bin switchboot",
+    "build": "cargo build --release --bin switchboot",
+    "check": "cargo check --workspace --all-targets",
     "release": "node ./scripts/release.mjs",
     "icons": "node ./tools/prerender-icons.js"
   },
-  "dependencies": {
-    "@floating-ui/dom": "^1.8.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-opener": "^2.5.4",
-    "@tauri-apps/plugin-updater": "^2.10.1",
-    "svelte-dnd-action": "^0.9.77",
-    "tailwindcss": "^4.3.3"
-  },
   "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.70.2",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
-    "@tauri-apps/cli": "^2.11.4",
     "sharp": "^0.35.3",
-    "svelte": "^5.56.8",
-    "svelte-check": "^4.7.4",
-    "svgo": "^4.0.2",
-    "typescript": "~6.0.3",
-    "vite": "^8.2.0"
+    "svgo": "^4.0.2"
   }
 }
