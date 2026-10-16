@@ -76,7 +76,7 @@ fn completed(code: u32) -> Result<bool> {
         Ok(true)
     } else {
         Err(Error::Setup(format!(
-            "Setup was canceled or failed (exit code {code}). Try again."
+            "Setup was canceled or failed (exit code {code})."
         )))
     }
 }
@@ -116,7 +116,7 @@ fn launch(installer: &Path, parameters: &str) -> Result<InstallSession> {
     };
     unsafe { ShellExecuteExW(&mut info) }.map_err(|error| Error::Setup(error.to_string()))?;
     if info.hProcess.is_invalid() {
-        return Err(Error::Setup("unable to monitor Setup; try again".into()));
+        return Err(Error::Setup("unable to monitor Setup".into()));
     }
     // ShellExecuteEx transfers ownership of this handle to the caller.
     Ok(InstallSession {
