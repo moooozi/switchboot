@@ -16,15 +16,17 @@ before requesting the feed. Installation revalidates that directory before
 launch. Unused staging is removed automatically; a launched installer keeps its
 source available in temporary storage so it survives application shutdown.
 
-Installed Windows builds check the existing HTTPS feed at startup and expose a
-manual retry. A quiet **Upgrade to vX.Y.Z** link below the application title
-starts the download with one click. A centered **Updating Switchboot** modal
+Installed Windows builds silently check the existing HTTPS feed at startup.
+Checking, no available update and background check failures show no label or
+error. Only a newer release adds a quiet **Upgrade to vX.Y.Z** link below the
+application title; it starts the download with one click. Errors from that
+user-initiated download or installation remain visible for retry. A centered **Updating Switchboot** modal
 shows downloaded bytes and a progress bar; verification and installer launch
 follow automatically. Release notes and a separate install panel are omitted; unsaved boot-order edits,
 discovery and pending firmware operations block installation. Linux and Windows
 portable mode do not check for updates or show update controls. Demo mode always
 offers a local sample update so its link and progress modal can be
-previewed on any platform. Checking repeats the sample; clicking Upgrade simulates download progress, then
+previewed on any platform. Clicking Upgrade simulates download progress, then
 shows a preview-only message without any network access, elevation, installer launch or restart.
 The backend independently checks installed mode before checking/downloading and
 again before launching Setup. Firmware IPC and the privileged service are not

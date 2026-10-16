@@ -23,26 +23,9 @@ impl UpdateProgress {
 
 impl State {
     pub fn link(&self, can_install: bool, dirty: bool) -> Option<Element<'_, Message>> {
-        if matches!(self, Self::Disabled) {
-            return None;
-        }
-        let (label, action) = if let Some(release) = self.release() {
-            (
-                format!("Upgrade to v{}", release.version.trim_start_matches('v')),
-                (can_install && self.can_check()).then_some(Message::InstallUpdate),
-            )
-        } else {
-            (
-                match self {
-                    Self::Checking(_) => "Checking for updates...",
-                    Self::Current => "Up to date",
-                    Self::Failed { .. } => "Retry update check",
-                    _ => "Check for updates",
-                }
-                .into(),
-                self.can_check().then_some(Message::CheckUpdate),
-            )
-        };
+        let release = self.release()?;
+        let label = format!("Upgrade to v{}", release.version.trim_start_matches('v'));
+        let action = (can_install && self.can_check()).then_some(Message::InstallUpdate);
         let link = button(text(label).size(14))
             .padding(0)
             .style(|theme, status| {
@@ -57,12 +40,10 @@ impl State {
                 appearance
             })
             .on_press_maybe(action);
-        let hint = if dirty && self.release().is_some() {
+        let hint = if dirty {
             "Save or discard your boot order changes before updating."
-        } else if self.release().is_some() {
-            "Download and install the latest version"
         } else {
-            "Check for updates"
+            "Download and install the latest version"
         };
         let mut content = column![tooltip(
             link,
@@ -122,5 +103,43 @@ impl State {
             .style(|theme| style::card(theme, false))
             .into(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UpdateRelease;
+
+    #[test]
+    fn successful_startup_check_without_update_hides_the_link() {
+        let mut state = State::new(true);
+        assert!(state.begin_check());
+        state.checked(Ok(None));
+        assert!(state.link(true, false).is_none());
+    }
+
+    #[test]
+    fn startup_check_and_failure_are_silent() {
+        let mut state = State::new(true);
+        assert!(state.link(true, false).is_none());
+        assert!(state.begin_check());
+        assert!(state.link(true, false).is_none());
+        state.checked(Err("Offline".into()));
+        assert!(state.link(true, false).is_none());
+    }
+
+    #[test]
+    fn offered_update_and_user_initiated_failure_remain_visible() {
+        let mut state = State::new(true);
+        assert!(state.begin_check());
+        state.checked(Ok(Some(UpdateRelease {
+            version: "0.4.0".into(),
+            notes: String::new(),
+        })));
+        assert!(state.link(true, false).is_some());
+        assert!(state.begin_install(true).is_some());
+        state.launched(Err("Download failed".into()));
+        assert!(state.link(true, false).is_some());
     }
 }

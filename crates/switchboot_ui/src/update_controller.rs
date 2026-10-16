@@ -7,8 +7,7 @@ impl Message {
     pub(super) fn is_update(&self) -> bool {
         matches!(
             self,
-            Self::CheckUpdate
-                | Self::UpdateChecked(_)
+            Self::UpdateChecked(_)
                 | Self::InstallUpdate
                 | Self::UpdateInstalled(_)
                 | Self::UpdateProgress(_)
@@ -81,7 +80,7 @@ impl App {
                 Ok(false) => {}
                 Err(error) => self.model.error = Some(error),
             },
-            Message::CheckUpdate => return self.check_update(),
+
             Message::UpdateChecked(result) => self.updates.checked(result),
             Message::InstallUpdate => {
                 let allowed = self.can_install_update();
@@ -163,12 +162,12 @@ mod tests {
         let mut app = app();
         app.updates = updates::State::Disabled;
         assert!(matches!(app.updates, updates::State::Disabled));
-        let _ = app.update(Message::CheckUpdate);
+        let _ = app.check_update();
         assert!(!app.updates.checking());
         let _ = app.update(Message::InstallUpdate);
         assert!(!app.updates.installing());
         app.updates = updates::State::Idle;
-        let _ = app.update(Message::CheckUpdate);
+        let _ = app.check_update();
         let _ = app.update(Message::UpdateChecked(Ok(Some(UpdateRelease {
             version: "0.4.0".into(),
             notes: "Changes".into(),
@@ -224,12 +223,12 @@ mod tests {
     fn update_checks_allow_retry_without_changing_firmware_or_draft() {
         let mut app = app();
         app.updates = updates::State::Idle;
-        let _ = app.update(Message::CheckUpdate);
+        let _ = app.check_update();
         assert!(app.updates.checking());
         let _ = app.update(Message::UpdateChecked(Err("Offline".into())));
         assert!(!app.updates.checking());
         assert_eq!(app.updates.status(), "Offline");
-        let _ = app.update(Message::CheckUpdate);
+        let _ = app.check_update();
         assert!(app.updates.checking());
         let _ = app.update(Message::UpdateChecked(Ok(None)));
         assert!(!app.updates.checking());
@@ -238,7 +237,7 @@ mod tests {
         assert!(app.model.history.is_empty());
         // Demo checks always return a local sample; clicking Install preserves
         // the notification and cannot download, elevate, launch Setup or exit.
-        let _ = app.update(Message::CheckUpdate);
+        let _ = app.check_update();
         let _ = app.update(Message::UpdateChecked(app.backend.check_update()));
         assert!(app.updates.release().is_some());
         let version = app.updates.release().unwrap().version.clone();

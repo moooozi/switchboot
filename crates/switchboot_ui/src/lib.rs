@@ -122,7 +122,6 @@ enum Dialog {
 
 #[derive(Debug, Clone)]
 enum Message {
-    CheckUpdate,
     UpdateChecked(Result<Option<UpdateRelease>, String>),
     InstallUpdate,
     UpdateInstalled(Result<(), String>),
