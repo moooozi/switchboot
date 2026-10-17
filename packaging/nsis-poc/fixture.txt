@@ -1,0 +1,6 @@
+Switchboot NSIS custom UI proof of concept.
+
+This is a harmless text fixture, not the Switchboot application.
+NSIS extracts it only into its own temporary plug-in directory, which is
+removed when Setup exits. The destination displayed in the UI is preview-only.
+No service, firmware, shortcut, uninstall registration or installed files change.

@@ -1,5 +1,14 @@
 # Windows updates and the Tauri migration
 
+> **Packaging status:** the released baseline used Tauri's NSIS updater/installer.
+> The Inno lifecycle work documented below belongs to the migration branch; local
+> tests are not production acceptance. A separate [native NSIS candidate](../packaging/nsis/README.md)
+> now adapts `main:src-tauri/platform/windows/nsis-hooks.nsi`, supports the legacy
+> `/UPDATE /P /R /ARGS` and current `/UPGRADE /UPGRADEPID` contracts, and retains
+> the custom light/dark/maintenance UI. It has safe mock/visual tests but still
+> needs real-device and signed old-client update acceptance. The existing Inno
+> build workflows, feed and signing keys are unchanged pending promotion.
+
 The updater lives in `crates/switchboot_updater`, with separate modules for feed
 validation, bounded HTTPS downloads, signature verification and installer staging.
 It has no dependency on iced or the firmware core. The root `src/updater.rs`

@@ -67,7 +67,22 @@ node --test scripts/release.test.mjs scripts/icons.test.mjs scripts/app-icons.te
 python -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Linux release packages are built by `packaging/linux.sh`; Windows installers by Inno Setup using `packaging/windows.iss`.
+Linux release packages are built by `packaging/linux.sh`; the current Windows build workflows use Inno Setup via `packaging/windows.iss`.
+
+A separate [native NSIS installer candidate](packaging/nsis/README.md) now installs
+the real Iced application using the custom light/dark Win32 UI, including the
+Uninstall / Reinstall / Launch screen. Build it without installing anything:
+
+```sh
+uv run --no-project python packaging/nsis/build.py
+```
+
+Output: `artifacts/Switchboot_x64-nsis-setup.exe`. **Running this EXE requests UAC
+and changes the machine.** Harmless visual previews remain separate under
+[`packaging/nsis-poc`](packaging/nsis-poc/README.md). The NSIS candidate adapts the
+service hooks and updater arguments from the released Tauri/NSIS baseline; Inno's
+migration-branch updates were not production-tested. Release workflows and the
+signed updater feed stay unchanged pending device and end-to-end update acceptance.
 
 The Windows installer uses the self-contained [issconfig visual library](issconfig/README.md). Switchboot owns its branding, payload, service lifecycle and upgrade migration in `packaging/windows.iss`; the library owns themes, compact layout and the folder browser. Its standalone fixture compile checks run with the Windows packaging tests.
 
