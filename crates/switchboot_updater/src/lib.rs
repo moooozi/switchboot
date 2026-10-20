@@ -86,7 +86,7 @@ impl Updater {
             .map(|update| update.release))
     }
 
-    /// Recheck the feed, verify the installer and hand it to Inno Setup.
+    /// Recheck the feed, verify the installer and launch Setup.
     /// Success means Setup was launched. Its handoff requests GUI exit after preflight.
     pub fn install(
         &self,

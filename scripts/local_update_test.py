@@ -14,6 +14,7 @@ import re
 import shutil
 import ssl
 import subprocess
+import sys
 import threading
 import time
 import tomllib
@@ -57,11 +58,11 @@ def snapshot(destination):
             target = destination / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    for name in ["issconfig", "crates/switchboot_core/icons",
+    for name in ["crates/switchboot_core/icons",
                  "crates/switchboot_core/resources/icons/ico"]:
         source = ROOT / name
         if not source.is_dir():
-            raise ValueError(f"Missing {source}; initialize submodules/generate icons first")
+            raise ValueError(f"Missing {source}; generate app/shortcut icons first")
         shutil.copytree(source, destination / name, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns(".git", "__pycache__", "output"))
 
@@ -152,13 +153,58 @@ switchboot_updater = { path = "../source/crates/switchboot_updater" }
 
 
 def compiler():
-    found = shutil.which("iscc")
+    found = shutil.which("makensis")
     if not found:
         found = str(Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
-                    / "Inno Setup 6/ISCC.exe")
+                    / "NSIS/makensis.exe")
     if not Path(found).is_file():
-        raise ValueError("Inno Setup 6 compiler not found")
+        raise ValueError("Stock NSIS 3 compiler not found")
     return found
+
+
+def openssl():
+    found = shutil.which("openssl")
+    if not found:
+        candidate = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/usr/bin/openssl.exe"
+        if candidate.is_file():
+            found = str(candidate)
+    if not found:
+        raise ValueError("OpenSSL not found (also checked Git for Windows)")
+    return found
+
+
+def build_installer(source, version, label, target_dir):
+    run(["cargo", "build", "--release", "--bin", "switchboot", "--locked",
+         "--target", "x86_64-pc-windows-msvc", "--target-dir", target_dir], cwd=source)
+    icons = sorted((source / "crates/switchboot_core/resources/icons/ico").glob("*.ico"))
+    if not icons:
+        raise ValueError("Generated shortcut icons are missing")
+    owned = ["resources\\icons\\ico\\" + icon.name for icon in icons]
+    hooks = source / "packaging/nsis/switchboot-hooks.nsh"
+    original = hooks.read_text(encoding="utf-8")
+    if label == "baseline":
+        # A baseline-only owned file makes obsolete-file cleanup observable.
+        canary = source / "packaging/nsis/update-test-obsolete.txt"
+        canary.write_text("Owned only by the local update baseline.\n", encoding="utf-8")
+        owned.append(canary.name)
+        replace_once(hooks, "!macro InstallFiles\n", '!macro InstallFiles\n'
+                     '  ClearErrors\n  SetOutPath "$INSTDIR"\n'
+                     f'  File "{canary}"\n'
+                     '  ${If} ${Errors}\n'
+                     '    StrCpy $Failure "Unable to install the local update test file."\n'
+                     '    Call Fail\n'
+                     '  ${EndIf}\n')
+    (source / "packaging/nsis/owned-icons.nsh").write_text(
+        '; Local test payload manifest.\n!macro AppOwnedFiles CALLBACK\n'
+        + ''.join(f'  !insertmacro ${{CALLBACK}} "{name}"\n' for name in owned)
+        + '!macroend\n', encoding="utf-8")
+    try:
+        run([sys.executable, source / "packaging/nsis/toolkit/build.py",
+             "--script", source / "packaging/nsis/setup.nsi", "--version", version,
+             "--payload", target_dir / "x86_64-pc-windows-msvc/release/switchboot.exe",
+             "--output", ENV / f"{label}-setup.exe", "--target-dir", target_dir / "nsis-ui"], cwd=source)
+    finally:
+        hooks.write_text(original, encoding="utf-8")
 
 
 def set_version(source, old, new):
@@ -177,8 +223,9 @@ def set_version(source, old, new):
 def prepare(args):
     if os.name != "nt":
         raise ValueError("Preparing native test installers requires Windows")
-    iscc = compiler()
-    for tool in ["cargo", "git", "openssl"]:
+    compiler()
+    openssl_tool = openssl()
+    for tool in ["cargo", "git"]:
         if not shutil.which(tool):
             raise ValueError(f"Required tool not found: {tool}")
     if ENV.exists():
@@ -192,16 +239,16 @@ def prepare(args):
     private.mkdir()
     ca, ca_key = private / "ca.pem", private / "ca-key.pem"
     cert, cert_key = private / "server.pem", private / "server-key.pem"
-    run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-noenc", "-days", "30",
+    run([openssl_tool, "req", "-x509", "-newkey", "rsa:2048", "-noenc", "-days", "30",
          "-subj", "/CN=Switchboot local test CA", "-addext", "basicConstraints=critical,CA:TRUE",
          "-keyout", ca_key, "-out", ca])
-    run(["openssl", "req", "-new", "-newkey", "rsa:2048", "-noenc", "-subj", "/CN=localhost",
+    run([openssl_tool, "req", "-new", "-newkey", "rsa:2048", "-noenc", "-subj", "/CN=localhost",
          "-keyout", cert_key, "-out", private / "server.csr"])
     extensions = private / "server.ext"
     extensions.write_text("basicConstraints=critical,CA:FALSE\n"
                           "subjectAltName=DNS:localhost,IP:127.0.0.1\n"
                           "extendedKeyUsage=serverAuth\n", encoding="ascii")
-    run(["openssl", "x509", "-req", "-in", private / "server.csr", "-CA", ca,
+    run([openssl_tool, "x509", "-req", "-in", private / "server.csr", "-CA", ca,
          "-CAkey", ca_key, "-CAcreateserial", "-days", "30", "-extfile", extensions, "-out", cert])
     url = f"https://localhost:{args.port}"
     # Compile helper before patching in the certificate/key. Then rebuild its
@@ -213,27 +260,37 @@ def prepare(args):
     run([binary, "keys", private / "update.key", private / "update.pub"])
     patch_snapshot(source, url, (private / "update.pub").read_text(), ca)
     # Make test builds unmistakable in the GUI. Never change installation identity:
-    # this intentionally exercises the real AppId and service on the local machine.
-    replace_once(source / "crates/switchboot_ui/src/lib.rs", 'text("Switchboot").size(30)',
-                 'text("Switchboot — LOCAL UPDATE TEST").size(30)')
+    # this intentionally exercises the real registration and service on the local machine.
+    replace_once(source / "crates/switchboot_ui/src/lib.rs", '.title("Switchboot")',
+                 '.title("Switchboot - LOCAL UPDATE TEST")')
+    build_updates(current, target, args.port)
+
+
+def build_updates(current, target, port):
+    source = ENV / "source"
+    if tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"] != current:
+        raise ValueError("The build snapshot must start at the baseline version")
+    helper = ENV / "helper"
+    target_dir = ENV / "target"
+    binary = target_dir / "debug/switchboot-local-update-helper.exe"
+    private = ENV / "private"
+    url = f"https://localhost:{port}"
     site = ENV / "site"
-    site.mkdir()
+    site.mkdir(exist_ok=True)
     for version, label in [(current, "baseline"), (target, "target")]:
         if label == "target":
             set_version(source, current, target)
-        run(["cargo", "build", "--release", "--bin", "switchboot", "--locked"], cwd=source)
-        run([iscc, f"/DVERSION={version}", "packaging/windows.iss"], cwd=source)
-        shutil.copy2(source / "artifacts/Switchboot_x64-setup.exe", ENV / f"{label}-setup.exe")
+        build_installer(source, version, label, target_dir)
     shutil.copy2(ENV / "target-setup.exe", site / "setup.exe")
     run(["cargo", "build", "--manifest-path", helper / "Cargo.toml", "--target-dir", target_dir])
     run([binary, "sign", private / "update.key", site / "setup.exe", private / "setup.sig"])
-    manifest = {"version": target, "notes": "LOCAL TEST ONLY — disposable signing key",
+    manifest = {"version": target, "notes": "LOCAL TEST ONLY - disposable signing key",
                 "platforms": {"windows-x86_64": {
                     "url": f"{url}/setup.exe",
                     "signature": (private / "setup.sig").read_text()}}}
     (site / "latest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (ENV / "config.json").write_text(json.dumps({"baseline": current, "target": target,
-        "port": args.port, "feed": f"{url}/latest.json"}, indent=2), encoding="utf-8")
+        "port": port, "feed": f"{url}/latest.json"}, indent=2), encoding="utf-8")
     print(f"Prepared {current} -> {target} in {ENV}. No installer has been run.")
     probe(None)
 
@@ -302,7 +359,7 @@ def install(args):
                          "Repeat with --confirm-machine-change only after reading docs/local-update-test.md.")
     load_config()
     print("Launching BASELINE installer. No reboot or firmware operation is requested.", flush=True)
-    run([ENV / "baseline-setup.exe", "/NORESTART", f"/LOG={ENV / 'baseline-install.log'}"], timeout=600)
+    run([ENV / "baseline-setup.exe"], timeout=600)
 
 
 def main():

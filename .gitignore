@@ -15,4 +15,5 @@ crates/switchboot_core/icons-linux/
 
 __pycache__/
 /packaging/nsis/owned-icons.nsh
+/packaging/nsis/ui/target/
 

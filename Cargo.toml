@@ -1,6 +1,6 @@
 [package]
 name = "switchboot"
-version = "0.3.0"
+version = "0.4.0"
 description = "Manage EFI boot entries on Windows and Linux"
 authors = ["M Zidane"]
 edition = "2024"

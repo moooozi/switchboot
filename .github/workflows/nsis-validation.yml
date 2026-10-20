@@ -1,0 +1,30 @@
+name: Native NSIS toolkit
+
+on:
+  pull_request:
+    paths: ['packaging/nsis/**', '.github/workflows/nsis-validation.yml']
+  push:
+    branches: [main]
+    paths: ['packaging/nsis/**', '.github/workflows/nsis-validation.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolkit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install NSIS
+        shell: cmd
+        run: choco upgrade nsis --yes --no-progress
+      - name: Check the independent toolkit and mock consumer fixtures
+        shell: cmd
+        run: python packaging/nsis/toolkit/ci.py

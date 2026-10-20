@@ -3788,7 +3788,7 @@ dependencies = [
 
 [[package]]
 name = "switchboot"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "fs4",
  "libc",

@@ -1,11 +1,9 @@
-//! Inno requests GUI shutdown, then owns file replacement and restart.
+//! Setup requests GUI shutdown, then owns file replacement and restart.
 use crate::{Error, Result};
 use std::path::{Path, PathBuf};
 
 fn parameters(pid: u32) -> String {
-    format!(
-        "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /RESTARTAPP /UPGRADE /UPGRADEPID={pid}"
-    )
+    format!("/S /RESTARTAPP /UPGRADE /UPGRADEPID={pid}")
 }
 
 pub(crate) struct StagedInstaller {
@@ -28,7 +26,7 @@ impl StagedInstaller {
 
     pub fn launch(self) -> Result<InstallSession> {
         let session = launch(&self.installer, &parameters(std::process::id()))?;
-        // Inno may close the app at any point. Its source must survive process exit.
+        // Setup may close the app at any point. Its source must survive process exit.
         // Windows temporary-storage cleanup can reclaim it after installation.
         let _ = self.directory.keep();
         Ok(session)
@@ -103,7 +101,7 @@ fn launch(installer: &Path, parameters: &str) -> Result<InstallSession> {
     };
     let path: Vec<u16> = installer.as_os_str().encode_wide().chain(Some(0)).collect();
     let args: Vec<u16> = parameters.encode_utf16().chain(Some(0)).collect();
-    // Start Inno's loader unelevated so it can retain the original user for [Run].
+    // Start Setup unelevated; its worker requests permission for installation.
     let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
     let mut info = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
@@ -131,11 +129,7 @@ mod tests {
     #[test]
     fn native_launch_targets_the_gui_handoff_without_legacy_switches() {
         let args = parameters(1234);
-        assert!(args.contains("/UPGRADE /UPGRADEPID=1234"));
-        assert!(!args.contains("/UPDATE"));
-        assert!(!args.contains("/DIR="));
-        assert!(args.contains("/NORESTART"));
-        assert!(args.contains("/NOCLOSEAPPLICATIONS"));
+        assert_eq!(args, "/S /RESTARTAPP /UPGRADE /UPGRADEPID=1234");
     }
 
     #[test]

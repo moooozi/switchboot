@@ -52,6 +52,32 @@ class LocalUpdateTests(unittest.TestCase):
                 local.install(argparse.Namespace(confirm_machine_change=False))
             run.assert_not_called()
 
+    def test_baseline_only_file_is_owned_and_target_omits_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hooks = root / "packaging/nsis/switchboot-hooks.nsh"
+            hooks.parent.mkdir(parents=True)
+            original = '!macro InstallFiles\n!macroend\n'
+            hooks.write_text(original)
+            icons = root / "crates/switchboot_core/resources/icons/ico"
+            icons.mkdir(parents=True)
+            (icons / "fixture.ico").write_bytes(b"fixture")
+            observed = []
+            def inspect_build(args, **_kwargs):
+                if str(args[0]) == local.sys.executable:
+                    observed.append(((hooks.parent / "owned-icons.nsh").read_text(), hooks.read_text(), args))
+            with patch.object(local, "run", side_effect=inspect_build):
+                local.build_installer(root, "0.3.2", "baseline", root / "target")
+                self.assertEqual(hooks.read_text(), original)
+                local.build_installer(root, "0.3.3", "target", root / "target")
+            baseline, target = observed
+            self.assertIn("update-test-obsolete.txt", baseline[0])
+            self.assertIn(f'File "{hooks.parent / "update-test-obsolete.txt"}"', baseline[1])
+            self.assertNotIn("update-test-obsolete.txt", target[0])
+            self.assertEqual(target[1], original)
+            self.assertIn("--output", target[2])
+            self.assertTrue(Path(target[2][1]).as_posix().endswith("packaging/nsis/toolkit/build.py"))
+
     def test_version_bump_is_scoped_to_root_package(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory)

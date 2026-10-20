@@ -1,24 +1,20 @@
-; Adapted from main:src-tauri/platform/windows/nsis-hooks.nsi.
-; Unlike the old hooks, failures are fatal and retain application files.
-!macro SwitchbootService ACTION
-  nsExec::ExecToLog '"$INSTDIR\switchboot.exe" --cli /${ACTION}_service'
+; Ask Switchboot to manage its Windows service and stop on failure.
+; Setup uses an empty prefix; uninstall.exe uses "un." for its failure handler.
+!macro SwitchbootService ACTION PREFIX
+  !if "${ACTION}" == "install"
+    nsExec::ExecToLog '"$INSTDIR\switchboot.exe" --cli /install_service'
+  !else if "${ACTION}" == "uninstall"
+    nsExec::ExecToLog '"$INSTDIR\switchboot.exe" --cli /uninstall_service'
+  !else
+    !error "SwitchbootService requires install or uninstall"
+  !endif
   Pop $0
   ${If} $0 != 0
-    StrCpy $Failure 'Switchboot service ${ACTION} failed (result: $0). Application files have been kept. Run Setup again after resolving the service error.'
-    Call Fail
-  ${EndIf}
-!macroend
-
-!macro NSIS_HOOK_POSTINSTALL
-  !insertmacro SwitchbootService install
-!macroend
-
-!macro NSIS_HOOK_PREUNINSTALL
-  nsExec::ExecToLog '"$INSTDIR\switchboot.exe" --cli /uninstall_service'
-  Pop $0
-  ${If} $0 != 0
-    MessageBox MB_OK|MB_ICONSTOP 'Switchboot service removal failed (result: $0). Application files have been kept.' /SD IDOK
-    SetErrorLevel 2
-    Quit
+    !if "${ACTION}" == "install"
+      StrCpy $Failure "Switchboot service install failed (result: $0). Close Switchboot and retry Setup to repair the installation."
+    !else
+      StrCpy $Failure "Switchboot service removal failed (result: $0). Close Switchboot and retry Setup to repair the installation."
+    !endif
+    Call ${PREFIX}Fail
   ${EndIf}
 !macroend
