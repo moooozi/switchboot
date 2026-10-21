@@ -22,10 +22,11 @@ in Switchboot's packaging jobs. See the
 Linux demo startup uses Xvfb with an in-memory backend and a 15-second observation
 window. Package assembly does not install packages or run firmware operations.
 
-`.github/workflows/nsis-validation.yml` invokes the independent toolkit's Python
-runner on Windows. The toolkit repository also has its own `.github/workflows/ci.yml`.
-The [toolkit validation reference](../packaging/nsis/toolkit/README.md#validation)
-defines its checks and fixture boundaries.
+Toolkit validation runs in the toolkit repository's `.github/workflows/ci.yml`.
+Switchboot does not rerun that suite; its Windows validation packages the app
+with the downloaded production DLL. The
+[toolkit validation reference](../packaging/nsis/toolkit/README.md#validation)
+defines the toolkit's checks and fixture boundaries.
 
 ## Packaging configuration constraints
 
@@ -36,7 +37,6 @@ builder and output. CI configuration has these constraints:
 | --- | --- |
 | `pr-validation.yml`, `windows-build.yml` | Windows packaging uses `packaging/nsis/build.py --output artifacts/Switchboot_x64-setup.exe`, stock NSIS and the x86 Rust target for the UI plugin |
 | `scripts/test_native_packaging.py` | Linux package fixtures are independent of Windows packaging; NSIS lifecycle fixtures live in `packaging/nsis/test_installer.py` |
-| `nsis-validation.yml` | Checkout needs recursive submodule initialization to provide `packaging/nsis/toolkit/ci.py` |
 | `scripts/collect-ci-artifacts.py` and Windows signing step | The installer input is `artifacts/Switchboot_x64-setup.exe`; configure the NSIS output to that name or align those consumers |
 
 These constraints affect executable workflows, not the local NSIS build commands.
