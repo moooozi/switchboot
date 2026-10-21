@@ -1,15 +1,16 @@
 """Generate app and shortcut icons from SVG sources using prebuilt Python wheels."""
+
 import argparse
-from io import BytesIO
 import math
-from pathlib import Path
 import re
 import struct
 import sys
+from io import BytesIO
+from pathlib import Path
 from xml.dom import minidom
 
-from PIL import Image, ImageOps
 import resvg_py
+from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parent.parent
 LINUX_SIZES = (32, 48, 64, 128, 256)
@@ -17,8 +18,9 @@ ICO_SIZES = (16, 32, 48, 128, 256)
 
 
 def rasterize(svg, size):
-    png = resvg_py.svg_to_bytes(svg_string=svg, width=size, height=size,
-                                skip_system_fonts=True)
+    png = resvg_py.svg_to_bytes(
+        svg_string=svg, width=size, height=size, skip_system_fonts=True
+    )
     with Image.open(BytesIO(png)) as image:
         return ImageOps.pad(image.convert("RGBA"), (size, size), color=(0, 0, 0, 0))
 
@@ -38,8 +40,9 @@ def dib_frame(image):
         for x in range(size):
             if alpha[y * size + x] == 0:
                 mask[(size - y - 1) * mask_stride + x // 8] |= 0x80 >> (x % 8)
-    header = struct.pack("<IIIHHIIIIII", 40, size, size * 2, 1, 32, 0,
-                         size * size * 4, 0, 0, 0, 0)
+    header = struct.pack(
+        "<IIIHHIIIIII", 40, size, size * 2, 1, 32, 0, size * size * 4, 0, 0, 0, 0
+    )
     # ICO DIBs store straight-alpha BGRA pixels, bottom row first.
     return header + image.tobytes("raw", "BGRA", 0, -1) + mask
 
@@ -51,8 +54,11 @@ def encode_ico(svg, sizes=ICO_SIZES):
     for size in sizes:
         image = rasterize(svg, size)
         frame = png_bytes(image) if size > 48 else dib_frame(image)
-        header.extend(struct.pack("<BBBBHHII", size % 256, size % 256,
-                                  0, 0, 1, 32, len(frame), offset))
+        header.extend(
+            struct.pack(
+                "<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(frame), offset
+            )
+        )
         frames.append(frame)
         offset += len(frame)
     return bytes(header) + b"".join(frames)
@@ -82,9 +88,17 @@ def compose(source, overlay):
     if view_box:
         values = [float(v) for v in re.split(r"[\s,]+", view_box.strip())]
     else:
-        values = [0, 0, float(root.getAttribute("width").removesuffix("px") or 128),
-                  float(root.getAttribute("height").removesuffix("px") or 128)]
-    if len(values) != 4 or not all(math.isfinite(v) for v in values) or min(values[2:]) <= 0:
+        values = [
+            0,
+            0,
+            float(root.getAttribute("width").removesuffix("px") or 128),
+            float(root.getAttribute("height").removesuffix("px") or 128),
+        ]
+    if (
+        len(values) != 4
+        or not all(math.isfinite(v) for v in values)
+        or min(values[2:]) <= 0
+    ):
         raise ValueError("Invalid source viewBox")
     view_box = " ".join(f"{v:g}" for v in values)
     scale = 108 / max(values[2:])
@@ -102,10 +116,12 @@ def compose(source, overlay):
 
     # Retain the established overlay sizing after removing its outer SVG.
     natural = max(32, first_dimension("width"), first_dimension("height"))
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
-            f'<svg x="{x}" y="{y}" width="{width}" height="{height}" viewBox="{view_box}" '
-            f'preserveAspectRatio="xMidYMid meet">{root.toxml()}</svg>'
-            f'<g transform="translate(64, 64) scale({64 / natural:g})">{inner}</g></svg>')
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
+        f'<svg x="{x}" y="{y}" width="{width}" height="{height}" viewBox="{view_box}" '
+        f'preserveAspectRatio="xMidYMid meet">{root.toxml()}</svg>'
+        f'<g transform="translate(64, 64) scale({64 / natural:g})">{inner}</g></svg>'
+    )
 
 
 def write(path, content):
@@ -122,8 +138,11 @@ def generate_icons(root=ROOT, platform=None):
     app = read_svg(root / "app-icon.svg")
     overlay = read_svg(core / "icons-raw/shortcut-overlay.svg")
     generic = read_svg(core / "icons-raw/shortcut-generic.svg")
-    sources = sorted(p for p in (root / "static/os-icons").glob("*.svg")
-                     if p.name != "shortcut-overlay.svg")
+    sources = sorted(
+        p
+        for p in (root / "static/os-icons").glob("*.svg")
+        if p.name != "shortcut-overlay.svg"
+    )
     if not sources:
         raise ValueError("No source OS icons found")
     shortcuts = [("generic", generic)]
@@ -138,14 +157,21 @@ def generate_icons(root=ROOT, platform=None):
     (core / "icons/512x512.png").unlink(missing_ok=True)
     for name, svg in shortcuts:
         if platform in ("windows", "all"):
-            write(core / f"resources/icons/ico/{name}.ico", encode_ico(svg, tuple(reversed(ICO_SIZES))))
+            write(
+                core / f"resources/icons/ico/{name}.ico",
+                encode_ico(svg, tuple(reversed(ICO_SIZES))),
+            )
         if platform in ("linux", "all"):
             hicolor = core / "icons-linux/hicolor"
             write(hicolor / f"scalable/apps/dev.zidane.switchboot-{name}.svg", svg)
             for size in LINUX_SIZES:
-                write(hicolor / f"{size}x{size}/apps/dev.zidane.switchboot-{name}.png",
-                      png_bytes(rasterize(svg, size)))
-            (hicolor / f"512x512/apps/dev.zidane.switchboot-{name}.png").unlink(missing_ok=True)
+                write(
+                    hicolor / f"{size}x{size}/apps/dev.zidane.switchboot-{name}.png",
+                    png_bytes(rasterize(svg, size)),
+                )
+            (hicolor / f"512x512/apps/dev.zidane.switchboot-{name}.png").unlink(
+                missing_ok=True
+            )
 
 
 if __name__ == "__main__":
@@ -155,6 +181,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         generate_icons(args.root, args.platform)
-    except Exception as error:
+    except (OSError, ValueError) as error:
         parser.exit(1, f"{error}\n")
     print(f"Generated application and shortcut icons under {args.root}")

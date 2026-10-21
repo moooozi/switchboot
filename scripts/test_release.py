@@ -1,16 +1,19 @@
 """Exercise release preparation in disposable repositories and local bare remotes."""
+
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@unittest.skipUnless(shutil.which("git") and shutil.which("cargo"), "Git and Cargo required")
+@unittest.skipUnless(
+    shutil.which("git") and shutil.which("cargo"), "Git and Cargo required"
+)
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -20,9 +23,18 @@ class ReleaseTests(unittest.TestCase):
         (self.root / "src").mkdir()
         (self.root / "src/lib.rs").write_text("// fixture\n")
         shutil.copyfile(ROOT / "scripts/release.py", self.root / "scripts/release.py")
-        (self.root / "Cargo.toml").write_text('[package]\nname = "fixture"\nversion = "1.0.0"\n')
-        (self.root / "Cargo.lock").write_text('version = 4\n\n[[package]]\nname = "fixture"\nversion = "1.0.0"\n')
-        self.env = {**os.environ, "GIT_EDITOR": "true", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": ""}
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname = "fixture"\nversion = "1.0.0"\n'
+        )
+        (self.root / "Cargo.lock").write_text(
+            'version = 4\n\n[[package]]\nname = "fixture"\nversion = "1.0.0"\n'
+        )
+        self.env = {
+            **os.environ,
+            "GIT_EDITOR": "true",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": "",
+        }
         self.git("init", "--initial-branch=main")
         self.git("config", "user.name", "Release Test")
         self.git("config", "user.email", "release-test@example.invalid")
@@ -32,16 +44,31 @@ class ReleaseTests(unittest.TestCase):
         self.git("commit", "-m", "fixture")
 
     def git(self, *args):
-        return subprocess.run(["git", "--no-pager", *args], cwd=self.root, env=self.env,
-                              check=True, capture_output=True, text=True).stdout.strip()
+        return subprocess.run(
+            ["git", "--no-pager", *args],
+            cwd=self.root,
+            env=self.env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
 
     def release(self, *args):
-        return subprocess.run([sys.executable, "scripts/release.py", *args], cwd=self.root,
-                              env=self.env, capture_output=True, text=True, timeout=60,
-                              stdin=subprocess.DEVNULL)
+        return subprocess.run(
+            [sys.executable, "scripts/release.py", *args],
+            check=False,
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
 
     def files(self):
-        return [(self.root / name).read_bytes() for name in ("Cargo.toml", "Cargo.lock")]
+        return [
+            (self.root / name).read_bytes() for name in ("Cargo.toml", "Cargo.lock")
+        ]
 
     def assert_clean(self):
         self.assertEqual(self.git("status", "--porcelain"), "")
@@ -57,7 +84,12 @@ class ReleaseTests(unittest.TestCase):
     def test_dry_run_bumps_have_no_side_effects(self):
         before = self.files()
         head = self.git("rev-parse", "HEAD")
-        for argument, version in [("patch", "1.0.1"), ("minor", "1.1.0"), ("major", "2.0.0"), ("1.2.3", "1.2.3")]:
+        for argument, version in [
+            ("patch", "1.0.1"),
+            ("minor", "1.1.0"),
+            ("major", "2.0.0"),
+            ("1.2.3", "1.2.3"),
+        ]:
             with self.subTest(argument=argument):
                 result = self.release(argument, "--dry-run", "--yes", "--no-sign")
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -79,7 +111,9 @@ class ReleaseTests(unittest.TestCase):
     def test_feature_branch_and_detached_head_are_rejected(self):
         for detached in (False, True):
             with self.subTest(detached=detached):
-                self.git("checkout", "--detach") if detached else self.git("checkout", "-b", "feature")
+                self.git("checkout", "--detach") if detached else self.git(
+                    "checkout", "-b", "feature"
+                )
                 result = self.release("patch", "--dry-run", "--no-sign")
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("must be made from main", result.stderr)
@@ -93,7 +127,9 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn(b'version = "1.0.1"', contents)
         self.assertEqual(self.git("log", "-1", "--format=%s"), message)
         self.assertEqual(self.git("cat-file", "-t", "v1.0.1"), "tag")
-        self.assertEqual(self.git("rev-parse", "v1.0.1^{commit}"), self.git("rev-parse", "HEAD"))
+        self.assertEqual(
+            self.git("rev-parse", "v1.0.1^{commit}"), self.git("rev-parse", "HEAD")
+        )
         self.assert_clean()
 
     def test_atomic_push_to_local_remote(self):
@@ -126,7 +162,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("resolve any divergence", result.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertEqual(self.git("-C", remote, "rev-parse", "refs/heads/main"), divergent)
+        self.assertEqual(
+            self.git("-C", remote, "rev-parse", "refs/heads/main"), divergent
+        )
         self.assert_clean()
 
     def test_preparation_failures_restore_original_files(self):
@@ -138,7 +176,7 @@ class ReleaseTests(unittest.TestCase):
                 if problem == "missing":
                     lock = lock.replace('name = "fixture"', 'name = "other"')
                 if problem == "duplicate":
-                    lock += original_lock[original_lock.index("[[package]]"):]
+                    lock += original_lock[original_lock.index("[[package]]") :]
                 if problem == "stale":
                     lock = lock.replace('version = "1.0.0"', 'version = "0.9.0"')
                 if problem == "cargo":

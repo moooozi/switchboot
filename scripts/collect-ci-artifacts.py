@@ -1,9 +1,10 @@
 """Collect unsigned PR builds; never install or execute the application."""
+
 import json
 import os
-from pathlib import Path
 import shutil
 import tarfile
+from pathlib import Path
 
 
 def required_file(path):
@@ -43,7 +44,9 @@ def collect(root, *, windows):
         "platform": "windows" if windows else "linux",
         "signed": False,
     }
-    (output / "build-info.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (output / "build-info.json").write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":

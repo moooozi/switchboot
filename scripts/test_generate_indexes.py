@@ -1,11 +1,14 @@
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
+
 from generate_indexes import generate_indexes
 
 
 class IndexTests(unittest.TestCase):
-    def test_nested_indexes_escape_names_sort_directories_first_and_are_repeatable(self):
+    def test_nested_indexes_escape_names_sort_directories_first_and_are_repeatable(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "repo & packages"
             directory = root / "z directory"
@@ -18,13 +21,15 @@ class IndexTests(unittest.TestCase):
             text = first.decode()
             self.assertIn('href="a%20%26%20b.rpm">a &amp; b.rpm', text)
             self.assertIn("repo &amp; packages", text)
-            self.assertLess(text.index('href="z%20directory/"'), text.index('href="a%20%26%20b.rpm"'))
+            self.assertLess(
+                text.index('href="z%20directory/"'),
+                text.index('href="a%20%26%20b.rpm"'),
+            )
             self.assertIn('href="package.deb"', (directory / "index.html").read_text())
             generate_indexes(root)
             self.assertEqual(index.read_bytes(), first)
             self.assertNotIn('href="index.html"', text)
 
     def test_missing_directory_fails(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            with self.assertRaises(ValueError):
-                generate_indexes(Path(temporary) / "missing")
+        with tempfile.TemporaryDirectory() as temporary, self.assertRaises(ValueError):
+            generate_indexes(Path(temporary) / "missing")

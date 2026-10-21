@@ -1,13 +1,15 @@
 """Check PR artifact collection using harmless build fixtures."""
+
 import importlib.util
 import json
-from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "collect_ci_artifacts", Path(__file__).with_name("collect-ci-artifacts.py"))
+    "collect_ci_artifacts", Path(__file__).with_name("collect-ci-artifacts.py")
+)
 collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)
 
@@ -31,17 +33,23 @@ class CiArtifactTests(unittest.TestCase):
             for extension in ["deb", "rpm"]:
                 folder = release / f"bundle/{extension}"
                 folder.mkdir(parents=True)
-                (folder / f"switchboot-1.0.0.{extension}").write_bytes(b"harmless package fixture")
+                (folder / f"switchboot-1.0.0.{extension}").write_bytes(
+                    b"harmless package fixture"
+                )
         return root, release
 
     def test_windows_builds_include_portable_installer_and_identity(self):
         root, _ = self.fixture(windows=True)
         collector.collect(root, windows=True)
         output = root / "artifacts/ci"
-        self.assertEqual((output / "Switchboot_x64-portable.exe").read_bytes(),
-                         b"harmless executable fixture")
-        self.assertEqual((output / "Switchboot_x64-setup.exe").read_bytes(),
-                         b"harmless installer fixture")
+        self.assertEqual(
+            (output / "Switchboot_x64-portable.exe").read_bytes(),
+            b"harmless executable fixture",
+        )
+        self.assertEqual(
+            (output / "Switchboot_x64-setup.exe").read_bytes(),
+            b"harmless installer fixture",
+        )
         metadata = json.loads((output / "build-info.json").read_text())
         self.assertEqual(metadata["layout"], "iced")
         self.assertFalse(metadata["signed"])
@@ -51,14 +59,20 @@ class CiArtifactTests(unittest.TestCase):
         collector.collect(root, windows=False)
         output = root / "artifacts/ci"
         for extension in ["deb", "rpm"]:
-            self.assertEqual((output / f"switchboot-1.0.0.{extension}").read_bytes(),
-                             b"harmless package fixture")
+            self.assertEqual(
+                (output / f"switchboot-1.0.0.{extension}").read_bytes(),
+                b"harmless package fixture",
+            )
         with tarfile.open(output / "Switchboot_linux_x64.tar.gz") as archive:
             self.assertEqual(archive.getnames(), ["switchboot"])
-            self.assertEqual(archive.extractfile("switchboot").read(),
-                             (release / "switchboot").read_bytes())
-            self.assertEqual(archive.getmember("switchboot").mode,
-                             (release / "switchboot").stat().st_mode & 0o777)
+            self.assertEqual(
+                archive.extractfile("switchboot").read(),
+                (release / "switchboot").read_bytes(),
+            )
+            self.assertEqual(
+                archive.getmember("switchboot").mode,
+                (release / "switchboot").stat().st_mode & 0o777,
+            )
 
     def test_missing_empty_and_ambiguous_outputs_fail(self):
         root, release = self.fixture(windows=False)

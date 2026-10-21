@@ -7,13 +7,13 @@ Prune repository packages according to rules:
 
 Usage: prune_repo.py <repo_root> <app_name> <version> <allow_greater_flag>
 """
+
 import os
 import re
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 from functools import total_ordering
-
 
 semver_re = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
@@ -33,10 +33,18 @@ class Version:
         return cls(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
     def __eq__(self, other):
-        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+        return (self.major, self.minor, self.patch) == (
+            other.major,
+            other.minor,
+            other.patch,
+        )
 
     def __lt__(self, other):
-        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+        return (self.major, self.minor, self.patch) < (
+            other.major,
+            other.minor,
+            other.patch,
+        )
 
     def is_same_series(self, other):
         return self.major == other.major and self.minor == other.minor
@@ -63,13 +71,10 @@ def list_packages(dirpath, pattern):
 def extract_ver_from_rpm(fn):
     # Try to parse name-version-release.arch.rpm
     base = os.path.basename(fn)
-    if not base.endswith('.rpm'):
+    if not base.endswith(".rpm"):
         return None
     # strip arch and .rpm
-    try:
-        core = base.rsplit('.', 2)[0]
-    except Exception:
-        core = base[:-4]
+    core = base.rsplit(".", 2)[0]
     # find the version part: look for -<digit>.
     m = re.search(r"-(\d+\.\d+\.\d+([^-]*)?)", core)
     if not m:
@@ -80,7 +85,7 @@ def extract_ver_from_rpm(fn):
 def extract_ver_from_deb(fn):
     # Debian: name_version_arch.deb
     base = os.path.basename(fn)
-    if not base.endswith('.deb'):
+    if not base.endswith(".deb"):
         return None
     m = re.search(r"_([0-9]+\.[0-9]+\.[0-9]+)[^_]*_", base)
     if not m:
@@ -96,7 +101,7 @@ def prune_packages(pkg_map, current_ver, allow_greater):
     to_keep = set()
     to_delete = set()
 
-    for name, items in pkg_map.items():
+    for items in pkg_map.values():
         # sort by version
         items_sorted = sorted(items, key=lambda iv: iv[0])
 
@@ -121,16 +126,20 @@ def prune_packages(pkg_map, current_ver, allow_greater):
                 to_keep.add(p)
 
         # find latest previous series (same major, lower minor)
-        prev_series = [ (v,p) for (v,p) in filtered if v is not None and v.is_previous_series(current_ver)]
+        prev_series = [
+            (v, p)
+            for (v, p) in filtered
+            if v is not None and v.is_previous_series(current_ver)
+        ]
         if prev_series:
             # keep the highest in prev_series
-            v,p = max(prev_series, key=lambda iv: iv[0])
+            v, p = max(prev_series, key=lambda iv: iv[0])
             to_keep.add(p)
 
         # keep current series latest (current minor) as current already covered
 
         # any remaining that are not in to_keep kept only if not older than desired; delete others
-        for v,p in filtered:
+        for v, p in filtered:
             if p in to_keep:
                 continue
             # delete older same-series patches and older minors (unless selected)
@@ -141,7 +150,9 @@ def prune_packages(pkg_map, current_ver, allow_greater):
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: prune_repo.py <repo_root> <app_name> <version> <allow_greater_flag>")
+        print(
+            "Usage: prune_repo.py <repo_root> <app_name> <version> <allow_greater_flag>"
+        )
         return 2
 
     repo = sys.argv[1]
@@ -157,32 +168,36 @@ def main():
         return 3
 
     # collect RPMs and DEBs
-    rpm_dir = os.path.join(repo, 'rpm', 'x86_64')
-    deb_dir = os.path.join(repo, 'deb', 'pool', 'main', app_name[0].lower(), app_name)
+    rpm_dir = os.path.join(repo, "rpm", "x86_64")
+    deb_dir = os.path.join(repo, "deb", "pool", "main", app_name[0].lower(), app_name)
 
-    rpm_files = list_packages(rpm_dir, '.rpm')
-    deb_files = list_packages(deb_dir, '.deb')
+    rpm_files = list_packages(rpm_dir, ".rpm")
+    deb_files = list_packages(deb_dir, ".deb")
     rpm_map = {}
     # If RPM files exist, require the `rpm` tool to be present. Do not fall back to filename parsing.
-    if rpm_files and not shutil.which('rpm'):
-        print('rpm tool not found but RPM packages are present in repo; install `rpm` and re-run.')
+    if rpm_files and not shutil.which("rpm"):
+        print(
+            "rpm tool not found but RPM packages are present in repo; install `rpm` and re-run."
+        )
         return 4
 
     rpm_map = {}
     for p in rpm_files:
         try:
-            out = subprocess.check_output([
-                'rpm', '-qp', '--qf', '%{NAME}|%{VERSION}-%{RELEASE}\n', p
-            ], stderr=subprocess.DEVNULL, text=True)
+            out = subprocess.check_output(
+                ["rpm", "-qp", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}\n", p],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
         except subprocess.CalledProcessError:
             # unable to query this rpm, skip with warning
-            print(f'Warning: failed to read RPM metadata for {p}; skipping')
+            print(f"Warning: failed to read RPM metadata for {p}; skipping")
             continue
         out = out.strip()
-        if '|' not in out:
-            print(f'Warning: rpm metadata unexpected for {p}: {out}; skipping')
+        if "|" not in out:
+            print(f"Warning: rpm metadata unexpected for {p}: {out}; skipping")
             continue
-        name, ver_str = out.split('|', 1)
+        name, ver_str = out.split("|", 1)
         v = Version.parse(ver_str)
 
         # only process packages that match the specified app name
@@ -192,21 +207,27 @@ def main():
         rpm_map.setdefault(name, []).append((v, p))
 
     # If DEB files exist, require the `dpkg-deb` tool to be present. Do not fall back to filename parsing.
-    if deb_files and not shutil.which('dpkg-deb'):
-        print('dpkg-deb tool not found but DEB packages are present in repo; install `dpkg-deb` and re-run.')
+    if deb_files and not shutil.which("dpkg-deb"):
+        print(
+            "dpkg-deb tool not found but DEB packages are present in repo; install `dpkg-deb` and re-run."
+        )
         return 5
 
     deb_map = {}
     for p in deb_files:
         try:
-            pkg = subprocess.check_output(['dpkg-deb', '-f', p, 'Package'], stderr=subprocess.DEVNULL, text=True).strip()
-            ver_str = subprocess.check_output(['dpkg-deb', '-f', p, 'Version'], stderr=subprocess.DEVNULL, text=True).strip()
+            pkg = subprocess.check_output(
+                ["dpkg-deb", "-f", p, "Package"], stderr=subprocess.DEVNULL, text=True
+            ).strip()
+            ver_str = subprocess.check_output(
+                ["dpkg-deb", "-f", p, "Version"], stderr=subprocess.DEVNULL, text=True
+            ).strip()
         except subprocess.CalledProcessError:
-            print(f'Warning: failed to read DEB metadata for {p}; skipping')
+            print(f"Warning: failed to read DEB metadata for {p}; skipping")
             continue
 
         if not pkg:
-            print(f'Warning: dpkg-deb produced empty Package for {p}; skipping')
+            print(f"Warning: dpkg-deb produced empty Package for {p}; skipping")
             continue
 
         v = Version.parse(ver_str)
@@ -220,11 +241,11 @@ def main():
     kept = set()
     deleted = set()
 
-    k,d = prune_packages(rpm_map, cur, allow_greater)
+    k, d = prune_packages(rpm_map, cur, allow_greater)
     kept |= k
     deleted |= d
 
-    k,d = prune_packages(deb_map, cur, allow_greater)
+    k, d = prune_packages(deb_map, cur, allow_greater)
     kept |= k
     deleted |= d
 
@@ -233,7 +254,7 @@ def main():
         try:
             os.remove(p)
             print(f"Deleted: {p}")
-        except Exception as e:
+        except OSError as e:
             print(f"Failed to delete {p}: {e}")
 
     print("Kept files:")
@@ -243,5 +264,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

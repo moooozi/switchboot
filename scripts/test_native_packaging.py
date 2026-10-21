@@ -18,9 +18,17 @@ class NativePackagingTests(unittest.TestCase):
     def setUpClass(cls):
         # Windows packaging is covered by the NSIS builder and its own fixtures.
         # Linux CI must execute the package-container checks rather than skip.
-        if os.environ.get("SWITCHBOOT_REQUIRE_PACKAGING_TESTS") == "1" and os.name != "nt":
-            tools = [BASH, shutil.which("dpkg-deb"), shutil.which("rpmbuild"),
-                     shutil.which("rpm"), shutil.which("true")]
+        if (
+            os.environ.get("SWITCHBOOT_REQUIRE_PACKAGING_TESTS") == "1"
+            and os.name != "nt"
+        ):
+            tools = [
+                BASH,
+                shutil.which("dpkg-deb"),
+                shutil.which("rpmbuild"),
+                shutil.which("rpm"),
+                shutil.which("true"),
+            ]
             if not all(tools):
                 raise RuntimeError("Required native packaging tools are unavailable")
             if not (ROOT / "crates/switchboot_core/icons/128x128.png").is_file():

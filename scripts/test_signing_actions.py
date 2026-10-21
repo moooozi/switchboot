@@ -1,11 +1,12 @@
 """Exercise GPG signing without production keys."""
+
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import textwrap
 import unittest
+from pathlib import Path
 
 from bash_test_support import BASH, bash_env
 
@@ -13,15 +14,19 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def action_script(name):
-    action = (ROOT / ".github/actions" / name / "action.yml").read_text(encoding="utf-8")
+    action = (ROOT / ".github/actions" / name / "action.yml").read_text(
+        encoding="utf-8"
+    )
     return textwrap.dedent(action.split("      run: |\n", 1)[1])
 
 
 GPG = os.environ.get("SWITCHBOOT_TEST_GPG") or shutil.which("gpg")
 
 
-@unittest.skipUnless(GPG and BASH and (os.name != "nt" or os.environ.get("SWITCHBOOT_TEST_GPG")),
-                     "Native Linux GPG or explicitly configured Windows GPG required")
+@unittest.skipUnless(
+    GPG and BASH and (os.name != "nt" or os.environ.get("SWITCHBOOT_TEST_GPG")),
+    "Native Linux GPG or explicitly configured Windows GPG required",
+)
 class GpgSigningTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -35,27 +40,72 @@ class GpgSigningTests(unittest.TestCase):
         self.payload.write_bytes(b"release fixture")
         self.script = self.root / "sign.sh"
         self.script.write_text(action_script("gpg-sign"), encoding="utf-8")
-        self.env = {**os.environ, "GNUPGHOME": str(self.home),
-                    "PATH": str(Path(GPG).parent) + os.pathsep + os.environ["PATH"]}
-        self.addCleanup(lambda: subprocess.run(["gpgconf", "--kill", "gpg-agent"], env=self.env,
-                                               capture_output=True, timeout=10))
-        result = subprocess.run([GPG, "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
-                                 "--quick-generate-key", "Release Fixture <fixture@example.invalid>",
-                                 "ed25519", "sign", "0"], env=self.env, capture_output=True, timeout=30)
+        self.env = {
+            **os.environ,
+            "GNUPGHOME": str(self.home),
+            "PATH": str(Path(GPG).parent) + os.pathsep + os.environ["PATH"],
+        }
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["gpgconf", "--kill", "gpg-agent"],
+                check=False,
+                env=self.env,
+                capture_output=True,
+                timeout=10,
+            )
+        )
+        result = subprocess.run(
+            [
+                GPG,
+                "--batch",
+                "--pinentry-mode",
+                "loopback",
+                "--passphrase",
+                "",
+                "--quick-generate-key",
+                "Release Fixture <fixture@example.invalid>",
+                "ed25519",
+                "sign",
+                "0",
+            ],
+            check=False,
+            env=self.env,
+            capture_output=True,
+            timeout=30,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        key = subprocess.check_output([GPG, "--batch", "--armor", "--export-secret-keys"], env=self.env, timeout=10)
-        self.env.update(FILES_RAW=self.payload.as_posix(), GPG_PRIVATE_KEY=key.decode(),
-                        GPG_PASSPHRASE="", TMPDIR=self.scratch.as_posix())
+        key = subprocess.check_output(
+            [GPG, "--batch", "--armor", "--export-secret-keys"],
+            env=self.env,
+            timeout=10,
+        )
+        self.env.update(
+            FILES_RAW=self.payload.as_posix(),
+            GPG_PRIVATE_KEY=key.decode(),
+            GPG_PASSPHRASE="",
+            TMPDIR=self.scratch.as_posix(),
+        )
 
     def sign(self):
-        return subprocess.run([BASH, self.script.as_posix()], env=bash_env(self.env),
-                              capture_output=True, text=True, timeout=30)
+        return subprocess.run(
+            [BASH, self.script.as_posix()],
+            check=False,
+            env=bash_env(self.env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
     def test_real_signature_verifies_and_temporary_keyring_is_removed(self):
         result = self.sign()
         self.assertEqual(result.returncode, 0, result.stderr)
-        verify = subprocess.run([GPG, "--batch", "--verify", str(self.payload) + ".asc", str(self.payload)],
-                                env=self.env, capture_output=True, timeout=10)
+        verify = subprocess.run(
+            [GPG, "--batch", "--verify", str(self.payload) + ".asc", str(self.payload)],
+            check=False,
+            env=self.env,
+            capture_output=True,
+            timeout=10,
+        )
         self.assertEqual(verify.returncode, 0, verify.stderr)
         self.assertEqual(list(self.scratch.iterdir()), [])
 
@@ -69,8 +119,15 @@ class GpgSigningTests(unittest.TestCase):
     def prepare_release_assets(self):
         artifacts = self.root / "artifacts"
         artifacts.mkdir()
-        packages = [artifacts / name for name in (
-            "fixture.deb", "fixture.rpm", "Switchboot_x64-setup.exe", "Switchboot_x64-portable.exe")]
+        packages = [
+            artifacts / name
+            for name in (
+                "fixture.deb",
+                "fixture.rpm",
+                "Switchboot_x64-setup.exe",
+                "Switchboot_x64-portable.exe",
+            )
+        ]
         for package in packages:
             package.write_bytes(b"release asset fixture")
         self.env["FILES_RAW"] = ";".join(package.as_posix() for package in packages)
@@ -79,8 +136,18 @@ class GpgSigningTests(unittest.TestCase):
         return artifacts, packages
 
     def verify_assets(self, artifacts):
-        return subprocess.run([BASH, (ROOT / "scripts/verify-release-assets.sh").as_posix(), artifacts.as_posix()],
-                              env=bash_env(self.env), capture_output=True, text=True, timeout=30)
+        return subprocess.run(
+            [
+                BASH,
+                (ROOT / "scripts/verify-release-assets.sh").as_posix(),
+                artifacts.as_posix(),
+            ],
+            check=False,
+            env=bash_env(self.env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
     def test_downloaded_release_assets_verify_with_configured_key(self):
         artifacts, _ = self.prepare_release_assets()
@@ -107,7 +174,6 @@ class GpgSigningTests(unittest.TestCase):
         self.env["GPG_PRIVATE_KEY"] = "invalid fixture key"
         self.assertNotEqual(self.sign().returncode, 0)
         self.assertEqual(list(self.scratch.iterdir()), [])
-
 
 
 if __name__ == "__main__":
