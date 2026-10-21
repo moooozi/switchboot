@@ -50,6 +50,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test repository publishing tools
+        shell: bash
+        working-directory: scripts
+        run: python3 -B -m unittest test_generate_latest_json test_generate_indexes test_validate_repository_release test_signing_actions
+
       - name: Require a published stable release
         shell: bash
         env:
@@ -261,7 +270,6 @@ jobs:
         run: |
           set -e
           echo "Generating latest.json for updates..."
-          python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/generate_latest_json.py "${{ steps.init.outputs.version }}" "$GITHUB_REPOSITORY"
 
       - name: Export GPG public key
