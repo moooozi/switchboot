@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
+FIXTURE_VERSION = "0.4.1"
 
 PAYLOAD = r"""
 use std::{env, fs::OpenOptions, io::Write, path::PathBuf};
@@ -166,6 +167,14 @@ class InstallerTests(unittest.TestCase):
 
         source = read_script(HERE / "setup.nsi")
         source = source.replace(
+            '!define APP_DIRECTORY "$PROGRAMFILES64\\Switchboot"',
+            '!define APP_DIRECTORY "$FixtureDestination"\nVar FixtureDestination',
+        )
+        source = source.replace(
+            "!macro InitializeOptions\n",
+            '!macro InitializeOptions\n  ReadEnvStr $FixtureDestination "NATIVE_INSTALLER_FIXTURE_DESTINATION"\n',
+        )
+        source = source.replace(
             "Function Fail\n",
             f'''Function Fail
   FileOpen $8 "{cls.base / "failure.txt"}" w
@@ -245,11 +254,6 @@ trace_write:
             "Function ${PREFIX}RemoveNativeInstallation\n",
             "Function ${PREFIX}RemoveNativeInstallation\n" + guard,
         )
-        # Fixtures accept only their private temporary subtree instead of Program Files.
-        replace(
-            '  StrCmp "$INSTDIR" "${APP_DIRECTORY}" location_ok',
-            f'  StrCpy $0 "$INSTDIR" {len(prefix)}\n  StrCmp $0 "{prefix}" location_ok',
-        )
         replace(r"$SMPROGRAMS\${APP_NAME}.lnk", r"$INSTDIR\fixture.lnk")
         replace(
             f'!define SWITCHBOOT_ICONS "{HERE}\\..\\..\\crates\\switchboot_core\\resources\\icons\\ico"',
@@ -286,7 +290,7 @@ trace_write:
                 "UTF8",
                 "-WX",
                 "-V2",
-                "-DVERSION=0.3.0",
+                f"-DVERSION={FIXTURE_VERSION}",
                 f"-DOUTPUT={cls.exe}",
                 f"-DPAYLOAD_EXE={payload / 'switchboot.exe'}",
                 f"-DPLUGIN_DIRECTORY={target / 'i686-pc-windows-msvc/release'}",
@@ -322,16 +326,23 @@ trace_write:
         (self.base / "uninstall-trace.txt").unlink(missing_ok=True)
         self.directory = self.base / ("Unicode 预览 " + uuid.uuid4().hex)
         self.directory.mkdir()
+        self.destination = self.directory
 
-    def run_setup(self, *args, expected=0, **environment):
+    def run_setup(self, *args, expected=0, use_default_directory=False, **environment):
         failure = self.base / "failure.txt"
         failure.unlink(missing_ok=True)
-        command = (
-            subprocess.list2cmdline([str(self.exe), "/S", *args])
-            + f" /D={self.directory}"
-        )
+        command = subprocess.list2cmdline([str(self.exe), "/S", *args])
+        if not use_default_directory:
+            command += f" /D={self.directory}"
         result = subprocess.run(
-            command, check=False, env={**os.environ, **environment}, timeout=45
+            command,
+            check=False,
+            env={
+                **os.environ,
+                "NATIVE_INSTALLER_FIXTURE_DESTINATION": str(self.destination),
+                **environment,
+            },
+            timeout=45,
         )
         self.assertEqual(
             result.returncode,
@@ -362,7 +373,12 @@ trace_write:
         command = subprocess.list2cmdline([str(self.exe)]) + f" /D={self.directory}"
         process = subprocess.Popen(
             command,
-            env={**os.environ, "NATIVE_INSTALLER_THEME": "light", **environment},
+            env={
+                **os.environ,
+                "NATIVE_INSTALLER_THEME": "light",
+                "NATIVE_INSTALLER_FIXTURE_DESTINATION": str(self.destination),
+                **environment,
+            },
         )
         self.addCleanup(self.reap_fixture, process)
         window = desktop.wait_for(
@@ -1165,7 +1181,7 @@ trace_write:
                 self.installed_value(name)
         self.run_setup("/UPDATE")
         self.assertEqual(self.installed_value("FileOwnershipProtocol"), 4)
-        self.assertEqual(self.installed_value("DisplayVersion"), "0.3.0")
+        self.assertEqual(self.installed_value("DisplayVersion"), FIXTURE_VERSION)
 
     def test_native_handoff_signals_only_the_mock_gui_then_updates(self):
         self.run_setup()
@@ -1203,22 +1219,31 @@ trace_write:
         self.run_setup("/UPGRADE", f"/UPGRADEPID={os.getpid()}", expected=2)
         self.assertEqual((self.directory / "fixture.log").read_text(), before)
 
-    def test_released_tauri_installation_migrates_through_its_nsis_uninstaller(self):
+    def create_tauri_installation(self, *, quoted_location=True, fail_removal=False):
         # This private legacy fixture has no native ownership marker. Its old
         # uninstaller only removes the mock executable and its private HKCU key.
         legacy_exe = self.directory / "switchboot.exe"
         legacy_exe.write_bytes(b"legacy fixture payload")
         old_uninstaller = self.directory / "old-uninstaller.exe"
+        bootstrap = self.directory / "old-bootstrap.exe"
         source = self.directory / "old-uninstaller.nsi"
         source.write_text(
             f'''
 Unicode true
 RequestExecutionLevel user
 SilentInstall silent
-OutFile "{old_uninstaller}"
+OutFile "{bootstrap}"
 Section
+  WriteUninstaller "{old_uninstaller}"
+SectionEnd
+Section "Uninstall"
   SetRegView 64
-  Delete "{legacy_exe}"
+  StrCmp "$INSTDIR" "{self.directory}" +3
+    SetErrorLevel 9
+    Quit
+  {"SetErrorLevel 7" if fail_removal else ""}
+  {"Quit" if fail_removal else ""}
+  Delete "$INSTDIR\\switchboot.exe"
   DeleteRegKey HKCU "{self.key}\\NSIS"
 SectionEnd
 ''',
@@ -1232,6 +1257,7 @@ SectionEnd
             check=True,
             timeout=30,
         )
+        subprocess.run([str(bootstrap), "/S"], check=True, timeout=30)
         with winreg.CreateKeyEx(
             winreg.HKEY_CURRENT_USER,
             self.key + r"\NSIS",
@@ -1239,15 +1265,92 @@ SectionEnd
             winreg.KEY_WRITE | winreg.KEY_WOW64_64KEY,
         ) as key:
             for name, value in [
-                ("InstallLocation", str(self.directory)),
+                (
+                    "InstallLocation",
+                    f'"{self.directory}"' if quoted_location else str(self.directory),
+                ),
                 ("UninstallString", f'"{old_uninstaller}"'),
-                ("DisplayVersion", "0.2.6"),
+                ("DisplayVersion", "0.3.0"),
             ]:
                 winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
-        self.run_setup("/UPDATE", "/P", "/ARGS", "ignored application argument")
+
+    def assert_tauri_migration(self):
+        legacy_exe = self.directory / "switchboot.exe"
+        user_file = self.directory / "user-data.txt"
+        user_file.write_bytes(b"preserve this user file")
+        self.run_setup(
+            "/UPDATE",
+            "/P",
+            "/ARGS",
+            "ignored application argument",
+            use_default_directory=True,
+        )
         self.assertEqual(self.installed_value("SwitchbootInstaller"), "native-nsis")
+        self.assertEqual(self.installed_value("DisplayVersion"), FIXTURE_VERSION)
+        self.assertEqual(self.installed_value("InstallLocation"), str(self.destination))
+        self.assertNotEqual(
+            (self.destination / "switchboot.exe").read_bytes(),
+            b"legacy fixture payload",
+        )
+        if self.directory != self.destination:
+            self.assertFalse(legacy_exe.exists())
+        self.assertEqual(
+            (self.destination / "fixture.log").read_text().splitlines(),
+            ["/install_service"],
+        )
+        self.assertEqual(user_file.read_bytes(), b"preserve this user file")
+
+    def test_released_tauri_installation_migrates_through_its_nsis_uninstaller(self):
+        # Match Tauri's quoted InstallLocation exactly, in a custom Unicode folder
+        # different from APP_DIRECTORY, with no /D= override on the new installer.
+        self.create_tauri_installation()
+        self.destination = self.base / ("Fixed destination " + uuid.uuid4().hex)
+        self.assert_tauri_migration()
+
+    def test_unquoted_legacy_install_location_migrates_in_place(self):
+        self.create_tauri_installation(quoted_location=False)
+        self.assert_tauri_migration()
+
+    def test_manual_tauri_upgrade_moves_to_the_fixed_destination(self):
+        self.create_tauri_installation()
+        self.destination = self.base / ("Fixed destination " + uuid.uuid4().hex)
+        sentinel = self.directory / "user-data.txt"
+        sentinel.write_bytes(b"preserve user data")
+        desktop, process, window = self.preview()
+        self.assertEqual(desktop.caption(desktop.u.GetDlgItem(window, 105)), "&Upgrade")
+        desktop.click(window, 105)
+        desktop.wait_for(
+            lambda: desktop.u.GetPropW(window, "NativeInstaller.NsisOperation") == 2,
+            "manual Tauri migration completion",
+        )
+        self.assertEqual(self.installed_value("DisplayVersion"), FIXTURE_VERSION)
+        self.assertEqual(self.installed_value("InstallLocation"), str(self.destination))
+        self.assertFalse((self.directory / "switchboot.exe").exists())
+        self.assertTrue((self.destination / "switchboot.exe").is_file())
+        self.assertEqual(sentinel.read_bytes(), b"preserve user data")
+        desktop.click(window, 1)
+        self.assertEqual(process.wait(timeout=10), 0)
+
+    def test_quoted_tauri_installation_already_at_fixed_destination(self):
+        self.create_tauri_installation()
+        self.assert_tauri_migration()
+
+    def test_failed_tauri_removal_does_not_install_in_fixed_destination(self):
+        self.create_tauri_installation(fail_removal=True)
+        self.destination = self.base / ("Fixed destination " + uuid.uuid4().hex)
+        self.run_setup("/UPDATE", expected=2, use_default_directory=True)
+        self.assertEqual(
+            (self.directory / "switchboot.exe").read_bytes(), b"legacy fixture payload"
+        )
         self.assertEqual(self.installed_value("DisplayVersion"), "0.3.0")
-        self.assertNotEqual(legacy_exe.read_bytes(), b"legacy fixture payload")
+        self.assertFalse(self.destination.exists())
+
+    def test_fresh_install_uses_fixed_destination_despite_directory_override(self):
+        self.destination = self.base / ("Fixed destination " + uuid.uuid4().hex)
+        self.run_setup()
+        self.assertEqual(self.installed_value("InstallLocation"), str(self.destination))
+        self.assertTrue((self.destination / "switchboot.exe").is_file())
+        self.assertFalse((self.directory / "switchboot.exe").exists())
 
     def test_adapter_argument_boundaries_and_invalid_updates(self):
         self.run_setup()
@@ -1288,7 +1391,7 @@ SectionEnd
         before = (self.directory / "fixture.log").read_text()
         for version, label in [
             ("0.2.9", "&Upgrade"),
-            ("0.3.0", "&Reinstall"),
+            (FIXTURE_VERSION, "&Reinstall"),
             ("9.0.0", "&Downgrade"),
         ]:
             with self.subTest(version=version):
@@ -1305,7 +1408,7 @@ SectionEnd
                 )
                 description = desktop.caption(desktop.u.GetDlgItem(window, 109))
                 self.assertIn(f"Installed version: {version}", description)
-                self.assertIn("Setup version: 0.3.0", description)
+                self.assertIn(f"Setup version: {FIXTURE_VERSION}", description)
                 self.assertIn("Close all running instances of Switchboot", description)
                 self.assertEqual((self.directory / "fixture.log").read_text(), before)
                 desktop.screenshot(
@@ -1341,7 +1444,7 @@ SectionEnd
             "have been installed", desktop.caption(desktop.u.GetDlgItem(window, 106))
         )
         self.assertFalse((self.directory / "fixture-uninstall-ran").exists())
-        self.assertEqual(self.installed_value("DisplayVersion"), "0.3.0")
+        self.assertEqual(self.installed_value("DisplayVersion"), FIXTURE_VERSION)
         desktop.click(window, 1)
         self.assertEqual(process.wait(timeout=10), 0)
 

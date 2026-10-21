@@ -3,6 +3,25 @@ Var SwitchbootUpdateMode
 Var UpgradePID
 Var UpgradePIDProvided
 
+; Tauri's NSIS installer writes InstallLocation as a quoted directory string.
+; Read the raw registry value again: NSIS sanitizes directory variables on
+; assignment, so stripping quotes from an already-assigned $INSTDIR is too late.
+!macro DiscoverPrevious
+  ${If} $ExistingKind == "legacy"
+    ReadRegStr $0 HKLM "$ExistingKey" "InstallLocation"
+    StrCpy $1 $0 1
+    StrCpy $2 $0 1 -1
+    ${If} $1 == '$\"'
+    ${AndIf} $2 == '$\"'
+      StrCpy $0 $0 -1 1
+    ${EndIf}
+    StrCpy $INSTDIR $0
+  ${ElseIf} $ExistingKey == ""
+    ; Fresh installs always use the machine-wide product destination.
+    StrCpy $INSTDIR "${APP_DIRECTORY}"
+  ${EndIf}
+!macroend
+
 !macro InitializeOptions
   StrCpy $SwitchbootUpdateMode "manual"
   StrCpy $UpgradePID ""
@@ -74,6 +93,13 @@ Var UpgradePIDProvided
 !macroend
 
 !macro PreflightInstall
+  ${If} $ExistingKind == "legacy"
+    ; Validate the destination before removing anything from the old location.
+    Push $INSTDIR
+    StrCpy $INSTDIR "${APP_DIRECTORY}"
+    Call ValidateCurrentOwnership
+    Pop $INSTDIR
+  ${EndIf}
   ${If} $SwitchbootUpdateMode == "/UPGRADE"
     ${If} $ExistingKind == "legacy"
       StrCpy $Failure "Native /UPGRADE cannot target a legacy Tauri installation."
@@ -138,6 +164,11 @@ Function RemovePreviousInstallation
   ReadRegStr $0 HKLM "$ExistingKey" "InstallLocation"
   ${If} $0 != ""
     Goto removal_incomplete
+  ${EndIf}
+  ${If} $Action != "uninstall"
+    ; The old path is needed through removal. Only then switch extraction,
+    ; registration, service installation and relaunch to the fixed destination.
+    StrCpy $INSTDIR "${APP_DIRECTORY}"
   ${EndIf}
   Return
 removal_incomplete:

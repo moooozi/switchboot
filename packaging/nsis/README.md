@@ -9,7 +9,7 @@ shared UI, elevation and maintenance behavior.
 
 | Setting | Value |
 | --- | --- |
-| Machine-wide destination | `$PROGRAMFILES64\Switchboot` |
+| Fresh installation directory | `$PROGRAMFILES64\Switchboot` (fixed) |
 | Application | `switchboot.exe` |
 | 64-bit HKLM uninstall key | `Software\Microsoft\Windows\CurrentVersion\Uninstall\Switchboot` |
 | Ownership marker | `SwitchbootInstaller = native-nsis` |
@@ -28,6 +28,10 @@ Hooks follow the [toolkit lifecycle contract](toolkit/README.md#lifecycle-hooks)
 [Windows updates](../../docs/windows-updates.md) defines Switchboot's updater flags,
 GUI event protocol and signing. The [ownership protocol](toolkit/README.md#file-ownership-protocol)
 defines replacement, fallback, path validation and failure behavior.
+
+Legacy Tauri upgrades automatically run the previous uninstaller in its registered
+directory, then install into `$PROGRAMFILES64\Switchboot`. User files left in the
+old directory are preserved. Failed removal stops the upgrade before extraction.
 
 ## Build
 
