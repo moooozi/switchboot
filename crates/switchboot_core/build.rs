@@ -2,12 +2,14 @@ use std::{env, fs, path::PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let package = manifest.join("../../package.json");
+    let package = manifest.join("../../Cargo.toml");
     println!("cargo:rerun-if-changed={}", package.display());
-    let metadata: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(package).expect("read root package.json"))
-            .expect("parse root package.json");
-    let version = metadata["version"].as_str().expect("application version");
+    let metadata: toml::Value =
+        toml::from_str(&fs::read_to_string(package).expect("read root Cargo.toml"))
+            .expect("parse root Cargo.toml");
+    let version = metadata["package"]["version"]
+        .as_str()
+        .expect("application version");
     let identifier = "dev.zidane.switchboot";
     let source = format!(
         "pub const APP_IDENTIFIER: &str = {identifier:?};\n\

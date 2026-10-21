@@ -1,7 +1,6 @@
 """Build real native package containers around a harmless fixture executable."""
 
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -12,37 +11,19 @@ from pathlib import Path
 from bash_test_support import BASH, bash_env
 
 ROOT = Path(__file__).resolve().parent.parent
-ISCC = shutil.which("iscc")
-if not ISCC and os.name == "nt":
-    compiler = (
-        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
-        / "Inno Setup 6/ISCC.exe"
-    )
-    if compiler.is_file():
-        ISCC = str(compiler)
 
 
 class NativePackagingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # CI must execute the package-container test for its host platform.
-        # Local machines can still run the remaining suite without these tools.
-        if os.environ.get("SWITCHBOOT_REQUIRE_PACKAGING_TESTS") == "1":
-            tools = (
-                [ISCC]
-                if os.name == "nt"
-                else [
-                    BASH,
-                    shutil.which("dpkg-deb"),
-                    shutil.which("rpmbuild"),
-                    shutil.which("rpm"),
-                    shutil.which("true"),
-                ]
-            )
+        # Windows packaging is covered by the NSIS builder and its own fixtures.
+        # Linux CI must execute the package-container checks rather than skip.
+        if os.environ.get("SWITCHBOOT_REQUIRE_PACKAGING_TESTS") == "1" and os.name != "nt":
+            tools = [BASH, shutil.which("dpkg-deb"), shutil.which("rpmbuild"),
+                     shutil.which("rpm"), shutil.which("true")]
             if not all(tools):
                 raise RuntimeError("Required native packaging tools are unavailable")
-            icon = "icon.ico" if os.name == "nt" else "128x128.png"
-            if not (ROOT / "crates/switchboot_core/icons" / icon).is_file():
+            if not (ROOT / "crates/switchboot_core/icons/128x128.png").is_file():
                 raise RuntimeError(
                     "Generate application icons before native packaging tests"
                 )
@@ -51,77 +32,12 @@ class NativePackagingTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        shutil.copytree(
-            ROOT / "packaging",
-            self.root / "packaging",
-            ignore=shutil.ignore_patterns("target", "__pycache__"),
-        )
-        shutil.copytree(
-            ROOT / "issconfig",
-            self.root / "issconfig",
-            ignore=shutil.ignore_patterns("output", "__pycache__", ".git"),
-        )
+        (self.root / "packaging").mkdir()
+        shutil.copyfile(ROOT / "packaging/linux.sh", self.root / "packaging/linux.sh")
         self.core = self.root / "crates/switchboot_core"
         (self.core / "icons").mkdir(parents=True)
         (self.root / "target/release").mkdir(parents=True)
         (self.root / "artifacts").mkdir()
-
-    def test_windows_modules_do_not_declare_inno_event_handlers(self):
-        events = (
-            "InitializeSetup|InitializeWizard|DeinitializeSetup|ShouldSkipPage|"
-            "NextButtonClick|CancelButtonClick|PrepareToInstall|CurStepChanged|"
-            "GetCustomSetupExitCode|CurPageChanged|InitializeUninstallProgressForm"
-        )
-        pattern = re.compile(rf"^(?:function|procedure)\s+({events})\b", re.MULTILINE)
-        entry = (ROOT / "packaging/windows.iss").read_text(encoding="utf-8")
-        self.assertEqual(set(pattern.findall(entry)), set(events.split("|")))
-        for module in (ROOT / "packaging").glob("windows-*.iss"):
-            with self.subTest(module=module.name):
-                self.assertIn(f'#include "{module.name}"', entry)
-                self.assertEqual(pattern.findall(module.read_text(encoding="utf-8")), [])
-
-    @unittest.skipUnless(ISCC, "Inno Setup required")
-    def test_issconfig_standalone_examples(self):
-        result = subprocess.run(
-            [os.sys.executable, "issconfig/test_compile.py"],
-            check=False,
-            cwd=self.root,
-            env={**os.environ, "ISCC": ISCC},
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    @unittest.skipUnless(ISCC, "Inno Setup required")
-    def test_inno_builds_installer_with_service_and_shortcut_resources(self):
-        icon = ROOT / "crates/switchboot_core/icons/icon.ico"
-        if not icon.exists():
-            self.skipTest("Run node packaging/generate-app-icons.mjs first")
-        shutil.copyfile(icon, self.core / "icons/icon.ico")
-        for size in [32, 64, 128, 256]:
-            shutil.copyfile(
-                ROOT / f"crates/switchboot_core/icons/{size}x{size}.png",
-                self.core / f"icons/{size}x{size}.png",
-            )
-        resources = self.core / "resources/icons/ico"
-        resources.mkdir(parents=True)
-        shutil.copyfile(icon, resources / "generic.ico")
-        (self.root / "target/release/switchboot.exe").write_bytes(
-            b"harmless fixture executable"
-        )
-        result = subprocess.run(
-            [ISCC, "/DVERSION=1.0.0", "packaging/windows.iss"],
-            check=False,
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertGreater(
-            (self.root / "artifacts/Switchboot_x64-setup.exe").stat().st_size, 0
-        )
 
     @unittest.skipUnless(
         BASH and shutil.which("dpkg-deb") and shutil.which("rpmbuild"),
@@ -130,7 +46,7 @@ class NativePackagingTests(unittest.TestCase):
     def test_linux_packages_ship_cli_symlink_and_authorization_policy(self):
         png = ROOT / "crates/switchboot_core/icons/128x128.png"
         if not png.exists():
-            self.skipTest("Run node packaging/generate-app-icons.mjs first")
+            self.skipTest("Run python scripts/generate_icons.py first")
         for size in [32, 48, 64, 128, 256]:
             shutil.copyfile(
                 ROOT / f"crates/switchboot_core/icons/{size}x{size}.png",

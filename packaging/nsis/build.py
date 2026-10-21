@@ -16,8 +16,7 @@ TOOLKIT = HERE / "toolkit"
 
 def build(output):
     makensis = find_makensis()
-    subprocess.run(["pnpm", "icons"], cwd=ROOT, shell=True, check=True, timeout=120)
-    subprocess.run(["node", "packaging/generate-app-icons.mjs"], cwd=ROOT, check=True, timeout=60)
+    subprocess.run([sys.executable, "scripts/generate_icons.py"], cwd=ROOT, check=True, timeout=600)
     subprocess.run(["cargo", "build", "--locked", "--release", "--bin", "switchboot", "--target", "x86_64-pc-windows-msvc", "--target-dir", str(ROOT / "target")], cwd=ROOT, check=True, timeout=600)
     dll = build_plugin(features="installer")
     version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]

@@ -32,12 +32,12 @@ defines replacement, fallback, path validation and failure behavior.
 ## Build
 
 Requires Windows 10/11 x64, stock NSIS 3, Python 3.11+, Rust/MSVC with x86 and
-x64 targets, Visual Studio C++ build tools, and Node/pnpm for Switchboot icons.
+x64 targets and Visual Studio C++ build tools. Icon tooling uses prebuilt Python wheels.
 From the repository root:
 
 ```console
 git submodule update --init --recursive
-pnpm install --frozen-lockfile
+python -m pip install --only-binary=:all: -r requirements-dev.txt
 python packaging/nsis/build.py
 ```
 

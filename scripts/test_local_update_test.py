@@ -83,11 +83,9 @@ class LocalUpdateTests(unittest.TestCase):
             source = Path(directory)
             (source / "Cargo.toml").write_text('[package]\nversion = "0.3.0"\n')
             (source / "Cargo.lock").write_text('name = "other"\nversion = "0.3.0"\nname = "switchboot"\nversion = "0.3.0"\n')
-            (source / "package.json").write_text('{"version": "0.3.0"}')
             local.set_version(source, "0.3.0", "0.3.1")
             self.assertIn('name = "other"\nversion = "0.3.0"', (source / "Cargo.lock").read_text())
             self.assertIn('name = "switchboot"\nversion = "0.3.1"', (source / "Cargo.lock").read_text())
-            self.assertEqual(json.loads((source / "package.json").read_text())["version"], "0.3.1")
 
 
 if __name__ == "__main__":

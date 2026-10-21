@@ -212,12 +212,7 @@ def set_version(source, old, new):
     # The workspace lock must track the temporary root version as well.
     replace_once(source / "Cargo.lock", f'name = "switchboot"\nversion = "{old}"',
                  f'name = "switchboot"\nversion = "{new}"')
-    package = source / "package.json"
-    text = package.read_text(encoding="utf-8")
-    text, count = re.subn(r'("version"\s*:\s*)"[^"]+"', rf'\g<1>"{new}"', text, count=1)
-    if count != 1:
-        raise ValueError("Missing package version")
-    package.write_text(text, encoding="utf-8")
+
 
 
 def prepare(args):

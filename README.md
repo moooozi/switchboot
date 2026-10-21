@@ -72,13 +72,12 @@ Alternatively, download a **DEB** or **RPM** package from the [latest release](h
 
 ## Build from source
 
-The app uses Rust and [iced](https://iced.rs/). Install a current stable Rust toolchain, Node.js and pnpm, then run:
+The app uses Rust and [iced](https://iced.rs/). Install a current stable Rust toolchain and Python 3.11+ for development scripts, then run:
 
 ```sh
 git submodule update --init --recursive
-pnpm install --frozen-lockfile
-pnpm icons
-node packaging/generate-app-icons.mjs
+python -m pip install --only-binary=:all: -r requirements-dev.txt
+python scripts/generate_icons.py
 cargo run -- --demo
 ```
 

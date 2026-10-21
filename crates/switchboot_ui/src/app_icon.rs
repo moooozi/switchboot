@@ -13,7 +13,7 @@ pub fn window_icon() -> iced::window::Icon {
     assert_eq!(
         info.color_type,
         png::ColorType::Rgba,
-        "app icon must be RGBA; regenerate with packaging/generate-app-icons.mjs"
+        "app icon must be RGBA; regenerate with python scripts/generate_icons.py"
     );
     pixels.truncate(info.buffer_size());
     iced::window::icon::from_rgba(pixels, info.width, info.height)

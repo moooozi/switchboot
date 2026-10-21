@@ -10,14 +10,12 @@ Initialize the toolkit and generate icons before building:
 
 ```console
 git submodule update --init --recursive
-pnpm install --frozen-lockfile
-pnpm icons
-node packaging/generate-app-icons.mjs
+python -m pip install --only-binary=:all: -r requirements-dev.txt
+python scripts/generate_icons.py
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --all-targets
-node --test scripts/release.test.mjs scripts/icons.test.mjs scripts/app-icons.test.mjs
-python -B -m unittest discover -s scripts -p test_local_update_test.py
+python -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 Windows packaging and updater checks:

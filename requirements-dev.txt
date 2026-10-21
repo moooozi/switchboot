@@ -1,0 +1,4 @@
+# Icon generation only; release/index/packaging scripts use the standard library.
+# Install with --only-binary=:all: to avoid compiling native dependencies.
+resvg-py==0.5.0
+Pillow==13.0.0

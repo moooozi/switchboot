@@ -46,21 +46,14 @@ jobs:
             echo "have_gpg=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Install icon tooling
-        run: pnpm install --frozen-lockfile
-
       - name: Install native build and package dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev rpm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Update Rust
         run: rustup update stable
@@ -93,17 +86,17 @@ jobs:
           key: cargo-target-${{ runner.os }}-${{ steps.rustver.outputs.rust_version }}
 
 
-      - name: Generate shortcut icons
+      - name: Install icon tooling wheels
+        run: python -m pip install --only-binary=:all: -r requirements-dev.txt
+      - name: Generate application and shortcut icons
         run: |
-          pnpm icons
-          node packaging/generate-app-icons.mjs
+          python scripts/generate_icons.py
 
       - name: Validate Rust and tooling
         run: |
           cargo fmt --all --check
           cargo test --locked --workspace --all-targets
           cargo test --locked --manifest-path packaging/updater-sign/Cargo.toml
-          node --test scripts/release.test.mjs scripts/icons.test.mjs
           python3 -B -m unittest discover -s scripts -p 'test_*.py'
 
       - name: Build native application

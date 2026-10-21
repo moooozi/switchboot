@@ -1,6 +1,6 @@
 name: Release Pipeline
 
-# Triggered when a `vX.Y.Z` tag is pushed (created by `pnpm release`).
+# Triggered when a `vX.Y.Z` tag is pushed (created by `python scripts/release.py`).
 # Tag signing is optional; CI checks ancestry, not the signer's identity.
 # The tag IS the release source of truth â€” there is no release branch and no
 # tag is (re)created here. The pipeline only builds, signs and opens a DRAFT
@@ -37,6 +37,10 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           bash scripts/verify-release-tag.sh "$GITHUB_REF_NAME"
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       - name: Verify tag matches committed versions
         id: verify
         shell: bash
@@ -48,14 +52,18 @@ jobs:
             echo "::error::Tag '$TAG' is not a valid semver (vX.Y.Z)"
             exit 1
           fi
-          PKG=$(python3 -c "import json;print(json.load(open('package.json'))['version'])")
-          CARGO=$(grep -m1 -E '^version' Cargo.toml | sed -E 's/[^"]*"([^"]+)".*/\1/')
-          echo "tag=$TAG  version=$VERSION  package.json=$PKG  Cargo.toml=$CARGO"
-          if [ "$PKG" != "$VERSION" ] || [ "$CARGO" != "$VERSION" ]; then
-            echo "::error::Version mismatch: tag=$VERSION but package.json=$PKG, Cargo.toml=$CARGO."
-            echo "Run 'pnpm release <type>' to bump both files and create the tag together."
-            exit 1
-          fi
+          python3 - "$VERSION" <<'PY'
+          import sys
+          import tomllib
+          from pathlib import Path
+          version = sys.argv[1]
+          manifest = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))["package"]
+          lock = tomllib.loads(Path("Cargo.lock").read_text(encoding="utf-8"))
+          local = [p for p in lock["package"] if p["name"] == manifest["name"] and "source" not in p]
+          if manifest["version"] != version or len(local) != 1 or local[0]["version"] != version:
+              sys.exit("Tag, root Cargo.toml and local Cargo.lock package versions must match. Use python scripts/release.py.")
+          print(f"Verified release v{version}")
+          PY
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 

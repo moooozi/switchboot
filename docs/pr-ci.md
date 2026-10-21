@@ -7,7 +7,7 @@ jobs for pull requests targeting `main`, pushes to `main`, merge groups and manu
 runs. One platform failure does not cancel the other's diagnostics.
 
 The jobs install tooling, generate icons and run Rust formatting, Clippy with
-warnings denied, locked Rust tests, Node tests and Python tooling/package checks.
+warnings denied, locked Rust tests and Python tooling/package checks.
 Linux demo startup uses Xvfb with an in-memory backend and a 15-second observation
 window. Package assembly does not install packages or run firmware operations.
 
@@ -23,8 +23,8 @@ builder and output. CI configuration has these constraints:
 
 | Configuration | Constraint |
 | --- | --- |
-| `pr-validation.yml`, `windows-build.yml` | Windows packaging invokes `packaging/windows.iss`, which depends on the unavailable `issconfig` directory; it must invoke the NSIS builder to produce the supported installer |
-| `scripts/test_native_packaging.py` | Package fixtures copy `issconfig`, so full Python discovery requires alignment with NSIS even on Linux |
+| `pr-validation.yml`, `windows-build.yml` | Windows packaging uses `packaging/nsis/build.py --output artifacts/Switchboot_x64-setup.exe`, stock NSIS and the x86 Rust target for the UI plugin |
+| `scripts/test_native_packaging.py` | Linux package fixtures are independent of Windows packaging; NSIS lifecycle fixtures live in `packaging/nsis/test_installer.py` |
 | `nsis-validation.yml` | Checkout needs recursive submodule initialization to provide `packaging/nsis/toolkit/ci.py` |
 | `scripts/collect-ci-artifacts.py` and Windows signing step | The installer input is `artifacts/Switchboot_x64-setup.exe`; configure the NSIS output to that name or align those consumers |
 

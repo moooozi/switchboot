@@ -33,9 +33,8 @@ cargo check --workspace --all-targets
 cargo test --workspace --all-targets
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-pnpm install --frozen-lockfile  # Optional Node icon/release tooling
-pnpm icons
-node packaging/generate-app-icons.mjs
+python -m pip install --only-binary=:all: -r requirements-dev.txt
+python scripts/generate_icons.py  # Generate app and shortcut icons
 cargo build --release --bin switchboot
 ```
 
@@ -45,7 +44,7 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 
 - Keep product integrations in Switchboot hooks and reusable behavior in the [NSIS toolkit](packaging/nsis/toolkit/README.md). See [Windows builds and file layout](packaging/nsis/README.md), [icons and Linux routing](docs/tooling-evaluation.md), and [CI constraints](docs/pr-ci.md).
 - `packaging/linux.sh` builds DEB/RPM packages with polkit policy and hicolor icons. Portable Windows distribution uses the application executable.
-- `pnpm release <patch|minor|major|X.Y.Z>` synchronizes root `Cargo.toml`, `Cargo.lock` and `package.json`, then prepares the release commit/tag. Node/pnpm serves build/release tooling, not application UI.
+- `python scripts/release.py <patch|minor|major|X.Y.Z>` synchronizes root `Cargo.toml` and its local package entry in `Cargo.lock`, then prepares the release commit/tag. Root `Cargo.toml` is the application version source. Python handles development tooling; only icon generation requires the pinned binary wheels in `requirements-dev.txt`.
 - Require a clean tree on `main`. Annotated `vX.Y.Z` tags are immutable. Confirm atomic branch/tag push; the command supports `--dry-run`, `--no-push`, `--yes`, `--sign` and `--no-sign`.
 - Tag push triggers build/draft-release workflows; publishing updates APT/RPM repositories through `update-repository.yml`. Preserve metadata validation, restore-before-update, explicit bootstrap and no-downgrade checks.
 - Preserve GPG signatures, provenance, signed updater feed and verification-key compatibility for supported clients. [Windows updates](docs/windows-updates.md) defines update policy and signing contracts.

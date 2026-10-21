@@ -1,5 +1,4 @@
-"""Run the real build-version validator in a disposable minimal Cargo project."""
-import json
+"""Execute core metadata generation with a distinct application version."""
 import os
 from pathlib import Path
 import shutil
@@ -12,39 +11,29 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @unittest.skipUnless(shutil.which("cargo"), "Cargo required")
 class BuildVersionTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        self.crate = self.root
-        (self.crate / "src").mkdir(parents=True)
-        (self.crate / "src/lib.rs").write_text("", encoding="utf-8")
-        self.manifest = self.crate / "Cargo.toml"
-        self.manifest.write_text('[package]\nname = "build-version-fixture"\nversion = "1.0.0"\nedition = "2024"\n[build-dependencies]\nserde_json = "1"\n', encoding="utf-8")
-        source = (ROOT / "build.rs").read_text(encoding="utf-8")
-        validator = source[source.index("fn validate_version()"):]
-        (self.crate / "build.rs").write_text(
-            "use std::{env, fs, path::Path};\nfn main() { validate_version().unwrap(); }\n" + validator,
-            encoding="utf-8")
+    def test_core_metadata_tracks_root_manifest_and_rebuilds_on_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            core = root / "crates/core"
+            (core / "src").mkdir(parents=True)
+            manifest = root / "Cargo.toml"
+            (core / "Cargo.toml").write_text('[package]\nname = "metadata-fixture"\nversion = "0.1.0"\nedition = "2024"\n[workspace]\n[build-dependencies]\ntoml = "1"\n')
+            shutil.copyfile(ROOT / "crates/switchboot_core/build.rs", core / "build.rs")
+            (core / "src/main.rs").write_text('include!(concat!(env!("OUT_DIR"), "/app_build_info.rs"));\nfn main() { println!("{APP_VERSION} {APP_IDENTIFIER_VERSION}"); }\n')
+            env = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/metadata-tests")}
 
-    def build(self, version):
-        (self.root / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
-        before = self.manifest.read_bytes()
-        result = subprocess.run(["cargo", "build", "--manifest-path", str(self.manifest)],
-                                env={**os.environ, "CARGO_TARGET_DIR": str(self.root / "target")},
-                                capture_output=True, text=True, timeout=120)
-        self.assertEqual(self.manifest.read_bytes(), before)
-        return result
+            def build():
+                before = manifest.read_bytes()
+                result = subprocess.run(["cargo", "run", "--offline", "--quiet", "--manifest-path", str(core / "Cargo.toml")],
+                                        capture_output=True, text=True, env=env, timeout=120)
+                self.assertEqual(manifest.read_bytes(), before)
+                return result
 
-    def test_matching_versions_build_without_mutating_manifest(self):
-        result = self.build("1.0.0")
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_mismatched_versions_fail_without_mutating_manifest(self):
-        result = self.build("2.0.0")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("differs from Cargo package version", result.stderr)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            for version in ("1.2.3", "1.2.4"):
+                manifest.write_text(f'[package]\nname = "app"\nversion = "{version}"\n')
+                result = build()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), f"{version} dev.zidane.switchboot-{version}")
+            manifest.write_text('[package]\nname = "app"\n')
+            result = build()
+            self.assertNotEqual(result.returncode, 0)

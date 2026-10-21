@@ -6,7 +6,7 @@ edition = "2024"
 publish = false
 
 [build-dependencies]
-serde_json = "1"
+toml = "1"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
