@@ -1,39 +1,56 @@
-# Pull request validation
+# Continuous integration
 
-`.github/workflows/pr-validation.yml` validates PRs targeting `main`, pushes to
-`main`, merge-queue groups and manual runs. Windows and Ubuntu run independently;
-one platform failing does not cancel the other's diagnostics.
+## Validation jobs
 
-The workflow validates the native iced Cargo workspace on both platforms.
+`.github/workflows/pr-validation.yml` defines independent Windows and Ubuntu
+jobs for pull requests targeting `main`, pushes to `main`, merge groups and manual
+runs. One platform failure does not cancel the other's diagnostics.
 
-Checks include frozen Node dependencies, SVG icon generation, Rust formatting,
-Clippy with warnings treated as errors, locked Rust tests, all Node test files and
-Python tooling tests. The native workspace also requires host package-container
-tests. On Linux, native demo startup is checked under Xvfb with an in-memory backend.
-No real firmware or restart operations are run.
+The jobs install tooling, generate icons and run Rust formatting, Clippy with
+warnings denied, locked Rust tests, Node tests and Python tooling/package checks.
+Linux demo startup uses Xvfb with an in-memory backend and a 15-second observation
+window. Package assembly does not install packages or run firmware operations.
 
-Successful runs build unsigned packages and upload:
+`.github/workflows/nsis-validation.yml` invokes the independent toolkit's Python
+runner on Windows. The toolkit repository also has its own `.github/workflows/ci.yml`.
+The [toolkit validation reference](../packaging/nsis/toolkit/README.md#validation)
+defines its checks and fixture boundaries.
 
-- Windows portable executable and Inno Setup installer for the native workspace.
-- Linux DEB, RPM and a tarball containing the executable with its permissions.
-- `build-info.json` recording the tested commit, platform and application layout.
+## Packaging configuration constraints
 
-Build artifacts are retained for 14 days. Validation logs are uploaded even on
-failure and retained for 7 days. Downloads are under the workflow run's Artifacts
-section; they are test builds, not signed releases.
+The [Windows build guide](../packaging/nsis/README.md#build) defines the supported
+builder and output. CI configuration has these constraints:
+
+| Configuration | Constraint |
+| --- | --- |
+| `pr-validation.yml`, `windows-build.yml` | Windows packaging invokes `packaging/windows.iss`, which depends on the unavailable `issconfig` directory; it must invoke the NSIS builder to produce the supported installer |
+| `scripts/test_native_packaging.py` | Package fixtures copy `issconfig`, so full Python discovery requires alignment with NSIS even on Linux |
+| `nsis-validation.yml` | Checkout needs recursive submodule initialization to provide `packaging/nsis/toolkit/ci.py` |
+| `scripts/collect-ci-artifacts.py` and Windows signing step | The installer input is `artifacts/Switchboot_x64-setup.exe`; configure the NSIS output to that name or align those consumers |
+
+These constraints affect executable workflows, not the local NSIS build commands.
+Do not use a successful mock test or a checked-in workflow as evidence that a
+release artifact was built or delivered. See the [validation guide](migration-validation.md)
+for local commands and device acceptance.
+
+## Artifacts and permissions
+
+The artifact collector expects a Windows portable executable and installer, or
+Linux DEB/RPM packages and a tarball preserving executable permissions.
+`build-info.json` records commit, platform, application layout and signing status.
+Artifacts are retained for 14 days; validation logs are retained for 7 days and
+uploaded on failure. These artifacts are unsigned test builds.
 
 PR jobs use read-only repository permissions, checkout without persisted Git
 credentials and no release secrets. They use `pull_request`, not
-`pull_request_target`. Packaging assembles files without installing packages,
-starting services, signing artifacts, publishing releases or updating repositories.
-Release workflows are unchanged.
+`pull_request_target`. Release signing/publication run in dedicated workflows.
 
-To enforce this gate, configure the `main` branch ruleset to require
-`Validate (ubuntu-latest)` and `Validate (windows-latest)`. Workflow files create
-status checks; repository rules must explicitly require them before merging.
+Configure the `main` ruleset to require `Validate (ubuntu-latest)` and
+`Validate (windows-latest)` when enforcing the gate. Workflow definitions provide
+status checks; repository rules control merge requirements.
 
-Local artifact-collector checks:
+Artifact-collector checks:
 
-```sh
-python -B -m unittest discover -s scripts -p 'test_ci_artifacts.py'
+```console
+python -B -m unittest discover -s scripts -p test_ci_artifacts.py
 ```

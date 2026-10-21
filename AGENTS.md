@@ -7,7 +7,7 @@ Switchboot is a Rust 2024 desktop application using iced 0.14 to manage EFI boot
 - Root `switchboot` package: `src/main.rs` routes GUI, CLI, shortcut and Windows service modes; `src/backend.rs` implements the UI backend interface.
 - `crates/switchboot_ui`: native iced views, typed messages, blocking-worker tasks, pure state/history model, and in-memory demo backend. It does not depend on platform firmware code.
 - `crates/switchboot_core`: privileged CLI operations, platform APIs, JSON stdin/stdout transport and secure named-pipe IPC. It does not depend on iced.
-- `crates/switchboot_updater`: signed release checks, bounded downloads, verification and Windows installer launch/observation. It depends on neither iced nor firmware code. The root adapter supplies application version and installed-mode policy; the UI owns update presentation and state. Native `/UPGRADE` uses a per-GUI event: Inno requests GUI exit after preflight, then waits for process exit and executable release before service removal or file replacement. CLI workers and the service close through their existing disconnect lifecycle. Keep legacy `/UPDATE` separate; Inno owns replacement and restart.
+- `crates/switchboot_updater`: signed updates and Windows installer observation, independent of iced and firmware code. The root adapter supplies version/installed-mode policy; the UI owns presentation. Validate ownership and app prerequisites before GUI handoff, then wait for exit before service/file changes. Reject unsafe manifests and preserve user files. See [update contracts](docs/windows-updates.md).
 - Keep one executable: CLI invocations and Windows services use the running executable. Linux policy uses `/usr/bin/switchboot` and the sibling `switchboot-cli` symlink.
 - `firmware_variables` handles EFI variables; `pipeguard` secures Windows IPC. Preserve privilege separation; never call firmware directly from the UI.
 
@@ -20,6 +20,8 @@ Switchboot is a Rust 2024 desktop application using iced 0.14 to manage EFI boot
 - Firmware mutations and undo/redo share an exclusive operation guard. Commit state and history cursor only on success; failed operations retain the previous state.
 - BootNext uses `Option<u16>` (Boot0000 is valid). Firmware setup is a separate target enum, never a synthetic entry ID.
 - History is bounded to 50 changes. Removing an entry only removes its ID from the draft, preserving the catalog for undo.
+- Drag-and-drop supports reordering, moves between Boot order and Others, edge scrolling and Up/Down controls. Each completed drop creates one undoable change.
+- Repeat GUI launches activate the per-user window. Demo and real GUI ownership are separate; CLI/service/shortcut modes bypass GUI ownership.
 - Test state behavior with mock backends, never live firmware or real restarts.
 
 ## Development
@@ -41,19 +43,13 @@ Linux real firmware access needs polkit, a graphical authentication agent and th
 
 ## Packaging and releases
 
-- `packaging/linux.sh`: native DEB/RPM packages with polkit integration and hicolor icons.
-- `packaging/windows.iss`: Inno Setup entry point with declarative sections and all Inno event handlers. It delegates registration/uninstaller helpers, shutdown, maintenance, legacy migration and service lifecycle to the adjacent `windows-*.iss` modules; modules own their state and do not declare Inno event handlers. Portable release is the same executable.
-- `issconfig`: upstream visual-library submodule; initialize with `git submodule update --init --recursive` before packaging tests. Keep application lifecycle hooks in `packaging/windows.iss`.
-- `tools/prerender-icons.js`: shortcut icons from `static/os-icons` and `crates/switchboot_core/icons-raw`.
-- `packaging/generate-app-icons.mjs`: app PNG/ICO generation without Tauri.
-- Node/pnpm is only used for icon and release tooling; no JavaScript frontend or webview runtime is needed.
-- `pnpm release <patch|minor|major|X.Y.Z>` is the version/commit/tag entry point. It synchronizes root `Cargo.toml`, `Cargo.lock` and `package.json`.
-- Releases require a clean tree on `main`. Annotated `vX.Y.Z` tags are immutable; never replace an existing tag. The script asks before atomic branch/tag push (`--dry-run`, `--no-push`, `--yes`, `--sign`, `--no-sign` are supported).
-- Tag push builds Linux/Windows and opens a draft release; publishing it updates APT/RPM repositories through `update-repository.yml`. Preserve metadata validation, restore-before-update, explicit bootstrap and no-downgrade checks.
-- Retain GPG signatures and build provenance. Preserve existing signed updater feed and key compatibility for previous releases. In-app updates are restricted to installed Windows mode; Linux uses native package updates and Windows portable/demo modes never self-update. See `docs/windows-updates.md`.
+- Keep product integrations in Switchboot hooks and reusable behavior in the [NSIS toolkit](packaging/nsis/toolkit/README.md). See [Windows builds and file layout](packaging/nsis/README.md), [icons and Linux routing](docs/tooling-evaluation.md), and [CI constraints](docs/pr-ci.md).
+- `packaging/linux.sh` builds DEB/RPM packages with polkit policy and hicolor icons. Portable Windows distribution uses the application executable.
+- `pnpm release <patch|minor|major|X.Y.Z>` synchronizes root `Cargo.toml`, `Cargo.lock` and `package.json`, then prepares the release commit/tag. Node/pnpm serves build/release tooling, not application UI.
+- Require a clean tree on `main`. Annotated `vX.Y.Z` tags are immutable. Confirm atomic branch/tag push; the command supports `--dry-run`, `--no-push`, `--yes`, `--sign` and `--no-sign`.
+- Tag push triggers build/draft-release workflows; publishing updates APT/RPM repositories through `update-repository.yml`. Preserve metadata validation, restore-before-update, explicit bootstrap and no-downgrade checks.
+- Preserve GPG signatures, provenance, signed updater feed and verification-key compatibility for supported clients. [Windows updates](docs/windows-updates.md) defines update policy and signing contracts.
 
-## Migration follow-ups
+## Validation
 
-The native UI supports drag-and-drop ordering and moving entries between the boot order and Others, with edge scrolling and Up/Down controls. Drops remain local until Save and create one undoable change. Repeat GUI launches activate the existing per-user window; demo and real GUI ownership are separate, and CLI/service/shortcut modes bypass GUI ownership.
-
-Remaining gates are Linux CI, interactive desktop validation, and owner-authorized device acceptance for UAC/polkit, firmware persistence and installed Windows service lifecycle. See `docs/migration-validation.md`. Keep unattended checks mock/demo-only. Do not reintroduce Tauri or Svelte.
+Use the [validation guide](docs/migration-validation.md) for test commands and device acceptance. Unattended checks must use mocks/demo; UAC/polkit, firmware persistence and live service acceptance require device-owner authorization.

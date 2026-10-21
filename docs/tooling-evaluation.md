@@ -1,89 +1,54 @@
-# Native icon and tooling evaluation
+# Development tooling
 
-## Linux app icons
+## Icons
 
-The generator emits 32, 48, 64, 128 and 256px transparent PNGs. Packages install
-them as `hicolor/<size>x<size>/apps/dev.zidane.switchboot.png`, and install
-`app-icon.svg` as `hicolor/scalable/apps/dev.zidane.switchboot.svg`. Shortcut icons
-use the `dev.zidane.switchboot-` prefix, with scalable SVGs and the same PNG sizes.
+`app-icon.svg` is the application icon source. Generate app PNG/ICO files with:
 
-Only SVG sources are versioned. PNGs and ICOs are ignored build artifacts,
-generated locally before the first Cargo build and regenerated in CI before
-building and packaging. Preserve this rule in any tooling migration.
+```console
+node packaging/generate-app-icons.mjs
+```
 
-The 48px size follows the minimum recommended by the
-[freedesktop icon-theme specification](https://specifications.freedesktop.org/icon-theme/latest/#installing-application-icons).
-Scalable SVGs support larger display sizes. No macOS bundles or ICNS files are generated.
+Shortcut icons come from `static/os-icons` and
+`crates/switchboot_core/icons-raw`:
 
-Both app and shortcut ICOs use DIB frames at 16, 32 and 48px, and PNG frames at
-128 and 256px. Small DIBs preserve Windows compatibility; larger PNGs limit file size.
+```console
+pnpm icons
+```
 
-## Linux CLI symlink
+SVG sources are versioned; generated PNGs and ICOs are ignored build artifacts.
+Generate them before Cargo builds and package assembly.
 
-The current implementation already uses a real filesystem symlink. The packaging
-script runs `ln -s switchboot` inside its temporary package staging directory;
-DEB and RPM contain `/usr/bin/switchboot-cli -> switchboot`. No installed shell
-wrapper or install-time script creates the link. The package manager installs it.
+Linux packages install 32, 48, 64, 128 and 256px application PNGs under
+`hicolor/<size>x<size>/apps/dev.zidane.switchboot.png`, plus a scalable SVG.
+Shortcut icons use the `dev.zidane.switchboot-` prefix and the same PNG sizes.
 
-`cli_user/single_run.rs` invokes `pkexec` with the sibling symlink directly, using
-argument arrays. CLI mode is detected through argv[0]. The daemon invokes the
-executable directly with `--cli --daemon`. Neither path runs `sh` or `bash`.
-Polkit policy refers to the real `/usr/bin/switchboot` executable.
+Windows app and shortcut ICOs contain DIB frames at 16, 32 and 48px, and PNG
+frames at 128 and 256px. The application embeds its native window icon; NSIS uses
+consumer-supplied ICO/SVG branding. Toolkit previews use independent example assets.
 
-Recommendation: retain the packaged symlink. Moving its creation into the running
-app adds no benefit for installed builds and would require elevation to write in
-`/usr/bin`. Do not have the GUI repair package-owned files or request elevation
-solely to create the link.
+## Linux executable routing
 
-Optional development improvement: replace the documented manual `ln -sf` step
-with `std::os::unix::fs::symlink` for writable sibling directories. Validate an
-existing link's target, refuse to overwrite any file or unrelated link, handle
-concurrent creation, and return a useful error on read-only directories. Use
-temporary-directory tests; do not execute firmware commands. This is evaluated,
-not implemented in this change.
+`packaging/linux.sh` places the executable at `/usr/bin/switchboot` and packages
+`/usr/bin/switchboot-cli -> switchboot` as a filesystem symlink. The package manager
+owns both paths. The GUI does not create or repair package-owned files.
 
-## Removing Node and package.json
+`cli_user/single_run.rs` invokes `pkexec` with the sibling CLI symlink using an
+argument array. CLI mode is selected through argv[0]. The daemon invokes the
+executable with `--cli --daemon`. Polkit policy identifies `/usr/bin/switchboot`.
 
-Recommendation: feasible as a separate tooling migration. Keep Python for CI/CD
-and local orchestration, make the root Cargo version authoritative, and remove
-`package.json`, `pnpm-lock.yaml`, Node/pnpm setup and JS tooling after replacements
-pass their current tests. Do not delete the manifest first: both Rust build scripts
-currently read it, and release validation checks it against the tag and Cargo.
+## Languages and responsibilities
 
-Required replacements:
-
-| Existing responsibility | Proposed replacement |
+| Tool | Responsibility |
 | --- | --- |
-| `scripts/release.mjs` and tests | Python release command and unittest fixtures |
-| `scripts/generate_indexes.js` | Python directory listing / HTML generation with escaping |
-| App and shortcut SVG rasterization / ICO generation | Small Rust icon tool using resvg/tiny-skia and PNG encoding, invoked by Python |
-| Build metadata and version checks | Root `CARGO_PKG_VERSION`; explicit propagation to core build metadata, validated against root Cargo.toml |
-| CI version reads and release validation | Python 3.11+ `tomllib` reading Cargo.toml |
-| `pnpm dev/build/check` aliases | Document the direct Cargo commands |
+| Rust/Cargo | Desktop app, privileged core, updater, native NSIS UI and updater signer |
+| Python | NSIS build/validation runners, package tests, artifact collection and local update harness |
+| Node/pnpm | SVG icon generation, release version/tag tooling and repository index generation |
+| NSIS | Windows payload extraction, registration, shortcuts, ownership cleanup and app lifecycle hooks |
+| Bash/package tools | Linux DEB/RPM assembly and repository operations |
 
-Python standard library is sufficient for orchestration, version parsing, Git
-subprocesses, HTML indexes and tests. Preserve clean-main checks, synchronized
-Cargo.toml/Cargo.lock, rollback before a release commit, immutable annotated tags,
-signing options and confirmation before atomic branch/tag push. Preserve repository
-metadata checks, GPG signatures, provenance and signed updater compatibility.
+[Release rules](../AGENTS.md#packaging-and-releases) define version synchronization,
+tagging and push requirements. [Validation commands](migration-validation.md#automated-checks)
+cover tooling tests; [CI documentation](pr-ci.md) covers artifact-collector checks.
 
-SVG conversion is the main dependency decision. A Python-only alternative is
-CairoSVG plus Pillow, but [CairoSVG requires native Cairo on Windows](https://cairosvg.org/documentation/)
-and supports only a subset of SVG filters. A Rust icon tool fits the current Rust
-workspace and the renderer already used by iced. Keep it outside the shipped app;
-Python can invoke it with explicit subprocess arguments. Test visual parity,
-transparency, overlay composition and mixed DIB/PNG ICO encoding on both hosts.
-
-`svgo` currently has a config but no callers in tracked scripts or workflows. It
-can be removed with the migration unless an explicit manual optimization workflow
-is retained. No dependencies or manifests are removed in this evaluation.
-
-Follow-ups:
-
-- Port the release and repository-index scripts and preserve their behavior tests.
-- Build and validate the icon tool on Windows and Linux.
-- Change build metadata and all CI version reads to Cargo; ensure core metadata
-  rebuilds when the root version changes.
-- Update workflows, docs and contributor instructions, then remove Node manifests,
-  lockfile, JS scripts and obsolete SVG optimization configuration.
-- Validate Linux DEB/RPM icons in a real desktop session and Windows installer icons.
+Icon changes also require visual inspection on Windows and Linux. Keep tooling
+out of the shipped application.
