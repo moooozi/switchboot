@@ -1,0 +1,66 @@
+name: Sign validated Windows installer
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      validation-run:
+        required: true
+        type: string
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+jobs:
+  sign-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download validated Windows binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: switchboot-pr-Windows-${{ github.sha }}
+          run-id: ${{ inputs.validation-run }}
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Verify validation identity and build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python scripts/validated_release.py verify artifacts "$GITHUB_SHA" "$RELEASE_VERSION" windows --repository "$GITHUB_REPOSITORY"
+      - name: Cache updater signing tool
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packaging/updater-sign/target
+          key: updater-sign-${{ runner.os }}-${{ hashFiles('packaging/updater-sign/Cargo.lock', 'packaging/updater-sign/Cargo.toml', 'packaging/updater-sign/src/**') }}
+      - name: Sign installer for existing updater clients
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo run --locked --release --manifest-path packaging/updater-sign/Cargo.toml -- artifacts/Switchboot_x64-setup.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-artifacts-${{ inputs.version }}
+          path: |
+            artifacts/Switchboot_x64-setup.exe
+            artifacts/Switchboot_x64-setup.exe.sig
+            artifacts/Switchboot_x64-portable.exe
+          if-no-files-found: error

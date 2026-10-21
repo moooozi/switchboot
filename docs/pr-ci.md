@@ -26,7 +26,7 @@ builder and output. CI configuration has these constraints:
 
 | Configuration | Constraint |
 | --- | --- |
-| `pr-validation.yml`, `windows-build.yml` | Windows packaging uses stock NSIS and `packaging/nsis/build.py` with `--payload`, `--plugin-artifact` and `--output artifacts/Switchboot_x64-setup.exe` |
+| `pr-validation.yml` | Windows packaging uses stock NSIS and `packaging/nsis/build.py` with `--payload`, `--plugin-artifact` and `--output artifacts/Switchboot_x64-setup.exe` |
 | `scripts/test_native_packaging.py` | Linux package fixtures are independent of Windows packaging; NSIS lifecycle fixtures live in `packaging/nsis/test_installer.py` |
 | `scripts/collect-ci-artifacts.py` and Windows signing step | The installer input is `artifacts/Switchboot_x64-setup.exe`; configure the NSIS output to that name or align those consumers |
 
@@ -41,11 +41,29 @@ The artifact collector expects a Windows portable executable and installer, or
 Linux DEB/RPM packages and a tarball preserving executable permissions.
 `build-info.json` records commit, platform, application layout and signing status.
 Artifacts are retained for 14 days; validation logs are retained for 7 days and
-uploaded on failure. These artifacts are unsigned test builds.
+uploaded on failure. These artifacts are unsigned builds.
 
 PR jobs use read-only repository permissions, checkout without persisted Git
 credentials and no release secrets. They use `pull_request`, not
-`pull_request_target`. Release signing/publication run in dedicated workflows.
+`pull_request_target`.
+
+After both platform jobs pass on a push to `main`, a separate job attests the
+installer, portable executable, DEB and RPM. Only this job receives OIDC and
+attestation write permissions; it is skipped for PR, merge-group and manual runs.
+
+Tag releases select a successful `main`-push validation run for the exact tagged
+commit. If validation is still running, release preparation waits up to an hour.
+Failed validation or missing/expired artifacts stop the release. Rerun the
+original main-push validation if its artifacts have expired.
+
+`linux-sign.yml` and `windows-sign.yml` download those builds and verify their
+identity and provenance against the validation workflow, commit and `main` ref.
+They sign the existing files without compiling the app or rebuilding packages.
+The Windows job uses the small updater-signing tool; it runs on Ubuntu.
+Detached signatures preserve the original build provenance. Embedded RPM signing
+changes the package digest, so the signed RPM receives its own provenance with
+the verified unsigned RPM digest and validation run recorded as its input.
+The release workflow adds detached GPG signatures and opens a draft.
 
 Configure the `main` ruleset to require `Validate (ubuntu-latest)` and
 `Validate (windows-latest)` when enforcing the gate. Workflow definitions provide

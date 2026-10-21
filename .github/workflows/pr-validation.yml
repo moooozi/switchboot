@@ -128,3 +128,29 @@ jobs:
           path: ci-logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  attest:
+    name: Attest validated main builds
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: switchboot-pr-Linux-${{ github.sha }}
+          path: validated-builds/linux
+      - uses: actions/download-artifact@v8
+        with:
+          name: switchboot-pr-Windows-${{ github.sha }}
+          path: validated-builds/windows
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            validated-builds/**/*.exe
+            validated-builds/**/*.deb
+            validated-builds/**/*.rpm

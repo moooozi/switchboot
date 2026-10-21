@@ -1,0 +1,124 @@
+name: Sign validated Linux packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      validation-run:
+        required: true
+        type: string
+    secrets:
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  attestations: write
+
+jobs:
+  sign-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download validated Linux packages
+        uses: actions/download-artifact@v8
+        with:
+          name: switchboot-pr-Linux-${{ github.sha }}
+          run-id: ${{ inputs.validation-run }}
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Verify validation identity and build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python scripts/validated_release.py verify artifacts "$GITHUB_SHA" "$RELEASE_VERSION" linux --repository "$GITHUB_REPOSITORY"
+      - name: Record verified unsigned RPM as signing input
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          VALIDATION_RUN: ${{ inputs.validation-run }}
+        run: python scripts/validated_release.py rpm-predicate "artifacts/switchboot-$RELEASE_VERSION-1.x86_64.rpm" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$VALIDATION_RUN" > rpm-signing-provenance.json
+      - name: Install RPM signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm gnupg
+      - name: Sign RPM packages (embed signature)
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          GNUPGHOME=$(mktemp -d)
+          export GNUPGHOME
+          cleanup() {
+            gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+            rm -rf "$GNUPGHOME"
+            rm -f "$HOME/.rpmmacros"
+          }
+          trap cleanup EXIT
+          printf '%s\n' "$GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          # Determine GPG user name from the imported secret key
+          GPG_KEY_NAME=$(gpg --list-secret-keys --with-colons | awk -F: '/^uid:/ {print $10; exit}')
+          if [ -z "$GPG_KEY_NAME" ]; then
+            echo "Failed to determine GPG key name" >&2
+            exit 1
+          fi
+
+          echo "Configuring rpm macros for GPG: $GPG_KEY_NAME"
+          # Ensure gpg uses loopback pinentry for non-interactive passphrase
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+          echo "%_signature gpg" > ~/.rpmmacros
+          echo "%_gpg_name $GPG_KEY_NAME" >> ~/.rpmmacros
+          # The macro contains only the path to the private passphrase file, not its value.
+          echo "%__gpg /usr/bin/gpg" >> ~/.rpmmacros
+          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file \"$GNUPGHOME/passphrase\" -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
+
+          # Use absolute path for RPM files and sign directly (no expect)
+          for rpm in artifacts/*.rpm; do
+            if [ -f "$rpm" ]; then
+              echo "Signing $rpm"
+              rpm --addsign "$rpm"
+            else
+              echo "RPM not found: $rpm"
+            fi
+          done
+
+          # Cleanup sensitive signing artifacts and environment
+          echo "Cleaning up signing artifacts"
+          # Remove temporary RPM configuration; the EXIT trap also handles failures.
+          if [ -f "$HOME/.rpmmacros" ]; then
+            shred -u -z "$HOME/.rpmmacros" 2>/dev/null || rm -f "$HOME/.rpmmacros" || true
+          fi
+          # clear passphrase from environment
+          unset GPG_PASSPHRASE || true
+          export GPG_PASSPHRASE=''
+
+      - name: Attest signed RPM and its verified validation input
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: artifacts/*.rpm
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: rpm-signing-provenance.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-artifacts-${{ inputs.version }}
+          path: |
+            artifacts/*.deb
+            artifacts/*.rpm
+          if-no-files-found: error

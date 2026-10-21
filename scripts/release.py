@@ -244,7 +244,9 @@ def release(args):
             )
             print_error(error)
             return 1
-        print("Pushed. The release pipeline will build a draft release.")
+        print(
+            "Pushed. The release pipeline will reuse validated builds for a draft release."
+        )
     else:
         print(f"Not pushed. When ready, run:\n  {command}")
     return 0
