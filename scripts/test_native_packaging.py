@@ -42,6 +42,10 @@ class NativePackagingTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "packaging").mkdir()
         shutil.copyfile(ROOT / "packaging/linux.sh", self.root / "packaging/linux.sh")
+        shutil.copyfile(
+            ROOT / "packaging/dev.zidane.switchboot.desktop",
+            self.root / "packaging/dev.zidane.switchboot.desktop",
+        )
         self.core = self.root / "crates/switchboot_core"
         (self.core / "icons").mkdir(parents=True)
         (self.root / "target/release").mkdir(parents=True)

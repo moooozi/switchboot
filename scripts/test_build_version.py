@@ -36,7 +36,6 @@ class BuildVersionTests(unittest.TestCase):
                     [
                         "cargo",
                         "run",
-                        "--offline",
                         "--quiet",
                         "--manifest-path",
                         str(core / "Cargo.toml"),
