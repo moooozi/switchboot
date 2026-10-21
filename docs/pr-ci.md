@@ -8,6 +8,17 @@ runs. One platform failure does not cancel the other's diagnostics.
 
 The jobs install tooling, generate icons and run Rust formatting, Clippy with
 warnings denied, locked Rust tests and Python tooling/package checks.
+Windows compiles the release executable once and packages the same executable in
+both the installer and portable download. Packaging uses `--payload` and
+`--plugin-artifact` to avoid compiling the app or DLL again.
+
+The toolkit repository's `.github/workflows/build-dll.yml` publishes the checked
+x86 installer DLL as an immutable `dll-<toolkit-commit>` release. Windows validation
+and release builds download this DLL from `moooozi/nsis-kit`, using the exact
+submodule commit rather than a moving latest release. There is no DLL compilation
+in Switchboot's packaging jobs. See the
+[NSIS build guide](../packaging/nsis/README.md#build) for artifact verification.
+
 Linux demo startup uses Xvfb with an in-memory backend and a 15-second observation
 window. Package assembly does not install packages or run firmware operations.
 

@@ -47,6 +47,20 @@ The builder generates icons, compiles the app and writes
 plugin exports, fixture-code exclusion, NSIS warnings and the unelevated manifest;
 it never runs Setup. `--preview` delegates to the generic toolkit preview builder.
 
+CI builds the application once and supplies `--payload target/release/switchboot.exe`
+to package that exact executable; icons must already have been generated. The same
+executable is uploaded as the portable build.
+
+The toolkit repository's `.github/workflows/build-dll.yml` independently builds
+the production x86 DLL and checks its exports and fixture-code exclusion. It
+publishes an immutable `dll-<toolkit-commit>` release in `moooozi/nsis-kit`, with
+build provenance and SHA-256 metadata. Validation and release packaging download
+the DLL for the exact submodule commit and pass `--plugin-artifact artifacts/nsis-dll`.
+The builder rejects a DLL with a mismatched toolkit revision, feature set, target
+or checksum. A missing release fails packaging rather than silently recompiling
+or using a different revision. Local builds without these options continue to
+compile the application and DLL from source.
+
 ## Tests and previews
 
 [Validation commands](../../docs/migration-validation.md#automated-checks) cover the

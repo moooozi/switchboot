@@ -35,6 +35,18 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Download production NSIS DLL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $revision = git -C packaging/nsis/toolkit rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download "dll-$revision" --repo moooozi/nsis-kit --pattern native_nsis_ui.dll --pattern plugin.json --dir artifacts/nsis-dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python packaging/nsis/toolkit/dll_artifact.py artifacts/nsis-dll --verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare validation logs
         run: mkdir -p ci-logs
       - name: Install Linux native build and packaging tools
@@ -53,7 +65,6 @@ jobs:
         run: |
           rustup update stable
           rustup component add rustfmt clippy
-          if [ "$RUNNER_OS" = "Windows" ]; then rustup target add i686-pc-windows-msvc; fi
           echo "version=$(rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
         with:
@@ -98,7 +109,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          python packaging/nsis/build.py --output artifacts/Switchboot_x64-setup.exe
+          python packaging/nsis/build.py --payload target/release/switchboot.exe --plugin-artifact artifacts/nsis-dll --output artifacts/Switchboot_x64-setup.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Collect binaries and packages
         run: python scripts/collect-ci-artifacts.py

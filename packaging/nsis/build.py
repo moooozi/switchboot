@@ -16,39 +16,49 @@ from build_support import (
     verify_payload_architecture,
     verify_unelevated_manifest,
 )
+from dll_artifact import verify_artifact
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 TOOLKIT = HERE / "toolkit"
 
 
-def build(output):
+def build(output, *, payload=None, plugin_artifact=None):
     makensis = find_makensis()
-    subprocess.run(
-        [sys.executable, "scripts/generate_icons.py"], cwd=ROOT, check=True, timeout=600
+    if payload is None:
+        subprocess.run(
+            [sys.executable, "scripts/generate_icons.py"],
+            cwd=ROOT,
+            check=True,
+            timeout=600,
+        )
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "--locked",
+                "--release",
+                "--bin",
+                "switchboot",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "--target-dir",
+                str(ROOT / "target"),
+            ],
+            cwd=ROOT,
+            check=True,
+            timeout=600,
+        )
+        payload = ROOT / "target/x86_64-pc-windows-msvc/release/switchboot.exe"
+    payload = payload.resolve()
+    dll = (
+        verify_artifact(plugin_artifact)
+        if plugin_artifact is not None
+        else build_plugin(features="installer")
     )
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "--locked",
-            "--release",
-            "--bin",
-            "switchboot",
-            "--target",
-            "x86_64-pc-windows-msvc",
-            "--target-dir",
-            str(ROOT / "target"),
-        ],
-        cwd=ROOT,
-        check=True,
-        timeout=600,
-    )
-    dll = build_plugin(features="installer")
     version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))[
         "package"
     ]["version"]
-    payload = ROOT / "target/x86_64-pc-windows-msvc/release/switchboot.exe"
     verify_payload_architecture(payload)
     defines = [
         f"-DVERSION={version}",
@@ -103,11 +113,23 @@ def main():
     parser.add_argument("--renderer", choices=["raster", "svg"], default="svg")
     parser.add_argument("--maintenance", action="store_true")
     parser.add_argument("--output", type=Path, help="Production installer output path")
+    parser.add_argument(
+        "--payload",
+        type=Path,
+        help="Package an existing x64 executable and generated icons without rebuilding",
+    )
+    parser.add_argument(
+        "--plugin-artifact",
+        type=Path,
+        help="Use a verified production DLL artifact instead of compiling the plugin",
+    )
     args = parser.parse_args()
     if not args.preview and (args.maintenance or args.renderer != "svg"):
         parser.error("Maintenance/raster modes require --preview")
-    if args.preview and args.output:
-        parser.error("--output applies only to the production installer")
+    if args.preview and (args.output or args.payload or args.plugin_artifact):
+        parser.error(
+            "--output, --payload and --plugin-artifact require production mode"
+        )
     if os.name != "nt":
         raise SystemExit("NSIS packaging requires Windows and the MSVC toolchain.")
     (ROOT / "artifacts").mkdir(exist_ok=True)
@@ -127,7 +149,7 @@ def main():
         ).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with build_lock():
-            build(output)
+            build(output, payload=args.payload, plugin_artifact=args.plugin_artifact)
 
 
 if __name__ == "__main__":
