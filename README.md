@@ -1,120 +1,96 @@
-# Switchboot
+﻿# Switchboot
 
-<div style="display:flex;align-items:flex-start;gap:12px">
-   <img src="./app-icon.svg" alt="Switchboot app icon" width="64" height="64" />
-   <p style="margin:0">SwitchBoot is a tiny tool that lets you manage EFI boot entries on your machine.</p>
-</div>
-<div style="margin-top: 12px;"></div>
-<img src="./others\screenshot_switchboot_color_modes.png" alt="Switchboot app icon" />
+[![Download](https://img.shields.io/badge/Download-0057A8?style=for-the-badge)](https://github.com/moooozi/switchboot/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/moooozi/switchboot?style=for-the-badge)](https://github.com/moooozi/switchboot/releases/latest)
 
-## Quick links
+Switchboot is an EFI boot entry manager for Windows and Linux.
 
-Pull requests are checked on Windows and Linux, with unsigned installers, packages
-and binaries available as workflow artifacts. See [PR CI](docs/pr-ci.md) for checks,
-downloads and required branch-rule settings.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="others/screenshot_switchboot_dark.png">
+  <img src="others/screenshot_switchboot_light.png" alt="Switchboot showing EFI boot entries and boot controls" width="733">
+</picture>
 
-- [Latest Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe)
-- [Latest Windows portable](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe) (See [limitations](#portable-limitations))
-- [Set up APT repository (Debian/Ubuntu)](#deb)
-- [Set up RPM repository (Fedora/OpenSUSE)](#rpm)
+## Features
 
-## Install
+- Edit and save the firmware boot order.
+- Set a boot entry for the next restart without changing the default.
+- Restart into UEFI firmware settings.
+- Create desktop shortcuts for boot targets.
 
-### Windows (installer / portable)
+## Download and install
 
-See [Quick links](#quick-links) above or visit the [Releases page](https://github.com/moooozi/switchboot/releases/latest):
+### Windows
 
-<a id="deb"></a>
+The [Windows installer](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-setup.exe) includes boot shortcuts and built-in updates.
 
-### Debian / Ubuntu & derivatives (APT)
+The [portable version](https://github.com/moooozi/switchboot/releases/latest/download/Switchboot_x64-portable.exe) runs without installation and requests administrator permission on every start. Boot shortcuts and built-in updates require the installed version.
 
-Add the repository and key, then install:
+### Linux
 
-```bash
-# Download the repository keyring into the system keyrings directory
+Add the repository to install Switchboot and receive updates through your package manager.
+
+#### Debian, Ubuntu and derivatives (APT)
+
+Add the repository signing key and package source, then install:
+
+```sh
 sudo wget -qO /usr/share/keyrings/switchboot-archive-keyring.gpg \
-   https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg
+  https://moooozi.github.io/switchboot/deb/switchboot-archive-keyring.gpg
 
-# Add the repository
-echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] https://moooozi.github.io/switchboot/deb stable main" | sudo tee /etc/apt/sources.list.d/switchboot.list
+echo "deb [signed-by=/usr/share/keyrings/switchboot-archive-keyring.gpg] https://moooozi.github.io/switchboot/deb stable main" | \
+  sudo tee /etc/apt/sources.list.d/switchboot.list
 
-# Update and install
 sudo apt update
 sudo apt install switchboot
 ```
 
-Or get the latest `.deb` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
+#### Fedora 41+ (DNF5)
 
-<a id="rpm"></a>
-
-### Fedora & openSUSE (RPM)
-
-On Fedora & derivatives:
-
-```bash
-# Add repo
+```sh
 sudo dnf install dnf-plugins-core
 sudo dnf config-manager addrepo --from-repofile=https://moooozi.github.io/switchboot/rpm/switchboot.repo
-
-# Install
 sudo dnf install switchboot
 ```
 
-On openSUSE & derivatives:
+For older Fedora versions (DNF4), replace the repository-add command with:
 
-```bash
-# Add repo
+```sh
+sudo dnf config-manager --add-repo https://moooozi.github.io/switchboot/rpm/switchboot.repo
+```
+
+#### openSUSE and derivatives
+
+```sh
 sudo zypper addrepo https://moooozi.github.io/switchboot/rpm/switchboot.repo
-
-# Refresh and install
 sudo zypper refresh
 sudo zypper install switchboot
 ```
 
-Or get the latest `.rpm` package from the [Releases page](https://github.com/moooozi/switchboot/releases/latest) (no automatic updates).
+#### Standalone packages
 
-<a id="portable-limitations"></a>
+Alternatively, download a **DEB** or **RPM** package from the [latest release](https://github.com/moooozi/switchboot/releases/latest). Installing a standalone package does not configure the repository for future updates.
 
-## Portable Windows Limitations
+## Build from source
 
-Limitations of the portable Windows version:
+The app uses Rust and [iced](https://iced.rs/). Install a current stable Rust toolchain and Python 3.11+ for development scripts, then run:
 
-- **No shortcut creation**: Creating desktop shortcuts (e.g. for rebooting to a specific EFI boot entry) is not supported.
-- **No updates**: Built-in updates are not available.
-- **WebView2 dependency**: Cannot install [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if it is not already preinstalled on the system.
-
-## How to compile
-
-Prerequisites:
-
-- Node.js and pnpm
-- Rust toolchain (rustup)
-
-Common commands (from project root):
-
-```bash
-# Install deps
-pnpm install
-
-# Generate icons
-pnpm icons
-pnpm tauri icon ./app-icon.svg
-
-# Build native Tauri app
-pnpm tauri build
+```sh
+git submodule update --init --recursive
+python -m pip install --only-binary=:all: -r requirements-dev.txt
+python scripts/generate_icons.py
+cargo run -- --demo
 ```
 
-## Software stack
+Demo mode uses an in-memory backend. It does not access firmware, request administrator permission or restart the machine.
 
-This repository contains the Switchboot web UI (Svelte), Tauri code, and packaging/helpers to produce Windows installers, DEB, and RPM packages. All release and repository files are built automatically by GitHub Actions, using open-source [workflow scripts](https://github.com/moooozi/switchboot/tree/main/.github/workflows).
+For real firmware access, run `cargo run`. Linux development builds also need polkit, a graphical authentication agent and a sibling CLI symlink:
 
-### Repo layout
+```sh
+cargo build
+ln -sf switchboot target/debug/switchboot-cli
+cargo run
+```
 
-- `src/` — Svelte frontend
-- `src-tauri/` — Rust + Tauri code
-- `repo-config/` — static content published to Pages to host APT/RPM repo
-- `.github/workflows/` — CI and release pipelines
+## Bug reports and feature requests
 
-## Support
-
-Open an issue: https://github.com/moooozi/switchboot/issues
+Report bugs and request features in [GitHub issues](https://github.com/moooozi/switchboot/issues).

@@ -1,9 +1,9 @@
 """Exercise CI ancestry checks using disposable local Git refs."""
-from pathlib import Path
 
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from bash_test_support import BASH, bash_env
 
@@ -24,12 +24,23 @@ class ReleaseAncestryTests(unittest.TestCase):
         self.git("update-ref", "refs/remotes/origin/main", "HEAD")
 
     def git(self, *args):
-        return subprocess.check_output(["git", "--no-pager", *args], cwd=self.root,
-                                       text=True, stderr=subprocess.STDOUT).strip()
+        return subprocess.check_output(
+            ["git", "--no-pager", *args],
+            cwd=self.root,
+            text=True,
+            stderr=subprocess.STDOUT,
+        ).strip()
 
     def check(self, tag="v1.0.0"):
-        return subprocess.run([BASH, SCRIPT.as_posix(), tag], cwd=self.root, env=bash_env(),
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            [BASH, SCRIPT.as_posix(), tag],
+            check=False,
+            cwd=self.root,
+            env=bash_env(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_tag_at_main_is_accepted(self):
         result = self.check()
@@ -43,7 +54,9 @@ class ReleaseAncestryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_off_main_tag_is_rejected(self):
-        self.git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "off main")
+        self.git(
+            "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "off main"
+        )
         self.git("tag", "v1.0.1")
         self.assertNotEqual(self.check("v1.0.1").returncode, 0)
 

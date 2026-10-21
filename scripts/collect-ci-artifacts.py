@@ -1,9 +1,10 @@
 """Collect unsigned PR builds; never install or execute the application."""
+
 import json
 import os
-from pathlib import Path
 import shutil
 import tarfile
+from pathlib import Path
 
 
 def required_file(path):
@@ -20,14 +21,12 @@ def unique_file(folder, pattern):
 
 
 def collect(root, *, windows):
-    native = (root / "Cargo.toml").is_file()
-    release = root / ("target/release" if native else "src-tauri/target/release")
+    release = root / "target/release"
     output = root / "artifacts/ci"
     output.mkdir(parents=True, exist_ok=True)
     if windows:
         executable = required_file(release / "switchboot.exe")
-        installer = (required_file(root / "artifacts/Switchboot_x64-setup.exe") if native else
-                     unique_file(release / "bundle/nsis", "*.exe"))
+        installer = required_file(root / "artifacts/Switchboot_x64-setup.exe")
         shutil.copy2(executable, output / "Switchboot_x64-portable.exe")
         shutil.copy2(installer, output / "Switchboot_x64-setup.exe")
     else:
@@ -41,11 +40,13 @@ def collect(root, *, windows):
         shutil.copy2(rpm, output / rpm.name)
     metadata = {
         "commit": os.environ.get("GITHUB_SHA", "local"),
-        "layout": "iced" if native else "tauri",
+        "layout": "iced",
         "platform": "windows" if windows else "linux",
         "signed": False,
     }
-    (output / "build-info.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (output / "build-info.json").write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":

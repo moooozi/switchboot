@@ -1,15 +1,15 @@
 """Test actual artifact-selection script with mocked package metadata tools."""
-import os
-from pathlib import Path
 
+import os
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from bash_test_support import BASH, bash_env
 
 SCRIPT = Path(__file__).resolve().parent / "collect-linux-artifacts.sh"
-MOCKS = r'''
+MOCKS = r"""
 function dpkg-deb {
   read -r version arch < "$2"
   if [ "$3" = Version ]; then printf '%s' "$version"; else printf '%s' "$arch"; fi
@@ -18,7 +18,7 @@ function rpm {
   cat "$4"
 }
 source "$SCRIPT" "$RELEASE_VERSION"
-'''
+"""
 
 
 @unittest.skipUnless(BASH, "Bash required")
@@ -27,20 +27,35 @@ class LinuxArtifactTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.bundle = self.root / "src-tauri/target/release/bundle"
+        self.bundle = self.root / "target/release/bundle"
         (self.bundle / "deb").mkdir(parents=True)
         (self.bundle / "rpm").mkdir()
 
     def package(self, name, version="1.0.0", arch=None):
         kind = name.rsplit(".", 1)[1]
         (self.bundle / kind / name).write_text(
-            f"{version} {arch or ('amd64' if kind == 'deb' else 'x86_64')}\n", encoding="utf-8", newline="\n")
+            f"{version} {arch or ('amd64' if kind == 'deb' else 'x86_64')}\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
     def collect(self):
-        return subprocess.run([BASH, "-c", MOCKS], cwd=self.root,
-                              env=bash_env({**os.environ, "SCRIPT": SCRIPT.as_posix(), "RELEASE_VERSION": "1.0.0",
-                                            "GITHUB_OUTPUT": (self.root / "outputs").as_posix()}),
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            [BASH, "-c", MOCKS],
+            check=False,
+            cwd=self.root,
+            env=bash_env(
+                {
+                    **os.environ,
+                    "SCRIPT": SCRIPT.as_posix(),
+                    "RELEASE_VERSION": "1.0.0",
+                    "GITHUB_OUTPUT": (self.root / "outputs").as_posix(),
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_exact_version_is_selected_instead_of_stale_cache(self):
         for kind in ("deb", "rpm"):
@@ -49,7 +64,10 @@ class LinuxArtifactTests(unittest.TestCase):
             self.package(f"other-arch.{kind}", arch="arm64")
         result = self.collect()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sorted(p.name for p in (self.root / "artifacts").iterdir()), ["current.deb", "current.rpm"])
+        self.assertEqual(
+            sorted(p.name for p in (self.root / "artifacts").iterdir()),
+            ["current.deb", "current.rpm"],
+        )
         self.assertIn("deb_artifact=current.deb", (self.root / "outputs").read_text())
 
     def test_missing_either_package_fails(self):

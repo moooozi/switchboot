@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("generate_latest_json.py").resolve()
 
@@ -20,17 +20,27 @@ class FeedTests(unittest.TestCase):
         self.latest = self.updates / "latest.json"
 
     def run_cli(self, version="1.2.3", repository="example/switchboot"):
-        return subprocess.run([sys.executable, str(SCRIPT), version, repository], cwd=self.root,
-                              capture_output=True, text=True, timeout=10)
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), version, repository],
+            check=False,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     def test_bootstrap_generates_feed_for_selected_repository(self):
         result = self.run_cli()
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(self.latest.read_text())
         self.assertEqual(data["version"], "1.2.3")
-        self.assertEqual(data["platforms"]["windows-x86_64"]["signature"], "fixture-signature")
-        self.assertEqual(data["platforms"]["windows-x86_64"]["url"],
-                         "https://github.com/example/switchboot/releases/download/v1.2.3/Switchboot_x64-setup.exe")
+        self.assertEqual(
+            data["platforms"]["windows-x86_64"]["signature"], "fixture-signature"
+        )
+        self.assertEqual(
+            data["platforms"]["windows-x86_64"]["url"],
+            "https://github.com/example/switchboot/releases/download/v1.2.3/Switchboot_x64-setup.exe",
+        )
         self.assertFalse(self.latest.with_suffix(".json.tmp").exists())
 
     def test_forward_update_and_same_version_redeploy(self):
@@ -48,7 +58,11 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(self.latest.read_text(), original)
 
     def test_invalid_inputs_and_missing_signature_do_not_publish(self):
-        for version, repository in [("../bad", "example/app"), ("1.2.3", "bad"), ("1.2.4", "example/app")]:
+        for version, repository in [
+            ("../bad", "example/app"),
+            ("1.2.3", "bad"),
+            ("1.2.4", "example/app"),
+        ]:
             result = self.run_cli(version, repository)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.latest.exists())

@@ -1,0 +1,18 @@
+; Switchboot adapter for the reusable native NSIS toolkit.
+!define APP_NAME "Switchboot"
+!define APP_EXE "switchboot.exe"
+!define APP_DIRECTORY "$PROGRAMFILES64\Switchboot"
+!define APP_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Switchboot"
+!define APP_MARKER "SwitchbootInstaller"
+!define APP_MARKER_VALUE "native-nsis"
+!define APP_PUBLISHER "zidane.dev"
+!define APP_DESCRIPTION "Switchboot lets you manage your boot order and choose which operating system starts next."
+!define APP_SUCCESS "Switchboot and its Windows service have been installed."
+!define APP_ICON "${__FILEDIR__}\..\..\crates\switchboot_core\icons\icon.ico"
+!define APP_LOGO "${__FILEDIR__}\..\..\app-icon.svg"
+!define SWITCHBOOT_ICONS "${__FILEDIR__}\..\..\crates\switchboot_core\resources\icons\ico"
+!include "${__FILEDIR__}\owned-icons.nsh"
+!include "${__FILEDIR__}\service-hooks.nsh"
+!include "${__FILEDIR__}\switchboot-hooks.nsh"
+!include "${__FILEDIR__}\toolkit\setup.nsh"
+!insertmacro SwitchbootMigrationFunctions

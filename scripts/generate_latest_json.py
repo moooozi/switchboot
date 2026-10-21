@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate an updater feed without silently downgrading the published version."""
+
 import argparse
 import datetime
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 
 def parse_version(value):
@@ -21,7 +22,9 @@ def generate(version, repository, root=Path("repo")):
     if latest.exists():
         previous = json.loads(latest.read_text(encoding="utf-8"))
         if requested < parse_version(previous["version"]):
-            raise ValueError(f"Refusing to replace version {previous['version']} with {version}")
+            raise ValueError(
+                f"Refusing to replace version {previous['version']} with {version}"
+            )
 
     signature_path = root / "updates" / version / "Switchboot_x64-setup.exe.sig"
     signature = signature_path.read_text(encoding="utf-8").strip()
@@ -29,7 +32,7 @@ def generate(version, repository, root=Path("repo")):
         raise ValueError("Updater signature is empty")
     data = {
         "version": version,
-        "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "pub_date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "platforms": {
             "windows-x86_64": {
                 "signature": signature,

@@ -1,0 +1,32 @@
+[package]
+name = "switchboot"
+version = "0.4.0"
+description = "Manage EFI boot entries on Windows and Linux"
+authors = ["M Zidane"]
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[workspace]
+members = ["crates/switchboot_core", "crates/switchboot_ui", "crates/switchboot_updater"]
+resolver = "3"
+
+[dependencies]
+switchboot_core = { path = "crates/switchboot_core" }
+switchboot_ui = { path = "crates/switchboot_ui" }
+fs4 = "1"
+
+[target.'cfg(windows)'.dependencies]
+switchboot_updater = { path = "crates/switchboot_updater" }
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+lto = "thin"
+opt-level = 2
+codegen-units = 1

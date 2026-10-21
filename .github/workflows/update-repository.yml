@@ -449,9 +449,7 @@ jobs:
         run: |
           set -e
           echo "Generating final index.html files for repo/rpm and repo/deb only (not root repo/)"
-          node --version || true
-          chmod +x scripts/generate_indexes.js || true
-          node scripts/generate_indexes.js repo/rpm repo/deb
+          python3 scripts/generate_indexes.py repo/rpm repo/deb
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
