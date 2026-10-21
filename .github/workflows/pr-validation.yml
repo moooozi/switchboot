@@ -63,7 +63,8 @@ jobs:
             target
           key: pr-cargo-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
       - name: Install icon tooling wheels
-        run: python -m pip install --only-binary=:all: -r requirements-dev.txt
+        run: |
+          python -m pip install --only-binary=:all: -r requirements-dev.txt
       - name: Generate icons from SVG sources
         run: |
           python scripts/generate_icons.py
