@@ -12,21 +12,12 @@ Windows compiles the release executable once and packages the same executable in
 both the installer and portable download. Packaging uses `--payload` and
 `--plugin-artifact` to avoid compiling the app or DLL again.
 
-The toolkit repository's `.github/workflows/build-dll.yml` publishes the checked
-x86 installer DLL as an immutable `dll-<toolkit-commit>` release. Windows validation
-and release builds download this DLL from `moooozi/nsis-kit`, using the exact
-submodule commit rather than a moving latest release. There is no DLL compilation
-in Switchboot's packaging jobs. See the
+Windows jobs download the production DLL from the `dll-<toolkit-commit>` release
+in `moooozi/nsis-kit`, matching the pinned submodule commit. See the
 [NSIS build guide](../packaging/nsis/README.md#build) for artifact verification.
 
 Linux demo startup uses Xvfb with an in-memory backend and a 15-second observation
 window. Package assembly does not install packages or run firmware operations.
-
-Toolkit validation runs in the toolkit repository's `.github/workflows/ci.yml`.
-Switchboot does not rerun that suite; its Windows validation packages the app
-with the downloaded production DLL. The
-[toolkit validation reference](../packaging/nsis/toolkit/README.md#validation)
-defines the toolkit's checks and fixture boundaries.
 
 ## Packaging configuration constraints
 
@@ -35,7 +26,7 @@ builder and output. CI configuration has these constraints:
 
 | Configuration | Constraint |
 | --- | --- |
-| `pr-validation.yml`, `windows-build.yml` | Windows packaging uses `packaging/nsis/build.py --output artifacts/Switchboot_x64-setup.exe`, stock NSIS and the x86 Rust target for the UI plugin |
+| `pr-validation.yml`, `windows-build.yml` | Windows packaging uses stock NSIS and `packaging/nsis/build.py` with `--payload`, `--plugin-artifact` and `--output artifacts/Switchboot_x64-setup.exe` |
 | `scripts/test_native_packaging.py` | Linux package fixtures are independent of Windows packaging; NSIS lifecycle fixtures live in `packaging/nsis/test_installer.py` |
 | `scripts/collect-ci-artifacts.py` and Windows signing step | The installer input is `artifacts/Switchboot_x64-setup.exe`; configure the NSIS output to that name or align those consumers |
 

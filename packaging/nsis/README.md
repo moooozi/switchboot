@@ -51,11 +51,9 @@ CI builds the application once and supplies `--payload target/release/switchboot
 to package that exact executable; icons must already have been generated. The same
 executable is uploaded as the portable build.
 
-The toolkit repository's `.github/workflows/build-dll.yml` independently builds
-the production x86 DLL and checks its exports and fixture-code exclusion. It
-publishes an immutable `dll-<toolkit-commit>` release in `moooozi/nsis-kit`, with
-build provenance and SHA-256 metadata. Validation and release packaging download
-the DLL for the exact submodule commit and pass `--plugin-artifact artifacts/nsis-dll`.
+Validation and release packaging download `native_nsis_ui.dll` and `plugin.json`
+from the `dll-<toolkit-commit>` release in `moooozi/nsis-kit`, matching the pinned
+submodule commit, and pass `--plugin-artifact artifacts/nsis-dll`.
 The builder rejects a DLL with a mismatched toolkit revision, feature set, target
 or checksum. A missing release fails packaging rather than silently recompiling
 or using a different revision. Local builds without these options continue to
